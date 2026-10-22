@@ -6,8 +6,10 @@ Toolchain: ViperTools `v.26.08-release` (Silicon in `viperserver.jar`, Z3 4.16.0
 ## Encoding (L1: module transition system)
 
 - One module object `S` holds the shared state: `m: Map[Key, Ref]` (the lock map), `seq: Int` (token counter),
-  `created: Set[Ref]` (every `LockInfo` ever allocated), and ghost token records:
-  `tKey: Map[Int, Key]`, `tBacked: Map[Int, Bool]`, `tHeld: Map[Int, Bool]`, `tLease: Map[Int, Int]`.
+  and `created: Set[Ref]` (every `LockInfo` ever allocated).
+- Ghost token records: one ghost object `tok(t)` per token value with fields `gIssued`, `gKey`, `gBacked`, `gHeld`,
+  `gLease`, and quantified permissions over all `Int`. (The first plan used four `Map[Int, _]` fields;
+  that version did not verify `tryLock` in 300 s. See `RESULTS.md`.)
 - `LockInfo` is a `Ref` with fields `permits`, `isHeld`, `token` (`-1` = null, so a reused token `0` stays a valid token), `expiresAt`.
 - `init()` builds the empty module and must establish `MI`. Without it, an unsatisfiable `MI` would "prove" everything.
 - `probe()` runs `init → tryLock → tryLock → unLock → unLock` and asserts the expected results,
