@@ -1,0 +1,258 @@
+// Spike: req-shield KeyLocalLock (core-kotlin-coroutine, commit 91962c7) hand-translated to Viper.
+// Encoding: L1 module transition system. Each lockMap.compute(k) body is one atomic action.
+// Every action requires and ensures the module invariant MI, so any interleaving of actions keeps MI.
+// Values read outside compute (clock, cap, map size) are free parameters of the action.
+// Assumptions that Silicon does not check are listed in ../PLAN.md.
+
+// Complete lock key: lockKeyOf(key, lockType). Opaque to the model.
+domain Key {}
+
+define NULL (-1) // token value for "no token"; tokens issued by nextToken() are >= 1
+
+// ---- Module state: KeyLocalLock companion object ----
+field m: Map[Key, Ref]      // lockMap; a removed key maps to null
+field seq: Int              // tokenSequence
+field created: Set[Ref]     // every LockInfo ever allocated (ghost)
+
+// ---- Ghost token records: one entry per issued token ----
+field tKey: Map[Int, Key]   // key the token was issued for
+field tBacked: Map[Int, Bool] // true: a map entry backs the token; false: issued at the cap
+field tHeld: Map[Int, Bool] // the acquisition has not ended (released or expired)
+field tLease: Map[Int, Int] // clock reading at issue + lockTimeoutMillis
+
+// ---- LockInfo ----
+field permits: Int          // Semaphore(1) permit count
+field isHeld: Bool          // AtomicBoolean
+field token: Int            // @Volatile var token: String?
+field expiresAt: Int        // @Volatile var expiresAt: Long
+
+define has(S, qk) (qk in domain(S.m) && S.m[qk] != null)
+
+define MI_PERMS(S) (
+  acc(S.m) && acc(S.seq) && acc(S.created) &&
+  acc(S.tKey) && acc(S.tBacked) && acc(S.tHeld) && acc(S.tLease) &&
+  (forall qr: Ref :: { qr in S.created } qr in S.created ==>
+     acc(qr.permits) && acc(qr.isHeld) && acc(qr.token) && acc(qr.expiresAt))
+)
+
+// P2: every LockInfo ever created has 0 <= permits <= 1.
+define P2(S) (
+  forall qr: Ref :: { qr in S.created } qr in S.created ==> 0 <= qr.permits && qr.permits <= 1
+)
+
+// @HOLE-BEGIN MI_INV
+define MI_INV(S) (
+  // Map values are allocated LockInfo objects, and no two keys share one.
+  (forall qk: Key :: { S.m[qk] } has(S, qk) ==> S.m[qk] in S.created) &&
+  (forall qk1: Key, qk2: Key :: { S.m[qk1], S.m[qk2] }
+     has(S, qk1) && has(S, qk2) && qk1 != qk2 ==> S.m[qk1] != S.m[qk2]) &&
+  // INV-E: every entry is held, has no free permit, and carries a token.
+  (forall qk: Key :: { S.m[qk] } has(S, qk) ==>
+     S.m[qk].permits == 0 && S.m[qk].isHeld && S.m[qk].token != NULL) &&
+  // Ghost maps share one domain, and every issued token is at most the counter.
+  0 <= S.seq &&
+  domain(S.tBacked) == domain(S.tKey) && domain(S.tHeld) == domain(S.tKey) &&
+  domain(S.tLease) == domain(S.tKey) &&
+  (forall qt: Int :: { qt in domain(S.tKey) } qt in domain(S.tKey) ==> 0 <= qt && qt <= S.seq) &&
+  // Each entry's token is a held backed token issued for this key, with the entry's lease.
+  (forall qk: Key :: { S.m[qk] } has(S, qk) ==>
+     S.m[qk].token in domain(S.tKey) && S.tKey[S.m[qk].token] == qk &&
+     S.tBacked[S.m[qk].token] && S.tHeld[S.m[qk].token] &&
+     S.tLease[S.m[qk].token] == S.m[qk].expiresAt) &&
+  // Each held backed token is the token of its key's entry.
+  (forall qt: Int :: { S.tHeld[qt] } qt in domain(S.tKey) && S.tBacked[qt] && S.tHeld[qt] ==>
+     has(S, S.tKey[qt]) && S.m[S.tKey[qt]].token == qt)
+)
+// @HOLE-END MI_INV
+
+define MI(S) (MI_PERMS(S) && P2(S) && MI_INV(S))
+
+// Ghost history is append-only: records of old tokens never change, and an ended acquisition stays ended.
+define HIST(S) (
+  old(domain(S.tKey)) subset domain(S.tKey) &&
+  (forall qt: Int :: { S.tKey[qt] } qt in old(domain(S.tKey)) ==>
+     S.tKey[qt] == old(S.tKey[qt]) && S.tBacked[qt] == old(S.tBacked[qt]) &&
+     S.tLease[qt] == old(S.tLease[qt]) && (!old(S.tHeld[qt]) ==> !S.tHeld[qt]))
+)
+
+// P3a for an expiry action that read clock value `now`:
+// a held backed token ends only if now > its lease.
+define P3A_EXPIRY(S, now) (
+  forall qt: Int :: { S.tHeld[qt] }
+    qt in old(domain(S.tKey)) && old(S.tBacked[qt]) && old(S.tHeld[qt]) && !S.tHeld[qt] ==>
+      now > old(S.tLease[qt])
+)
+
+// Empty module, as after class loading.
+method init() returns (S: Ref)
+  ensures MI(S)
+  ensures S.m == Map[Key, Ref]() && S.tKey == Map[Int, Key]()
+{
+  S := new(m, seq, created, tKey, tBacked, tHeld, tLease)
+  S.m := Map[Key, Ref]()
+  S.seq := 0
+  S.created := Set[Ref]()
+  S.tKey := Map[Int, Key]()
+  S.tBacked := Map[Int, Bool]()
+  S.tHeld := Map[Int, Bool]()
+  S.tLease := Map[Int, Int]()
+}
+
+// tryLock(key, lockType): the lockMap.compute(completeKey) body.
+//   now     = nowToEpochTime(), read before compute
+//   timeout = lockTimeoutMillis of the calling KeyLocalLock instance (the map is shared by all instances)
+//   rej     = LocalLockLimit.rejectsNewEntry(lockMap.mappingCount()); limit = the cap it read
+method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) returns (res: Int)
+  requires MI(S)
+  requires rej ==> limit != 0 // trusted contract of rejectsNewEntry
+  ensures MI(S) && HIST(S)
+  // P1a: every acquisition gets a fresh token, recorded for this key.
+  ensures res != NULL ==> !(res in old(domain(S.tKey))) && res in domain(S.tKey) &&
+    S.tKey[res] == k && S.tHeld[res] && S.tLease[res] == now + timeout
+  ensures res != NULL && S.tBacked[res] ==> has(S, k) && S.m[k].token == res
+  // P3a: only an expired token is taken over.
+  ensures P3A_EXPIRY(S, now)
+  // P3b: an unbacked token is issued only at the cap, for a key without an entry.
+  ensures res != NULL && !S.tBacked[res] ==> !old(has(S, k)) && rej && limit != 0
+  // Progress (checked by probe): a free key is acquired, a live entry is not taken.
+  ensures !old(has(S, k)) && !rej ==> res != NULL && S.tBacked[res]
+  ensures old(has(S, k)) && now <= old(S.m[k].expiresAt) ==> res == NULL
+{
+  var acquired: Int := NULL
+  if (has(S, k)) {
+    var e: Ref := S.m[k]
+    // Force-release an expired lock: now > expiresAt && isHeld.compareAndSet(true, false)
+    if (now > e.expiresAt && e.isHeld) {
+      var old_tok: Int := e.token
+      e.isHeld := false
+      e.token := NULL
+      e.permits := e.permits + 1 // semaphore.release()
+      S.tHeld := S.tHeld[old_tok := false] // ghost: the old acquisition ends by expiry
+    }
+    // semaphore.tryAcquire()
+    if (e.permits > 0) {
+      e.permits := e.permits - 1
+      S.seq := S.seq + 1 // nextToken(): tokenSequence.incrementAndGet()
+      var tok: Int := S.seq
+      e.isHeld := true
+      e.token := tok
+      e.expiresAt := now + timeout
+      acquired := tok
+      // ghost: issue a backed token
+      S.tKey := S.tKey[tok := k]
+      S.tBacked := S.tBacked[tok := true]
+      S.tHeld := S.tHeld[tok := true]
+      S.tLease := S.tLease[tok := now + timeout]
+    }
+  } else {
+    if (rej) {
+      // At the cap: a token that no map entry backs.
+      S.seq := S.seq + 1
+      acquired := S.seq
+      // ghost: issue an unbacked token
+      S.tKey := S.tKey[acquired := k]
+      S.tBacked := S.tBacked[acquired := false]
+      S.tHeld := S.tHeld[acquired := true]
+      S.tLease := S.tLease[acquired := now + timeout]
+    } else {
+      S.seq := S.seq + 1
+      var tok2: Int := S.seq
+      var e2: Ref := new(permits, isHeld, token, expiresAt)
+      e2.permits := 1 // Semaphore(1)
+      e2.expiresAt := now + timeout
+      e2.token := tok2
+      e2.isHeld := false
+      e2.permits := e2.permits - 1 // tryAcquire() on a new semaphore
+      e2.isHeld := true
+      S.created := S.created union Set(e2)
+      S.m := S.m[k := e2]
+      acquired := tok2
+      // ghost: issue a backed token
+      S.tKey := S.tKey[tok2 := k]
+      S.tBacked := S.tBacked[tok2 := true]
+      S.tHeld := S.tHeld[tok2 := true]
+      S.tLease := S.tLease[tok2 := now + timeout]
+    }
+  }
+  res := acquired
+}
+
+// unLock(key, lockType, token): the lockMap.compute(completeKey) body.
+method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)
+  requires MI(S)
+  requires t != NULL
+  ensures MI(S) && HIST(S)
+  // P1: a successful release presents the current owner token of a held backed acquisition, and ends it.
+  ensures res ==> old(has(S, k)) && old(S.m[k].token) == t && t in old(domain(S.tKey)) &&
+    old(S.tKey[t]) == k && old(S.tBacked[t]) && old(S.tHeld[t]) && !S.tHeld[t] && !has(S, k)
+  // P3a: unLock ends no acquisition other than its own.
+  ensures forall t2: Int :: { S.tHeld[t2] }
+    t2 in old(domain(S.tKey)) && old(S.tBacked[t2]) && old(S.tHeld[t2]) && !S.tHeld[t2] ==> t2 == t && res
+  // Progress (checked by probe): the owner token releases.
+  ensures old(has(S, k)) && old(S.m[k].token) == t ==> res
+{
+  res := false
+  if (has(S, k)) {
+    var e: Ref := S.m[k]
+    // existing.token == token && existing.isHeld.compareAndSet(true, false)
+    if (e.token == t && e.isHeld) {
+      e.isHeld := false
+      e.permits := e.permits + 1 // semaphore.release()
+      res := true
+      S.m := S.m[k := null] // return@compute null: drop the entry
+      S.tHeld := S.tHeld[t := false] // ghost: the acquisition ends by release
+    }
+  }
+}
+
+// Monitor sweep: the lockMap.compute(key) body for one key.
+//   now = System.currentTimeMillis(), read once per sweep pass before the key loop
+method sweep(S: Ref, k: Key, now: Int)
+  requires MI(S)
+  ensures MI(S) && HIST(S)
+  ensures P3A_EXPIRY(S, now)
+{
+  if (has(S, k)) {
+    var e: Ref := S.m[k]
+    if (now > e.expiresAt) {
+      if (e.isHeld) { // isHeld.compareAndSet(true, false)
+        var old_tok: Int := e.token
+        e.isHeld := false
+        e.token := NULL
+        e.permits := e.permits + 1 // semaphore.release()
+        S.tHeld := S.tHeld[old_tok := false] // ghost: the acquisition ends by expiry
+      }
+      S.m := S.m[k := null] // atomic removal
+    }
+  }
+}
+
+// P3c: at most one held backed token per key, in every state that satisfies MI.
+method lemma_P3c(S: Ref)
+  requires MI(S)
+  ensures MI(S)
+  ensures forall t1: Int, t2: Int :: { S.tHeld[t1], S.tHeld[t2] }
+    t1 in domain(S.tKey) && t2 in domain(S.tKey) &&
+    S.tBacked[t1] && S.tHeld[t1] && S.tBacked[t2] && S.tHeld[t2] &&
+    S.tKey[t1] == S.tKey[t2] ==> t1 == t2
+{}
+
+// Non-vacuity probe: MI is satisfiable from init, and the actions are reachable and not inert.
+method probe(k: Key, now: Int, timeout: Int)
+  requires timeout > 0
+{
+  var S: Ref
+  S := init()
+  var t1: Int
+  t1 := tryLock(S, k, now, timeout, false, 0)
+  assert t1 != NULL && S.tBacked[t1]
+  var t2: Int
+  t2 := tryLock(S, k, now, timeout, false, 0) // live entry: second acquisition fails
+  assert t2 == NULL
+  var ok: Bool
+  ok := unLock(S, k, t1)
+  assert ok
+  var ok2: Bool
+  ok2 := unLock(S, k, t1) // stale release finds nothing
+  assert !ok2
+}

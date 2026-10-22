@@ -1,0 +1,5 @@
+field f: Int
+method inc(x: Ref)
+  requires acc(x.f)
+  ensures acc(x.f) && x.f == old(x.f) + 1
+{ x.f := x.f + 2 }
