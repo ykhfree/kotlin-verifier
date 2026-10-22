@@ -1,0 +1,11 @@
+== L3M1_no_release_on_supplier_exception expect=fail -> DETECTED
+  [0] Postcondition of executeCallable might not hold. Assertion o != 0 && t != -1 ==> perm(Lease(k, t)) == none might not hold. (L3M1_no_release_on_supplier_exception.vpr@64.11--64.50)
+== L3M2_double_release expect=fail -> DETECTED
+  [0] The precondition of method createReqShieldData might not hold. There might be insufficient permission to access Lease(k, t) (L3M2_double_release.vpr@140.7--140.43)
+== L3M3_caller_writes_shared_data expect=fail -> DETECTED
+  [0] Assignment might fail. There might be insufficient permission to access data.value (L3M3_caller_writes_shared_data.vpr@169.5--169.20)
+== A_F4_errors_not_fatal expect=fail -> DETECTED
+  [0] Postcondition of executeCallable might not hold. Assertion o != 0 && t != -1 ==> perm(Lease(k, t)) == none might not hold. (A_F4_errors_not_fatal.vpr@64.11--64.50)
+== A_F6_dispatch_may_throw expect=fail -> DETECTED
+  [0] Postcondition of createReqShieldData might not hold. Assertion t != -1 ==> perm(Lease(k, t)) == none might not hold. (A_F6_dispatch_may_throw.vpr@104.11--104.39)
+  [1] Assert might fail. Assertion t != -1 ==> perm(Lease(k, t)) == none might not hold. (A_F6_dispatch_may_throw.vpr@175.10--175.38)

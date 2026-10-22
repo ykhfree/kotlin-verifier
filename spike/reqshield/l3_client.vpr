@@ -1,0 +1,176 @@
+// Spike L3 case: req-shield ReqShield (core-kotlin-coroutine, commit 91962c7), lock-release obligations.
+// Each method is checked thread-locally. KeyLock calls use their L2 atomic specs: a successful tryLock
+// yields a linear release obligation Lease(k, t); unLock consumes it. Viper permissions are affine
+// (a leaked permission is not an error by itself), so every method states, per outcome, whether it
+// hands the obligation back to its caller or holds none (NO_LEASE).
+// Exceptions are explicit outcome codes. Kotlin `catch (e: Exception)` covers EXC (including
+// CancellationException); ERR is a java.lang.Error, which that catch does not cover.
+// Simplification: the link from Lease to the L1 ghost record (tok(t).gHeld) is not modeled here.
+
+domain Key {}
+
+define NULL (-1)
+define OK 0
+define EXC 1 // any Exception, including CancellationException
+define ERR 2 // java.lang.Error
+
+// Trust-ledger assumptions under test. Set each to true or false and re-verify.
+define ERRORS_ARE_FATAL true          // F4: a java.lang.Error ends the process, so leaks after it do not matter
+define DISPATCH_NEVER_THROWS true     // F6: the background scope's dispatcher never throws from dispatch()
+
+define NO_LEASE(k, t) (perm(Lease(k, t)) == none)
+// Contract form of the leak check: checked when the method exits, nothing assumed by the caller.
+define RELEASED(k, t) [true, NO_LEASE(k, t)]
+
+// Linear release obligation for an acquisition of key k with token t. Abstract: only tryLock creates one.
+predicate Lease(k: Key, t: Int)
+
+// ---- L2 atomic specs of KeyLock ----
+method tryLock(k: Key) returns (t: Int)
+  ensures t != NULL ==> Lease(k, t)
+
+method unLock(k: Key, t: Int) returns (released: Bool)
+  requires t != NULL && Lease(k, t)
+
+// ---- Environment: user callbacks and coroutine primitives (trusted, nondeterministic) ----
+// supplier: returns a value or throws
+method callable() returns (o: Int)
+  ensures o == OK || o == EXC || (!ERRORS_ARE_FATAL && o == ERR)
+
+// getCacheFunction wrapped by executeGetCacheFunction: hit, miss, or throws
+method getCache() returns (o: Int, hit: Bool)
+  ensures o == OK || o == EXC || (!ERRORS_ARE_FATAL && o == ERR)
+
+// setCacheFunction: returns or throws
+method setCache(data: Ref) returns (o: Int)
+  requires acc(data.value, 1/2)
+  ensures acc(data.value, 1/2)
+  ensures o == OK || o == EXC || (!ERRORS_ARE_FATAL && o == ERR)
+
+// scope.launch(start = CoroutineStart.ATOMIC): either the block will run (dispatched), or dispatch()
+// throws to the caller and the block never runs.
+method dispatch() returns (dispatched: Bool)
+  ensures DISPATCH_NEVER_THROWS ==> dispatched
+
+// ReqShieldData
+field value: Int
+
+// ---- ReqShield ----
+
+// executeCallable: try { ensureActive(); callable() } catch (e: Exception) { unLock if token; rethrow }
+method executeCallable(k: Key, t: Int) returns (o: Int)
+  requires t != NULL ==> Lease(k, t)
+  ensures o == OK && t != NULL ==> Lease(k, t)   // success: the caller still owns the lock
+  ensures o != OK && t != NULL ==> RELEASED(k, t) // failure: released here
+{
+  o := callable() // ensureActive() is one more source of EXC, covered by callable()'s outcomes
+  if (o == EXC) {
+    if (t != NULL) {
+      var r: Bool
+      r := unLock(k, t) // withContext(NonCancellable) { keyLock.unLock(...) }
+    }
+  }
+  // o == ERR: catch (e: Exception) does not run, so the lock is not released.
+}
+
+// executeSetCacheFunction: try { ensureActive(); setFunction(...) } ... finally { unLock if token }
+method executeSetCacheFunction(k: Key, t: Int, data: Ref) returns (o: Int)
+  requires t != NULL ==> Lease(k, t)
+  requires acc(data.value, 1/2)
+  ensures acc(data.value, 1/2)
+  ensures t != NULL ==> RELEASED(k, t) // finally always releases
+{
+  o := setCache(data)
+  if (t != NULL) {
+    var r: Bool
+    r := unLock(k, t)
+  }
+}
+
+// Body of the background coroutine launched by createReqShieldData.
+method bgCreateWrite(k: Key, t: Int, data: Ref)
+  requires t != NULL ==> Lease(k, t)
+  requires acc(data.value, 1/2)
+  ensures t != NULL ==> RELEASED(k, t)
+{
+  var o: Int
+  o := executeSetCacheFunction(k, t, data) // catch (Exception) { log }: no lock left either way
+}
+
+// createReqShieldData: the supplier runs on the caller; the cache write runs in a launched coroutine
+// that takes over the obligation. The returned ReqShieldData is shared with that coroutine.
+method createReqShieldData(k: Key, t: Int) returns (o: Int, data: Ref)
+  requires t != NULL ==> Lease(k, t)
+  ensures t != NULL ==> RELEASED(k, t)
+  ensures o == OK ==> acc(data.value, 1/2) // the caller may read the result, not write it
+{
+  o := executeCallable(k, t)
+  if (o == OK) {
+    data := new(value) // buildReqShieldData(...)
+    var d: Bool
+    d := dispatch()
+    if (d) {
+      // Hand the obligation and half of the data permission to the coroutine.
+      bgCreateWrite(k, t, data)
+    } else {
+      o := EXC // launch threw: the block never runs and still owned the lock
+    }
+  }
+}
+
+// handleLockForCacheCreation (lock acquired path; ONLY_UPDATE_CACHE and lock-failure paths hold no token).
+method handleLockForCacheCreation(k: Key) returns (o: Int, data: Ref)
+{
+  var t: Int
+  t := tryLock(k)
+  if (t != NULL) {
+    var cacheCreationRequired: Bool := false
+    var hit: Bool
+    o, hit := getCache()
+    if (o == OK && !hit) {
+      cacheCreationRequired := true
+    }
+    // finally (runs for any Throwable): a hit, a read failure, or a cancellation releases;
+    // creation owns the token on a miss.
+    if (!cacheCreationRequired) {
+      var r: Bool
+      r := unLock(k, t)
+    }
+    if (cacheCreationRequired) {
+      o, data := createReqShieldData(k, t)
+    }
+  }
+  assert t != NULL ==> NO_LEASE(k, t) // leak check at the method exit
+}
+
+// Body of the background coroutine launched by updateReqShieldData.
+method bgUpdate(k: Key, t: Int)
+  requires t != NULL ==> Lease(k, t)
+  ensures t != NULL ==> RELEASED(k, t)
+{
+  var o: Int
+  o := executeCallable(k, t)
+  if (o == OK) {
+    var data: Ref := new(value)
+    o := executeSetCacheFunction(k, t, data)
+  }
+  // catch (Exception) { log }: an exception from executeCallable has already released the lock.
+}
+
+// updateReqShieldData (lock acquired path).
+method updateReqShieldData(k: Key) returns (o: Int)
+{
+  var t: Int
+  t := tryLock(k)
+  o := OK
+  if (t != NULL) {
+    var d: Bool
+    d := dispatch()
+    if (d) {
+      bgUpdate(k, t)
+    } else {
+      o := EXC // launch threw
+    }
+  }
+  assert t != NULL ==> NO_LEASE(k, t) // leak check at the method exit
+}
