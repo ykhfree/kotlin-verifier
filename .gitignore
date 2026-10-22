@@ -2,3 +2,5 @@ spike/diag/
 *.out
 spike/keylocallock/mutants/
 spike/keylocallock/mutants.list
+spike/reqshield/mutants/
+spike/reqshield/mutants.list
