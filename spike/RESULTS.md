@@ -14,6 +14,18 @@ Target: req-shield `core-kotlin-coroutine` `KeyLocalLock.kt` and `ReqShield.kt` 
 | L3 release obligations (added after review) | PASS (3/3 mutants rejected, 2/2 assumption toggles fail as expected) | `reqshield/l3_client.vpr`, `reqshield/mutants.report` |
 | E5 effort (≤ 2 × estimate) | PASS, but not comparable (see below) | |
 
+Not tested by this spike:
+
+| Item | Status |
+|---|---|
+| Frontend (K2 FIR → verification IR → Viper, SnaKt reuse) | Not touched. All Viper code here is hand-written. The Phase 1 estimate has no empirical input yet. |
+| Backend discrimination | The spike shows Viper is sufficient for both layers. It does not show that Dafny or Ivy would fail: the L1 proof uses nothing a transition-system backend lacks. Only the L3 case uses permission logic (abstract `Lease` predicates, fractional permissions). |
+| Link from L3 `Lease` to the L1 ghost record | Not modeled. |
+| Trusted models against the real JDK (Lincheck differential tests) | Not run. |
+
+The runtime directories of E3 (`/private/tmp/claude-501/kv-e3`) were session-local; everything needed to re-check E3
+is copied to `e3/`.
+
 ## E1: encoding and performance
 
 Per-method times from one Silicon run (`TIMES=1 ./silicon.sh keylocallock/baseline.vpr`):
@@ -71,10 +83,21 @@ Not modeled: the link between `Lease(k, t)` and the L1 ghost record `tok(t).gHel
 In addition to the list in `PLAN.md`:
 
 7. `init` allocates the ghost token records by `inhale` (one record per `Int`, none issued). This is ghost allocation,
-   not program behavior.
+   not program behavior. Because the inhaled state is trivially consistent, `init` is a weak vacuity guard for the
+   ghost layer. The evidence against vacuity rests on `probe` (actions reachable and not inert) and on the rejected
+   mutants (SB1 to SB6, E4).
 8. The L3 model treats `unLock` as non-throwing and `tryLock` as non-throwing (F4b and F4c are not modeled).
 
 ## E3: LLM-written invariants
+
+Read this result with its limits first:
+1. The Kotlin source states the core invariant in a comment (`KeyLocalLock.kt:63`: "every entry in the map is held"),
+   and run2 cited it. The skeleton also says "tokens issued by nextToken() are >= 1" next to `NULL`.
+   Code without such comments is likely harder.
+2. The LLM wrote only the inductive conjuncts. The ghost instrumentation (records, updates, properties, encoding choice)
+   was written by the main session, and that was where the hard problems were: the map-based ghost encoding that did not
+   finish, and the missing `0 <= seq` conjunct in the first baseline.
+3. Five runs on one 234-line module are a small sample.
 
 Setup: five fresh-context subagents (the session's model), each in its own directory with `TASK.md`, the skeleton
 (`MI_INV` = `true`), `verify.sh` (hole check + Silicon, budget 20 calls), and a copy of `KeyLocalLock.kt`.
@@ -98,15 +121,6 @@ Result: PASS, 5 of 5. Checks by the main session:
 All five runs found the same structure: the counter bound (`seq >= 0`, issued tokens in `1..seq`), an entry → token record
 conjunct (INV-E plus the ghost link), and a token → entry conjunct. Four runs omitted the explicit injectivity conjunct,
 because it follows from the entry → token `gKey` link; run5 kept it.
-
-Read this result with three limits:
-1. The Kotlin source states the core invariant in a comment (`KeyLocalLock.kt:63`: "every entry in the map is held"),
-   and run2 cited it. The skeleton also says "tokens issued by nextToken() are >= 1" next to `NULL`. Code without such
-   comments is likely harder.
-2. The LLM wrote only the inductive conjuncts. The ghost instrumentation (records, updates, properties, encoding choice)
-   was written by the main session, and that was where the hard problems were: the map-based ghost encoding that did not
-   finish, and the missing `0 <= seq` conjunct in the first baseline.
-3. Five runs on one 234-line module are a small sample.
 
 ## E5: effort
 
