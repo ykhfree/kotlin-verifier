@@ -82,7 +82,7 @@ define MI_INV(S) (
 define MI(S) (MI_PERMS(S) && P2(S) && MI_INV(S))
 
 // Ghost history is append-only: records of issued tokens never change, and an ended acquisition stays ended.
-define HIST(S) (
+define HIST (
   forall qt: Int :: { tok(qt).gIssued } old(tok(qt).gIssued) ==>
     tok(qt).gIssued && tok(qt).gKey == old(tok(qt).gKey) &&
     tok(qt).gBacked == old(tok(qt).gBacked) && tok(qt).gLease == old(tok(qt).gLease) &&
@@ -126,7 +126,7 @@ method init() returns (S: Ref)
 method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) returns (res: Int)
   requires MI(S)
   requires rej ==> limit != 0 // trusted contract of rejectsNewEntry
-  ensures MI(S) && HIST(S)
+  ensures MI(S) && HIST
   // P1a: every acquisition gets a token that was never issued before, recorded for this key.
   ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued &&
     tok(res).gKey == k && tok(res).gHeld && tok(res).gLease == now + timeout
@@ -190,7 +190,7 @@ method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) re
 method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)
   requires MI(S)
   requires t != NULL
-  ensures MI(S) && HIST(S)
+  ensures MI(S) && HIST
   // P1: a successful release presents the current owner token of a held backed acquisition, and ends it.
   ensures res ==> old(has(S, k)) && old(S.m[k].token) == t && old(tok(t).gIssued) &&
     old(tok(t).gKey) == k && old(tok(t).gBacked) && old(tok(t).gHeld) && !tok(t).gHeld && !has(S, k)
@@ -209,7 +209,7 @@ method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)
       e.permits := e.permits + 1 // semaphore.release()
       res := true
       S.m := S.m[k := null] // return@compute null: drop the entry
-      tok(t).gHeld := false // ghost: the acquisition ends by release
+      tok(e.token).gHeld := false // ghost: the entry's acquisition ends by release
     }
   }
 }
@@ -218,7 +218,7 @@ method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)
 //   now = System.currentTimeMillis(), read once per sweep pass before the key loop
 method sweep(S: Ref, k: Key, now: Int)
   requires MI(S)
-  ensures MI(S) && HIST(S)
+  ensures MI(S) && HIST
   ensures P3A_EXPIRY(now)
 {
   if (has(S, k)) {

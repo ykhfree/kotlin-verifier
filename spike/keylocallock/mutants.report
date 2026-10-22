@@ -1,0 +1,19 @@
+== SB1_no_token_check expect=fail -> DETECTED
+  [0] Postcondition of unLock might not hold. Assertion res ==> old((k in domain(S.m)) && S.m[k] != null) && (old(S.m[k].token) == t && (old(tok(t).gIssued) && (old(tok(t).gKey) == k && (old(tok(t).gBacked) && (old(tok(t).gHeld) &
+== SB2_toctou_unlock expect=fail -> DETECTED
+  [0] Postcondition of unLock might not hold. Assertion res ==> old((k in domain(S.m)) && S.m[k] != null) && (old(S.m[k].token) == t && (old(tok(t).gIssued) && (old(tok(t).gKey) == k && (old(tok(t).gBacked) && (old(tok(t).gHeld) &
+  [1] Postcondition of unLock might not hold. Assertion old((k in domain(S.m)) && S.m[k] != null) && old(S.m[k].token) == t ==> res might not hold. (SB2_toctou_unlock.vpr@201.11--201.59)
+== SB3_no_expiry_refresh expect=fail -> DETECTED
+  [0] Postcondition of tryLock might not hold. Assertion (forall qk$4: Key :: { S.m[qk$4] } (qk$4 in domain(S.m)) && S.m[qk$4] != null ==> tok(S.m[qk$4].token).gIssued && (tok(S.m[qk$4].token).gKey == qk$4 && (tok(S.m[qk$4].token)
+== SB4_no_token_increment expect=fail -> DETECTED
+  [0] Postcondition of tryLock might not hold. Assertion (forall qk$4: Key :: { S.m[qk$4] } (qk$4 in domain(S.m)) && S.m[qk$4] != null ==> tok(S.m[qk$4].token).gIssued && (tok(S.m[qk$4].token).gKey == qk$4 && (tok(S.m[qk$4].token)
+  [1] Postcondition of tryLock might not hold. Assertion (forall qt$5: Int :: { tok(qt$5).gIssued } old(tok(qt$5).gIssued) ==> tok(qt$5).gIssued && (tok(qt$5).gKey == old(tok(qt$5).gKey) && (tok(qt$5).gBacked == old(tok(qt$5).gBac
+  [2] Postcondition of tryLock might not hold. Assertion res != -1 ==> !old(tok(res).gIssued) && (tok(res).gIssued && (tok(res).gKey == k && (tok(res).gHeld && tok(res).gLease == now + timeout))) might not hold. (SB4_no_token_incr
+== SB6_acquire_without_permit expect=fail -> DETECTED
+  [0] Postcondition of tryLock might not hold. Assertion (forall qk$3: Key :: { S.m[qk$3] } (qk$3 in domain(S.m)) && S.m[qk$3] != null ==> S.m[qk$3].permits == 0 && (S.m[qk$3].isHeld && S.m[qk$3].token != -1)) might not hold. (SB6
+  [1] Postcondition of tryLock might not hold. Assertion (forall qt$4: Int :: { tok(qt$4).gHeld } tok(qt$4).gIssued && (tok(qt$4).gBacked && tok(qt$4).gHeld) ==> (tok(qt$4).gKey in domain(S.m)) && S.m[tok(qt$4).gKey] != null && S.
+== SB5_no_cas_trylock_expiry expect=pass -> ACCEPTED
+== SB5b_no_cas_sweep expect=pass -> ACCEPTED
+== E4_split_trylock expect=fail -> DETECTED
+  [0] Postcondition of tryLock might not hold. Assertion (forall qt$4: Int :: { tok(qt$4).gHeld } tok(qt$4).gIssued && (tok(qt$4).gBacked && tok(qt$4).gHeld) ==> (tok(qt$4).gKey in domain(S.m)) && S.m[tok(qt$4).gKey] != null && S.
+  [1] Postcondition of tryLock might not hold. Assertion res != -1 && !tok(res).gBacked ==> !old((k in domain(S.m)) && S.m[k] != null) && (rej && limit != 0) might not hold. (E4_split_trylock.vpr@137.11--137.84)
