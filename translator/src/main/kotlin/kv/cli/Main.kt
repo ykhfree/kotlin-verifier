@@ -2,10 +2,13 @@ package kv.cli
 
 import kv.frontend.ComputeSite
 import kv.frontend.Frontend
+import kv.emit.Emitted
+import kv.emit.emitViper
 import kv.frontend.ResolveOutcome
 import kv.kvir.checkWellFormed
 import kv.kvir.incomplete
 import kv.kvir.printModule
+import kv.sidecar.SidecarException
 import java.io.File
 import java.io.PrintStream
 import kotlin.system.exitProcess
@@ -17,6 +20,9 @@ private const val USAGE = """usage:
       Checks the sidecar, compiles its source files (relative to DIR) and binds its Kotlin names to FIR symbols.
   kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
       As resolve, then prints the module in KVIR and checks W1-W14. Exit 1 if a rule is broken.
+  kv emit --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] SIDECAR.kv
+      As lower, then writes the Viper program (to stdout without --out). With --out, also writes the position
+      table to FILE.vpr.positions. Exit 1 if a rule is broken or the sidecar cannot be emitted.
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
@@ -42,6 +48,7 @@ fun runCli(
         "discover" -> discover(options, out, err)
         "resolve" -> resolve(options, out, err)
         "lower" -> lower(options, out, err)
+        "emit" -> emit(options, out, err)
         else -> {
             err.println(USAGE)
             2
@@ -122,6 +129,47 @@ private fun lower(
     return if (violations.isEmpty()) 0 else 1
 }
 
+/** Lowers and checks W1-W14, then emits Viper; null after reporting an error, with the exit code. */
+private fun emitted(
+    command: String,
+    options: Options,
+    err: PrintStream,
+): Pair<Emitted?, Int> {
+    val (outcome, code) = resolved(command, options, err)
+    val module = outcome?.module ?: return null to code
+    val violations = checkWellFormed(module)
+    if (violations.isNotEmpty()) {
+        violations.forEach { err.println("kv: $it") }
+        return null to 1
+    }
+    return try {
+        emitViper(module, outcome.sidecar!!) to 0
+    } catch (e: SidecarException) {
+        e.errors.forEach { err.println(it) }
+        null to 1
+    }
+}
+
+private fun emit(
+    options: Options,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    val (emitted, code) = emitted("emit", options, err)
+    emitted ?: return code
+    val file = options.out
+    if (file == null) {
+        out.print(emitted.text)
+    } else {
+        file.absoluteFile.parentFile.mkdirs()
+        file.writeText(emitted.text)
+        File(file.path + ".positions").writeText(emitted.positionTable())
+        out.println("kv: wrote ${file.path} (${emitted.methods.size} methods) and ${file.path}.positions")
+    }
+    emitted.warnings.forEach { err.println("kv: warning: $it") }
+    return 0
+}
+
 private fun format(site: ComputeSite): String {
     val lambda = site.lambda?.let { "${it.line}:${it.col}" } ?: "none"
     return "${site.pos} ${site.receiver ?: "?"}.compute class=${site.inClass ?: "-"} fun=${site.inFunction ?: "-"} lambda=$lambda"
@@ -136,6 +184,7 @@ private class Options(
     val classpath: List<File>,
     val kotlincArgs: List<String>,
     val files: List<File>,
+    val out: File?,
 ) {
     companion object {
         fun parse(args: List<String>): Options {
@@ -143,16 +192,18 @@ private class Options(
             var classpath = emptyList<File>()
             val kotlincArgs = mutableListOf<String>()
             val files = mutableListOf<File>()
+            var out: File? = null
             val it = args.iterator()
             while (it.hasNext()) {
                 when (val arg = it.next()) {
                     "--root" -> root = File(value(it, arg))
                     "--classpath" -> classpath = value(it, arg).split(File.pathSeparator).filter { p -> p.isNotEmpty() }.map(::File)
                     "--kotlinc" -> kotlincArgs += value(it, arg).split(Regex("\\s+")).filter { a -> a.isNotEmpty() }
+                    "--out" -> out = File(value(it, arg))
                     else -> if (arg.startsWith("--")) throw UsageError("unknown option $arg") else files += File(arg)
                 }
             }
-            return Options(root, classpath, kotlincArgs, files)
+            return Options(root, classpath, kotlincArgs, files, out)
         }
 
         private fun value(

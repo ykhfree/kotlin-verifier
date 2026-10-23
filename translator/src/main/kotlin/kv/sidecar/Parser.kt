@@ -142,14 +142,15 @@ private class SidecarParser(
         return text.substring(start, i++)
     }
 
-    private fun tripleString(): String {
+    /** The text between triple quotes, with the position of its first character. */
+    private fun tripleString(): Pair<String, SPos> {
         skipWs()
         if (!at("\"\"\"")) fail(i, "expected a \"\"\" string")
         val start = i + 3
         val end = text.indexOf("\"\"\"", start)
         if (end < 0) fail(i, "unterminated \"\"\" string")
         i = end + 3
-        return text.substring(start, end)
+        return text.substring(start, end) to posAt(start)
     }
 
     /**
@@ -306,7 +307,8 @@ private class SidecarParser(
             "hole" -> {
                 val n = name("MI_INV")
                 if (n.text != "MI_INV") fail(i - n.text.length, "the only hole in v0 is MI_INV")
-                HoleDecl(n, tripleString(), pos)
+                val (body, bodyPos) = tripleString()
+                HoleDecl(n, body, pos, bodyPos)
             }
             "probe" -> probe(pos, indent)
             else -> fail(start, "unknown declaration '$kw'")

@@ -147,6 +147,8 @@ class ParserTest {
         // The `ghost record` after the clauses is a declaration, not a ghost clause.
         assertEquals("tok", s.ghosts.single().name.text)
         assertEquals("\n  a && b\n", s.holes.single().text)
+        // The hole body starts right after the opening triple quote, so hole conjuncts map back to sidecar lines.
+        assertEquals(SPos("t.kv", 11, 16), s.holes.single().textPos)
         val probe = s.probes.single()
         assertEquals("now > 0", probe.requires!!.text)
         val call = probe.steps[0] as ProbeCall

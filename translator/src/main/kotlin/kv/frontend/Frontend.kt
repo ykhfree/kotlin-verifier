@@ -86,6 +86,8 @@ data class ResolveOutcome(
     val resolution: Resolution?,
     /** The module in KVIR, set with the resolution. */
     val module: Module?,
+    /** The loaded sidecar, includes resolved; null if it did not parse. */
+    val sidecar: Sidecar? = null,
 )
 
 /** Runs the K2 compiler in-process with the kv FIR plugin. */
@@ -147,13 +149,13 @@ object Frontend {
                 return ResolveOutcome(e.errors, null, null, null)
             }
         val errors = checkSidecar(sidecar)
-        if (errors.isNotEmpty()) return ResolveOutcome(errors, null, null, null)
+        if (errors.isNotEmpty()) return ResolveOutcome(errors, null, null, null, sidecar)
         val missing = sidecar.sources.filter { !File(root, it.path).isFile }
-        if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file ${File(root, it.path)}") }, null, null, null)
+        if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file ${File(root, it.path)}") }, null, null, null, sidecar)
         val result = run(sidecar.sources.map { File(root, it.path) }, classpath, kotlincArgs, sidecar)
-        if (!result.compiled) return ResolveOutcome(emptyList(), result.messages, null, null)
+        if (!result.compiled) return ResolveOutcome(emptyList(), result.messages, null, null, sidecar)
         val ok = result.sidecarErrors.isEmpty()
-        return ResolveOutcome(result.sidecarErrors, null, result.resolution.takeIf { ok }, result.module.takeIf { ok })
+        return ResolveOutcome(result.sidecarErrors, null, result.resolution.takeIf { ok }, result.module.takeIf { ok }, sidecar)
     }
 
     /**
