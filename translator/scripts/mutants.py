@@ -27,10 +27,11 @@ import time
 VARIANT_DIRS = {
     "coroutine": "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine",
     "core": "core/src/main/kotlin/com/linecorp/cse/reqshield",
+    "reactor": "core-reactor/src/main/kotlin/com/linecorp/cse/reqshield/reactor",
 }
 
-# Kotlin edits, as written for the coroutine variant (DESIGN-v0.md 6). The core variant has the same strings,
-# except where CORE_EDITS overrides a mutant. A mutant with no edits is the original.
+# Kotlin edits, as written for the coroutine variant (DESIGN-v0.md 6). The other variants use the same strings,
+# except where VARIANT_EDITS overrides a mutant. A mutant with no edits is the original.
 EDITS = {
     "original": [],
     # 213:17: unLock no longer checks the token.
@@ -76,7 +77,41 @@ EDITS = {
          "                }\n\n                // Existing entry: try to acquire semaphore\n"),
     ],
 }
-CORE_EDITS = {"SB4": [("tokenCounter.incrementAndGet()", "tokenCounter.get()")]}
+# The variants' own strings, where their text differs from the coroutine text. The reactor bodies of tryLock and
+# unLock run inside `Mono.fromCallable { ... }`, so they are indented 4 more spaces; its tryLock releases the
+# semaphore before it clears the token, and its unLock logs between the release block and `existing`.
+VARIANT_EDITS = {
+    "core": {"SB4": [("tokenCounter.incrementAndGet()", "tokenCounter.get()")]},
+    "reactor": {
+        "SB2": [
+            ("            val released = AtomicBoolean(false)\n",
+             "            val released = AtomicBoolean(false)\n            val sawMatch = lockMap[completeKey]?.token == token\n"),
+            ("if (existing.token == token && existing.isHeld", "if (sawMatch && existing.isHeld"),
+        ],
+        "SB3": [("                        existing.expiresAt = now + lockTimeoutMillis\n", "")],
+        "E4": [
+            ("            val acquiredToken = AtomicReference<String?>(null)\n",
+             "            val acquiredToken = AtomicReference<String?>(null)\n            val sawEntry = lockMap.containsKey(completeKey)\n"),
+            ("                if (existing != null) {\n", "                if (sawEntry && existing != null) {\n"),
+        ],
+        "R1": [
+            ("                    return@compute null\n                }\n\n                log.debug(",
+             "                    existing.token = null\n                    return@compute null\n                }\n\n                log.debug("),
+        ],
+        "R2": [
+            ("                        existing.token = null\n                    }\n\n                    // Existing entry: try to acquire semaphore\n",
+             "                        existing.token = null\n"
+             "                        val freshToken = nextToken()\n"
+             "                        val fresh = LockInfo(Semaphore(1), now + lockTimeoutMillis)\n"
+             "                        fresh.semaphore.tryAcquire()\n"
+             "                        fresh.isHeld.set(true)\n"
+             "                        fresh.token = freshToken\n"
+             "                        acquiredToken.set(freshToken)\n"
+             "                        return@compute fresh\n"
+             "                    }\n\n                    // Existing entry: try to acquire semaphore\n"),
+        ],
+    },
+}
 
 # `kv verify` exit codes (DESIGN-v0.md 8.3, Q7).
 VERDICTS = {0: "PROVEN", 1: "FAILED", 3: "INCOMPLETE", 4: "ERROR"}
@@ -91,9 +126,7 @@ class ScriptError(Exception):
 
 
 def edits_for(variant, mutant):
-    if variant == "core" and mutant in CORE_EDITS:
-        return CORE_EDITS[mutant]
-    return EDITS[mutant]
+    return VARIANT_EDITS.get(variant, {}).get(mutant, EDITS[mutant])
 
 
 def make_root(req_shield, out, variant, mutant):
