@@ -171,6 +171,7 @@ class MutantScriptTest {
         )) {
             for (name in listOf("KeyLock.kt", "KeyLocalLock.kt")) File(ReqShield.dir, "$variant/$name").copyTo(File(fake, "$variant/$name"))
         }
+        File(ReqShield.dir, "support/src/main/kotlin").copyRecursively(File(fake, "support/src/main/kotlin"))
         val kt = File(fake, "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt")
         kt.writeText(kt.readText().replace("existing.token == token && ", ""))
         val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to sb1Failed, "reactor-SB1" to sb1Failed), fake)

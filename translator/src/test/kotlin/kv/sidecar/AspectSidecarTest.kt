@@ -123,7 +123,7 @@ class AspectSidecarTest {
     fun `reports a fresh trusted function without a reviewed note`() {
         copySpecs()
         val file = File(dir, "aspect.webflux.kv")
-        file.writeText(file.readText().replace(Regex("\n  reviewed \"[^\"]*\""), ""))
+        file.writeText(file.readText().replace(Regex("\n  reviewed \"[^\"]*\"( sha256 \"[0-9a-f]*\")?"), ""))
         assertSingleError(resolve("webflux").errors, "unreviewed", "aspect.webflux.kv", at("aspect.webflux.kv", "trusted fun"))
     }
 

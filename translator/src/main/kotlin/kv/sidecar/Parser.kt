@@ -66,6 +66,16 @@ private class SidecarParser(
         while (!eof() && (text[i] == ' ' || text[i] == '\t')) i++
     }
 
+    /** The index in [text] of the first character of [e]'s text after its last character: its raw end. */
+    private fun endOf(e: Vexpr): Int = lineStarts[e.pos.line - 1] + e.pos.col - 1 + e.text.length
+
+    /** `reviewed "<note>" [sha256 "<hex>"]` after the keyword: the note, the fingerprint (B6) and the keyword position. */
+    private fun review(keyword: Int): Triple<String, String?, SPos> {
+        val note = string()
+        val sha = if (peekWord() == "sha256") name().let { string() } else null
+        return Triple(note, sha, posAt(keyword))
+    }
+
     /** Column of the first non-space character on the line that holds [index], 0-based. */
     private fun indentOf(index: Int): Int {
         val start = lineStarts[lineStarts.indexOfLast { it <= index }]
@@ -360,6 +370,8 @@ private class SidecarParser(
         var reviewed: String? = null
         var fresh: Name? = null
         var throws = false
+        var sha: String? = null
+        var reviewPos: SPos? = null
         while (true) {
             val word = peekWord() ?: break
             if (word !in setOf("returns", "ghost", "ensures", "effects", "reviewed", "throws")) break
@@ -390,10 +402,14 @@ private class SidecarParser(
                     keyword("none")
                     effectsNone = true
                 }
-                "reviewed" -> reviewed = string()
+                "reviewed" -> review(clauseStart).let { (note, hex, at) ->
+                    reviewed = note
+                    sha = hex
+                    reviewPos = at
+                }
             }
         }
-        return TrustedDecl(fn, params, clock, returns, ghosts, ensures, effectsNone, reviewed, pos, fresh, throws)
+        return TrustedDecl(fn, params, clock, returns, ghosts, ensures, effectsNone, reviewed, pos, fresh, throws, sha, reviewPos)
     }
 
     private fun operation(pos: SPos): OperationDecl {
@@ -448,13 +464,14 @@ private class SidecarParser(
                         fields += f to vexpr(indent, stopAtSemicolon = true)
                     } while (accept(";"))
                     expect("}")
-                    items += IssueItem(result, fields, null, itemPos)
+                    items += IssueItem(result, fields, null, itemPos, unit = text.substring(start, i))
                 }
                 "ends_only_if", "unbacked_only_if" -> {
                     val id = name("a property ID")
                     expect(":")
                     val kind = if (kw == "ends_only_if") Allowance.ENDS_ONLY_IF else Allowance.UNBACKED_ONLY_IF
-                    items += AllowanceItem(kind, id, vexpr(indent), null, itemPos)
+                    val e = vexpr(indent)
+                    items += AllowanceItem(kind, id, e, null, itemPos, unit = text.substring(start, endOf(e)))
                 }
                 "ensures" -> {
                     val id = name("a property ID")
@@ -463,11 +480,11 @@ private class SidecarParser(
                 }
                 // U7: `reviewed` marks the issue rule or allowance clause right before it as read by a person.
                 "reviewed" -> {
-                    val note = string()
+                    val (note, sha, at) = review(start)
                     val reviewed =
                         when (val last = items.lastOrNull()) {
-                            is IssueItem -> if (last.reviewed == null) last.copy(reviewed = note) else fail(start, "the issue rule is already reviewed")
-                            is AllowanceItem -> if (last.reviewed == null) last.copy(reviewed = note) else fail(start, "${last.id.text} is already reviewed")
+                            is IssueItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "the issue rule is already reviewed")
+                            is AllowanceItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "${last.id.text} is already reviewed")
                             else -> fail(start, "'reviewed' must follow an issue rule or an allowance clause")
                         }
                     items[items.lastIndex] = reviewed

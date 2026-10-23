@@ -80,6 +80,7 @@ class GhostBinderTest {
     fun `an issue value outside the v0 vocabulary is a sidecar error at its position`() {
         val ws = Workspace(dir)
         ws.editSpec("keylocallock.common.kv", "gLease = now + timeout }", "gLease = now * timeout }")
+        ws.rereview("keylocallock.common.kv")
         val (m, s) = ws.lower("coroutine")
         val e = assertFailsWith<SidecarException> { bindGhosts(m, s) }.errors.single()
         assertEquals("issue-value", e.code)
@@ -90,6 +91,7 @@ class GhostBinderTest {
     fun `carried in an issue value must name the action key`() {
         val ws = Workspace(dir)
         ws.editSpec("keylocallock.common.kv", "gBacked = carried(S, k, res)", "gBacked = carried(S, res, res)")
+        ws.rereview("keylocallock.common.kv")
         val (m, s) = ws.lower("coroutine")
         val e = assertFailsWith<SidecarException> { bindGhosts(m, s) }.errors.single()
         assertEquals("issue-value", e.code)

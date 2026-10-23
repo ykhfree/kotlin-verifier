@@ -215,6 +215,31 @@ private class SidecarChecker(
         val issues = op.items.filterIsInstance<IssueItem>()
         issues.drop(1).forEach { err(it.pos, "duplicate-decl", "operation ${op.name.text} has a second issue rule") }
         issues.firstOrNull()?.let { issue(op, it, results.firstOrNull()) }
+        op.items.filterIsInstance<ReviewedItem>().forEach { fingerprint(op, it) }
+    }
+
+    /**
+     * B6 (DESIGN-v0.md 8.3 "reviewed 지문"): a reviewed clause's note records the fingerprint of the clause text. A
+     * note without one is an error, because the policy is mandatory; a different one means the text changed after
+     * the review (`stale-review`). Both messages carry the fingerprint of the text as it is now.
+     */
+    private fun fingerprint(
+        op: OperationDecl,
+        item: ReviewedItem,
+    ) {
+        if (item.reviewed == null) return // reported as unreviewed
+        val what =
+            when (item) {
+                is IssueItem -> "the issue rule of ${op.name.text}"
+                is AllowanceItem -> "${item.kind.keyword} ${item.id.text} of ${op.name.text}"
+            }
+        val now = reviewFingerprint(item.unit)
+        val at = item.reviewPos ?: item.pos
+        when (item.sha256) {
+            null -> err(at, "missing-fingerprint", "the reviewed note of $what has no fingerprint: write sha256 \"$now\" after it once a person has read the clause")
+            now -> Unit
+            else -> err(at, "stale-review", "$what changed after its review: the note records sha256 \"${item.sha256}\", the clause text now has sha256 \"$now\"; a person must review it again")
+        }
     }
 
     /**

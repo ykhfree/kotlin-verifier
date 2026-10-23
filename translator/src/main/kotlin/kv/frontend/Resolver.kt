@@ -13,6 +13,7 @@ import kv.sidecar.SidecarError
 import kv.sidecar.StateDecl
 import kv.sidecar.StateKind
 import kv.sidecar.TrustedDecl
+import kv.sidecar.reviewFingerprint
 import org.jetbrains.kotlin.descriptors.ClassKind
 import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.fir.FirElement
@@ -106,6 +107,8 @@ class SidecarResolver(
     private val session: FirSession,
     private val computes: List<FoundAction>,
     private val module: FirRegularClass,
+    /** The req-shield checkout, where the source of a library trusted fun is found (B6); null if unknown. */
+    private val reviewRoot: java.io.File? = null,
 ) {
     private val errors = mutableListOf<SidecarError>()
     private val bindings = mutableListOf<Binding>()
@@ -348,9 +351,50 @@ class SidecarResolver(
                 trusted[t.shortName] = match.single()
                 bind("trusted ${t.shortName}", t.pos, match.single())
                 freshType(t, match.single())
+                reviewed(t, match.single())
             }
             candidates.isEmpty() -> err(t.fn.pos, "unresolved", "no function '${t.fn.text}'")
             else -> err(t.fn.pos, "unresolved", "no '${t.fn.text}' takes ($wanted); candidates take ${candidates.map(::signature)}")
+        }
+    }
+
+    /**
+     * B6 (DESIGN-v0.md 8.3 "reviewed 지문"): the `reviewed` note of [t] records the fingerprint of the Kotlin
+     * declaration of [fn] from `fun` to its end. A function of the compiled sources is read from its file; a library
+     * function from its source under [reviewRoot] ([ReviewedSource.library]). A missing fingerprint, a stale one
+     * (`stale-review`) and a source that cannot be found are errors; the messages carry the fingerprint of the text now.
+     */
+    private fun reviewed(
+        t: TrustedDecl,
+        fn: FirNamedFunctionSymbol,
+    ) {
+        if (t.reviewed == null) return // reported as unreviewed
+        val at = t.reviewPos ?: t.pos
+        val id = fn.callableId
+        val classes = id.className?.pathSegments()?.map { it.asString() }.orEmpty()
+        val source = fn.source
+        val found =
+            if (source != null) {
+                val path = runCatching { session.firProvider.getFirCallableContainerFile(fn) }.getOrNull()?.sourceFile?.path
+                val all = path?.let { ReviewedSource.declarations(java.io.File(it)) }.orEmpty()
+                listOfNotNull(all.find { it.start == source.startOffset })
+            } else if (reviewRoot != null) {
+                ReviewedSource.library(reviewRoot, id.packageName.asString(), classes, id.callableName.asString(), fn.valueParameterSymbols.size)
+            } else {
+                return err(at, "review-source", "trusted fun ${t.shortName} is a library function, and no req-shield root is given to find its source")
+            }
+        val decl =
+            found.singleOrNull() ?: return err(
+                at,
+                "review-source",
+                "trusted fun ${t.shortName}: ${if (found.isEmpty()) "no" else "${found.size}"} source declaration(s) of ${id.asSingleFqName()} with ${fn.valueParameterSymbols.size} parameter(s)" +
+                    (reviewRoot?.let { " under $it" } ?: ""),
+            )
+        val now = reviewFingerprint(decl.reviewedText)
+        when (t.sha256) {
+            null -> err(at, "missing-fingerprint", "the reviewed note of trusted fun ${t.shortName} has no fingerprint: write sha256 \"$now\" (${decl.where}) after it once a person has read the function")
+            now -> Unit
+            else -> err(at, "stale-review", "trusted fun ${t.shortName} changed after its review: the note records sha256 \"${t.sha256}\", the declaration at ${decl.where} now has sha256 \"$now\"; a person must review it again")
         }
     }
 

@@ -43,7 +43,7 @@ class SidecarResolveTest {
     ) {
         val f = File(dir, file)
         val text = f.readText()
-        val pattern = Regex(Regex.escape(clause) + "\n *reviewed \"[^\"]*\"\n")
+        val pattern = Regex(Regex.escape(clause) + "\n *reviewed \"[^\"]*\"( sha256 \"[0-9a-f]*\")?\n")
         val matches = pattern.findAll(text).count()
         check(matches == 1) { "'$clause' followed by a reviewed note occurs $matches times in $file" }
         f.writeText(text.replace(pattern, clause + "\n"))
@@ -218,6 +218,7 @@ class SidecarResolveTest {
     fun `reports an issue value that reads module state (R1)`() {
         copySpecs()
         edit("keylocallock.common.kv", "gLease = now + timeout }", "gLease = S.m[k].expiresAt }")
+        kv.rereview(File(dir, "keylocallock.common.kv"))
         val e = assertSingleError(resolve("coroutine"), "R1", "keylocallock.common.kv", at("keylocallock.common.kv", "gLease = S.m[k]", "S.m[k]"))
         assertTrue("module state 'S'" in e.message, e.message)
     }
