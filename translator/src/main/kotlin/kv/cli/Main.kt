@@ -29,7 +29,7 @@ private const val USAGE = """usage:
   kv resolve --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
       Checks the sidecar, compiles its source files (relative to DIR) and binds its Kotlin names to FIR symbols.
   kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
-      As resolve, then prints the module in KVIR and checks W1-W14. Exit 1 if a rule is broken.
+      As resolve, then prints the module in KVIR and checks W1-W16. Exit 1 if a rule is broken.
   kv emit --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] SIDECAR.kv
       As lower, then writes the Viper program (to stdout without --out). With --out, also writes the position
       table to FILE.vpr.positions. Exit 1 if a rule is broken or the sidecar cannot be emitted.
@@ -38,7 +38,7 @@ private const val USAGE = """usage:
       As emit, then runs Silicon once and prints the report (DESIGN-v0.md 5.8). VIPER_HOME or --viper-home names a
       Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
       --wall-seconds (default 300). Exit 0 PROVEN, 1 FAILED, 2 usage error, 3 INCOMPLETE, 4 ERROR (a compile
-      error, a sidecar error, a W1-W14 violation, a missing Silicon or an abnormal Silicon run).
+      error, a sidecar error, a W1-W16 violation, a missing Silicon or an abnormal Silicon run).
   kv hole skeleton SIDECAR.kv OUT.kv
       Writes a copy of SIDECAR.kv (the file that holds `hole MI_INV`) whose hole is `true` (M7).
   kv hole check BEFORE.kv AFTER.kv
@@ -152,11 +152,11 @@ private fun lower(
     out.print(printModule(module))
     val violations = checkWellFormed(module)
     violations.forEach { err.println("kv: $it") }
-    out.println("module ${if (module.incomplete) "INCOMPLETE (unsupported parts above)" else "complete"}; W1-W14: ${violations.size} violation(s)")
+    out.println("module ${if (module.incomplete) "INCOMPLETE (unsupported parts above)" else "complete"}; W1-W16: ${violations.size} violation(s)")
     return if (violations.isEmpty()) 0 else 1
 }
 
-/** Lowers, binds the ghost rules, checks W1-W14 and emits Viper; null after reporting an error, with the exit code. */
+/** Lowers, binds the ghost rules, checks W1-W16 and emits Viper; null after reporting an error, with the exit code. */
 private fun emitted(
     command: String,
     options: Options,

@@ -1,0 +1,69 @@
+ledger: 700 FIR nodes, 687 in the ledger, 13 translated
+  0 structure module object ReqShieldAspect                       @49:1
+  1-3 not-modeled constructor of ReqShieldAspect                  @50:30
+  4-5 not-modeled property asyncCache                             @51:5
+  6 not-modeled property beanFactory                              @53:5
+  7 not-modeled property scheduler                                @64:5
+  8-9 not-modeled property spelParser                             @66:5
+  10-11 not-modeled property parameterNameDiscoverer              @67:5
+  12-20 not-modeled property defaultKeyGenerator                  @68:5
+  21-24 not-modeled property lockSupport                          @71:5
+  25-26 not-modeled property keyGeneratorMap                      @73:5
+  27-28 not-modeled property expressionMap                        @74:5
+  29-30 structure state m: property reqShieldMap                  @77:5
+  31-115 not-modeled fun aroundTargetCacheable                    @79:5
+  116-162 not-modeled fun aroundReqShieldCacheEvict               @111:5
+  163-165 not-modeled fun getOrCreateReqShield                    @124:5
+  170-172 free-source key of getOrCreate#125: getTargetMethod(joinPoint) @125:38
+  182-296 trusted fun createReqShield (trusted fun createReqShield) @129:5
+  297-311 not-modeled fun getTargetMethod                         @169:5
+  312-327 not-modeled fun getCacheableAnnotation                  @172:5
+  328-343 not-modeled fun getCacheEvictAnnotation                 @176:5
+  344-360 not-modeled fun getCacheableCacheKey                    @180:5
+  361-377 not-modeled fun getCacheEvictCacheKey                   @186:5
+  378-396 not-modeled fun buildCacheKey                           @196:5
+  397-497 not-modeled fun getCacheKeyOrDefault                    @207:5
+  498-516 not-modeled fun validateCacheKey                        @237:5
+  517-520 not-modeled fun getOrParseExpression                    @248:5
+  521-534 not-modeled computeIfAbsent on expressionMap, which is not a sidecar state map: expressionMap.computeIfAbsent(cacheKeyExpression) { @249:9
+  535-546 not-modeled fun getOrCreateKeyGenerator                 @253:5
+  547-564 not-modeled computeIfAbsent on keyGeneratorMap, which is not a sidecar state map: keyGeneratorMap.computeIfAbsent(keyGeneratorBeanName) { @258:16
+  565-591 not-modeled fun setBeanFactory                          @263:5
+  592 not-modeled class Companion                                 @274:5
+  593-594 not-modeled constructor of Companion                    @274:5
+  595-596 not-modeled property SCHEDULER_BEAN_NAME                @276:9
+  597 not-modeled class ReqShieldCacheEvict                       @ReqShieldCacheEvict.kt:21:1
+  598-604 not-modeled constructor of ReqShieldCacheEvict          @ReqShieldCacheEvict.kt:24:37
+  605-606 not-modeled property cacheName                          @ReqShieldCacheEvict.kt:25:5
+  607-608 not-modeled property key                                @ReqShieldCacheEvict.kt:26:5
+  609-610 not-modeled property keyGenerator                       @ReqShieldCacheEvict.kt:27:5
+  611 not-modeled class ReqShieldCacheable                        @ReqShieldCacheable.kt:26:1
+  612-638 not-modeled constructor of ReqShieldCacheable           @ReqShieldCacheable.kt:29:36
+  639-640 not-modeled property cacheName                          @ReqShieldCacheable.kt:30:5
+  641-642 not-modeled property key                                @ReqShieldCacheable.kt:31:5
+  643-644 not-modeled property keyGenerator                       @ReqShieldCacheable.kt:32:5
+  645-646 not-modeled property isLocalLock                        @ReqShieldCacheable.kt:33:5
+  647-648 not-modeled property lockTimeoutMillis                  @ReqShieldCacheable.kt:34:5
+  649-650 not-modeled property decisionForUpdate                  @ReqShieldCacheable.kt:35:5
+  651-652 not-modeled property maxAttemptGetCache                 @ReqShieldCacheable.kt:36:5
+  653-654 not-modeled property timeToLiveMillis                   @ReqShieldCacheable.kt:37:5
+  655-656 not-modeled property reqShieldWorkMode                  @ReqShieldCacheable.kt:38:5
+  657-658 not-modeled property nullHandling                       @ReqShieldCacheable.kt:39:5
+  659 not-modeled class NullHandling                              @ReqShieldCacheable.kt:42:1
+  660-661 not-modeled constructor of NullHandling                 @ReqShieldCacheable.kt:42:1
+  662 not-modeled FirEnumEntryImpl                                @ReqShieldCacheable.kt:43:5
+  663 not-modeled FirEnumEntryImpl                                @ReqShieldCacheable.kt:44:5
+  664-665 not-modeled fun values                                  @ReqShieldCacheable.kt:42:1
+  666-668 not-modeled fun valueOf                                 @ReqShieldCacheable.kt:42:1
+  669-670 not-modeled property entries                            @ReqShieldCacheable.kt:42:1
+  671 not-modeled class AsyncCache                                @AsyncCache.kt:22:1
+  672-673 not-modeled fun get                                     @AsyncCache.kt:23:5
+  674-677 not-modeled fun put                                     @AsyncCache.kt:25:5
+  678-679 not-modeled fun evict                                   @AsyncCache.kt:31:5
+  680 not-modeled class GlobalLockSupport                         @GlobalLockSupport.kt:22:1
+  681-684 not-modeled fun globalLock                              @GlobalLockSupport.kt:24:5
+  685-687 not-modeled fun globalUnLock                            @GlobalLockSupport.kt:31:5
+  688 not-modeled class LibAutoConfiguration                      @LibAutoConfiguration.kt:27:1
+  689-691 not-modeled constructor of LibAutoConfiguration         @LibAutoConfiguration.kt:30:32
+  692-699 not-modeled init                                        @LibAutoConfiguration.kt:33:5
+diagnostics

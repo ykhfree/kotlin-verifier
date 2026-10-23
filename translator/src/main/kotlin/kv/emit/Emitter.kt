@@ -35,6 +35,16 @@ import kv.kvir.Let
 import kv.kvir.MapVar
 import kv.kvir.ModelOp
 import kv.kvir.Module
+import kv.kvir.ModuleKind
+import kv.kvir.ActionKind
+import kv.kvir.Computed
+import kv.kvir.RunAction
+import kv.kvir.Fresh
+import kv.kvir.RacyGet
+import kv.kvir.Return
+import kv.kvir.Raise
+import kv.kvir.Elvis
+import kv.kvir.returnedValue
 import kv.kvir.New
 import kv.kvir.Nondet
 import kv.kvir.Not
@@ -89,6 +99,7 @@ internal fun Origin.kind(): String =
         is ClockRead -> "clock"
         is NondetCall -> "trusted call $model"
         is RacyRead -> "racy read"
+        is Computed -> "computed outside the action"
     }
 
 private fun fail(
@@ -185,13 +196,19 @@ private class Emitter(
      */
     private val backed: String? =
         m.operations.flatMap { op ->
-            op.action.commit.filterIsInstance<Issue>().flatMap { issue -> issue.fields.filterValues { it is Carried && (it.token as? Var)?.local == op.result?.local }.keys }
+            op.action.commit.filterIsInstance<Issue>().flatMap { issue -> issue.fields.filterValues { it is Carried && (it.token as? Var)?.local == op.result }.keys }
         }.distinct().let {
             if (it.size > 1) fail(ghost.pos, "issue rules set different backed fields $it to carried(S, k, result); v0 needs one")
             it.singleOrNull()
         }
 
     fun run(): Emitted {
+        // DESIGN-B.md 8: B3 emits instance modules, the map calls other than compute and operation sections.
+        val b =
+            m.kind == ModuleKind.INSTANCE ||
+                m.operations.any { !(it.body.size == 2 && it.body[0] is RunAction && it.body[1] is Return) } ||
+                (m.operations.map { it.action } + m.strayActions).any { a -> a.kind != ActionKind.COMPUTE || a.body.walk().any { it is Fresh || it is Raise } }
+        if (b) fail(anchor, "the emitter handles DESIGN-B.md modules from milestone B3 on")
         header()
         domains()
         fields()
@@ -402,7 +419,7 @@ private class Emitter(
         a.free.forEach { w.comment("  ${origin(it)}${if (it.sidecarName == null) ", unnamed: arbitrary" else ""}") }
         method(op.name, MethodKind.ACTION, op.name, a.pos) {
             val params = (listOf("S: Ref") + (listOf(a.key) + named).map { "${it.local.name}: ${vtype(it.local.type)}" }).joinToString()
-            val returns = op.result?.let { " returns (${it.local.name}: ${vtype(it.local.type)})" } ?: ""
+            val returns = op.result?.let { " returns (${it.name}: ${vtype(it.type)})" } ?: ""
             w.line("method ${op.name}($params)$returns")
             requires(a)
             if (!reach) {
@@ -496,10 +513,10 @@ private class Emitter(
             return
         }
         if (backed == null) {
-            unbacked.firstOrNull()?.let { fail(it.pos, "unbacked_only_if ${it.id.text} needs a frozen ghost field that the issue rule sets to carried(S, k, ${op!!.result!!.local.name})") }
+            unbacked.firstOrNull()?.let { fail(it.pos, "unbacked_only_if ${it.id.text} needs a frozen ghost field that the issue rule sets to carried(S, k, ${op!!.result!!.name})") }
             return
         }
-        val r = op!!.result!!.local.name
+        val r = op!!.result!!.name
         val unbackedHead = "$r != NULL && !$g($r).$backed ==> ("
         if (unbacked.isEmpty()) {
             w.comment("unbacked_only_if (default false): this operation issues no unbacked token.", 2)
@@ -581,7 +598,7 @@ private class Emitter(
                 w.line("var ${fv.local.name}: ${vtype(fv.local.type)}", Source.Kotlin(fv.local.pos), 2, "unnamed free value: arbitrary")
             }
             stmts(a.body, 2)
-            op?.result?.let { r -> w.line("${r.local.name} := ${expr(r.e)}", Source.Kotlin(r.pos), 2, "result ${at(r.pos)}") }
+            op?.returnedValue?.let { e -> w.line("${op.result!!.name} := ${expr(e)}", Source.Kotlin(e.pos), 2, "result ${at(e.pos)}") }
             commit(op)
         }
 
@@ -667,6 +684,7 @@ private class Emitter(
                         is ExitResult.Put -> w.line("S.${map.name} := S.${map.name}[${a.key.local.name} := ${expr(r.e)}]", src, indent, "exit ${at(s.pos)}: put")
                     }
                 is Unsupported -> error("unsupported statement in supported action ${a.id}")
+                is RunAction, is Fresh, is RacyGet, is Return, is Raise -> error("B statement ${s::class.simpleName} at ${s.pos}: emitted from DESIGN-B.md 8, B3 on")
             }
         }
 
@@ -788,7 +806,7 @@ private class Emitter(
                         val result = op.result ?: fail(step.op.pos, "operation ${op.name} has no result to assign to ${out.text}")
                         val byName = step.args.filter { it.name != null }.associateBy { it.name!!.text }
                         val args = listOf(step.args.first().value.text) + op.action.free.filter { it.sidecarName != null }.map { byName.getValue(it.sidecarName!!).value.text }
-                        w.line("var ${out.text}: ${vtype(result.local.type)}", indent = 2)
+                        w.line("var ${out.text}: ${vtype(result.type)}", indent = 2)
                         w.line("${out.text} := ${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "probe call ${op.name}"), 2)
                     }
                     is ProbeAssert -> {
@@ -831,6 +849,7 @@ private class Emitter(
             // The template side condition is asserted before the statement; the token is its Long n.
             is TokenOf -> expr(e.n)
             is Carried -> "carried(S, ${expr(e.key)}, ${expr(e.token)})"
+            is Elvis -> error("?: at ${e.pos}: emitted from DESIGN-B.md 8, B3 on")
         }
 
     private fun operand(

@@ -18,46 +18,58 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /**
- * Numbers the FIR nodes of the module file for the ledger check W14 (DESIGN-v0.md 1.4, 2.14).
+ * Numbers the FIR nodes of the audited files for the ledger check W14 (DESIGN-v0.md 1.4, 2.14): the module file
+ * [file], then [others] (DESIGN-B.md 2.1 rule 6: every source file when a state field is internal).
  *
  * A FIR node is a statement or declaration (expressions are statements) reached from the file's declarations.
  * Not nodes: type references, references, argument lists and when-branches (parts of their parent), annotations,
  * type and receiver parameters (no behavior), and the accessors and backing fields the compiler generates for a
- * property. Nodes are numbered in pre-order; a node reached twice keeps its first number.
+ * property. Nodes are numbered in pre-order, file by file; a node reached twice keeps its first number.
  */
 class FirIndex(
     val file: FirFile,
+    others: List<FirFile> = emptyList(),
 ) {
     private val ids = IdentityHashMap<FirElement, Int>()
     private val parents = IdentityHashMap<FirElement, FirElement>()
+    private val files = IdentityHashMap<FirElement, FirFile>()
+
+    /** The audited files: the module file first. */
+    val all: List<FirFile> = listOf(file) + others
 
     /** The nodes in pre-order: `nodes[id]` has number `id`. */
     val nodes = mutableListOf<FirElement>()
 
-    /** The named functions declared in the file, local ones included. */
+    /** The named functions declared in the module file, local ones included. */
     val functions = mutableMapOf<FirNamedFunctionSymbol, FirNamedFunction>()
 
     init {
         val seen = Collections.newSetFromMap(IdentityHashMap<FirElement, Boolean>())
-        file.acceptChildren(
-            object : FirVisitorVoid() {
-                private val stack = ArrayDeque<FirElement>(listOf(file))
+        for (f in all) {
+            f.acceptChildren(
+                object : FirVisitorVoid() {
+                    private val stack = ArrayDeque<FirElement>(listOf(f))
 
-                override fun visitElement(element: FirElement) {
-                    if (!isPart(element) || !seen.add(element)) return
-                    stack.lastOrNull()?.let { parents[element] = it }
-                    if (isNode(element)) {
-                        ids[element] = nodes.size
-                        nodes += element
+                    override fun visitElement(element: FirElement) {
+                        if (!isPart(element) || !seen.add(element)) return
+                        stack.lastOrNull()?.let { parents[element] = it }
+                        files[element] = f
+                        if (isNode(element)) {
+                            ids[element] = nodes.size
+                            nodes += element
+                        }
+                        if (element is FirNamedFunction && f === file) functions[element.symbol] = element
+                        stack.addLast(element)
+                        element.acceptChildren(this)
+                        stack.removeLast()
                     }
-                    if (element is FirNamedFunction) functions[element.symbol] = element
-                    stack.addLast(element)
-                    element.acceptChildren(this)
-                    stack.removeLast()
-                }
-            },
-        )
+                },
+            )
+        }
     }
+
+    /** The audited file that holds [e]; the module file for an element outside them. */
+    fun fileOf(e: FirElement): FirFile = files[e] ?: file
 
     /** False for the subtrees that hold no nodes. */
     private fun isPart(e: FirElement): Boolean =

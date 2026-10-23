@@ -10,6 +10,8 @@ This directory holds the golden KVIR text that `GoldenTest` compares with the lo
 | `core/{tryLock,unLock,sweep}.kvir` | M3: lowered actions of `core/.../KeyLocalLock.kt` |
 | `reactor/{tryLock,unLock,sweep}.kvir` | lowered actions of `core-reactor/.../KeyLocalLock.kt` (DESIGN-v0.md 8.3, reactor variant) |
 | `coroutine/ledger.kvir`, `core/ledger.kvir`, `reactor/ledger.kvir` | M4: the ledger of each module file and its ASSUMPTION diagnostics |
+| `aspect/{core-spring,webflux,coroutine}/getOrCreate.kvir` | DESIGN-B.md B2: the operation of each Spring aspect module (`AspectGoldenTest`; section "Spring aspects" below) |
+| `aspect/{core-spring,webflux,coroutine}/ledger.kvir` | DESIGN-B.md B2: the ledger of every audited file of each aspect module |
 
 How to read and update:
 
@@ -234,3 +236,66 @@ Numbers missing from the list are the nodes the actions translated (their `trans
 The node count is 397 (coroutine: 191 in the ledger, 206 translated), 479 (core: 270 and 209) and 460 (reactor:
 247 and 213). The `structure`
 kind is not in the table of DESIGN-v0.md 2.14; see the M3/M4 report.
+
+## Spring aspects (DESIGN-B.md, B2)
+
+`AspectGoldenTest` compares the lowering of the three `ReqShieldAspect` modules with `aspect/<module>/getOrCreate.kvir`
+and `aspect/<module>/ledger.kvir`. The sidecars are `specs/reqshield/aspect.{core-spring,webflux,coroutine}.kv`;
+`./gradlew lowerAspect` prints the whole modules. Positions are in each module's `ReqShieldAspect.kt` (req-shield
+`2e792d2`); a position in another audited file names the file. Reference model: `spike/aspect/target.vpr`, written
+for core-spring; its line numbers below. The webflux and coroutine operations differ from core-spring only in
+positions (function 124:5 and 231:5, call 125:9 and 232:9, key 125:38 and 232:38, createReqShield 126:13 and
+233:13), so the table holds for them with those positions.
+
+### core-spring getOrCreate (`aspect/core-spring/getOrCreate.kvir`, target.vpr 68-99)
+
+| # | KVIR | Kotlin | target.vpr | Note |
+|---|---|---|---|---|
+| H1 | `operation getOrCreate = fun ReqShieldAspect.getOrCreateReqShield` | 111:5 | 68, 71 | an expression-body function |
+| H2 | `result res: Shield?` | 111:5 | 71 `returns (res: Ref, exc: Bool)` | the result type is the return type made nullable: the action's value and racy reads can be null in the model; `res != null` is part of `P_same` |
+| H3 | `throws` | | 71 `exc: Bool`, 83 `exc := false` | `Operation.canThrow`: a path raises (B1) |
+| B1 | `run action getOrCreate#112` | 112:9 | 84-98 | `RunAction`: the action runs here (DESIGN-B.md 5.2) |
+| B2 | `return out_112_9` | 112:9 (fake `FromExpressionBody` return) | 94 `res := r_113_13`, 97 `res := cur_112_9` | E1 below |
+| A1 | `action getOrCreate#112 = reqShieldMap.computeIfAbsent` | 112:9 | 68 | `ActionKind.COMPUTE_IF_ABSENT` |
+| A2 | `key k: MethodKey <- getTargetMethod(joinPoint) (action key @112:38)` | 112:38 | 69, 71 `k: MethodKey` | `type MethodKey = opaque java.lang.reflect.Method`; the key argument is computed outside the action (ledger free-source) |
+| A3 | `entry cur_112_9: Shield?` | 112:9 | 84 `var cur_112_9: Ref := has(S, k) ? S.m[k] : null` | the current value (DESIGN-B.md 5.4 rule 4); computeIfAbsent runs its body only if it is null (85) |
+| A4 | `out out_112_9: Shield?` | 112:9 | none | the call's value: `cur` if not null, else the mapped value. E1 |
+| A5 | `free thrown: Bool <- ReqShieldAspect.createReqShield(...) (nondet ...)` | 113:13 | 70, 71 `thrown: Bool` | `free thrown = call createReqShield` names the throw flag of the first call (DESIGN-B.md 2.7 rule 1, 5.3 rule 6) |
+| 1 | `nondet thrown := ReqShieldAspect.createReqShield` | 113:13 | none at this point; 71 | marks the call site of the named flag |
+| 2 | `if thrown` / `raise` | 113:13 | 87-88 `if (thrown) { exc := true }` | `Raise` in an action: the mapping is left unestablished (W3) |
+| 3 | `fresh r_113_13: Shield := createReqShield` | 113:13 | 90-92 | `Fresh`: the emitter writes `new(gFor)`, `S.created` and `gFor := k` (DESIGN-B.md 4.1) |
+| 4 | `exit put(r_113_13)` | 113:13 | 93 | the lambda's non-null result is mapped |
+| C | `commit (empty)` | | none | B binds no ghost rule (DESIGN-B.md 4.1) |
+
+Differences, each a job of the B3 emitter:
+
+| ID | Difference | Reason |
+|---|---|---|
+| E1 | KVIR returns the action's `out` after `run action`; target.vpr assigns `res` at the action's two ends (94 and 97) and has no out variable. | KVIR keeps the operation section apart from the action (DESIGN-B.md 5.2). `run action; return out` is the shape the emitter writes as `res :=` at each end of the action. In mutant R1 (`compute(...)!!`), `out` also feeds the `!!` check, which target R1 writes as `if (!exc && res == null) { exc := true }`. |
+| E2 | No `exc := false`, `has(S, k) ? S.m[k] : null` or `if (cur_112_9 == null)` statement. | The emitter template (DESIGN-B.md 5.4) and the computeIfAbsent row of DESIGN-B.md 2.3. |
+| E3 | The method header, `requires`, `ensures` and the probe are not KVIR. | Emitter template, from the sidecar (D2 above). |
+
+The mutant shapes of `spike/aspect/mutants.py` lower on the `AspectFixture` fixtures of `SectionTest` (`kv.lower`):
+R1 (`compute` + elvis + `!!`), R2 (racy read + elvis), M1 (racy read + elvis + `also` + `m[k] = v`), M2 (`m[k] = v`),
+M3 (`getOrPut`), M4 (`putIfAbsent` + elvis), M5 (`{ shared }`), M6 (stray `remove`), M7 (`putIfAbsent`, result
+unused). Their KVIR follows the Viper edits of `mutants.py` with the same differences E1-E3: for example M3 is
+`racy v := get(k) [set-once contract]` (mutants.py `racy_get`), `if v != null return v`, else the default value
+(`nondet thrown`, `raise`, `fresh r`), `run action` (putIfAbsent, value r) and `return cur ?: r` (mutants.py
+`res := cur != null ? cur : r`).
+
+### Aspect ledgers (`aspect/<module>/ledger.kvir`)
+
+`reqShieldMap` is `internal`, so every main source file of the module is audited (DESIGN-B.md 2.1 rule 6): the
+aspect file first, then the others in path order.
+
+| Kind | core-spring | webflux | coroutine |
+|---|---|---|---|
+| structure | module object `ReqShieldAspect`, state `reqShieldMap` | same | same |
+| free-source | the key argument `getTargetMethod(joinPoint)` 112:38 | 125:38 | 232:38 |
+| trusted | the body of `createReqShield` 116:5 (DESIGN-B.md 3.3 rule 5) | 129:5 | 236:5 |
+| not-modeled | `computeIfAbsent` on `expressionMap` 237:9 and on `keyGeneratorMap` 246:16 (DESIGN-B.md 5.3 rule 2; B0 acceptance 2), the frame of `getOrCreateReqShield`, the other members, and the other files (annotations, cache interfaces, `LibAutoConfiguration`) | `expressionMap` 249:9, `keyGeneratorMap` 258:16 | `expressionMap` 196:34 (inside `getCacheKeyOrDefault`), `keyGeneratorMap` 282:16; also `CoroutineExtension.kt` |
+| racy-read, cell, unsupported | none | none | none |
+
+The node counts are 653 (core-spring: 640 in the ledger, 13 translated), 700 (webflux: 687 and 13) and 802
+(coroutine: 789 and 13). The class `Shield` prints at the module class position: `ReqShield` is a library class
+(the core jars), so it has no source position in the audited files.

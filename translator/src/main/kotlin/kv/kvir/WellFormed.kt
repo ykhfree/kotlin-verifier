@@ -2,7 +2,7 @@ package kv.kvir
 
 import kv.model.TrustedModels
 
-/** A broken well-formedness rule. [rule] is `W1`..`W14` (DESIGN-v0.md 1.4). */
+/** A broken well-formedness rule. [rule] is `W1`..`W16` (DESIGN-v0.md 1.4, DESIGN-B.md 5.2). */
 data class Violation(
     val rule: String,
     val message: String,
@@ -12,7 +12,8 @@ data class Violation(
 }
 
 /**
- * Checks the well-formedness rules W1-W14 (DESIGN-v0.md 1.4). The emitter must not run on a module with a violation.
+ * Checks the well-formedness rules W1-W14 (DESIGN-v0.md 1.4) with the changes and the rules W15-W16 of DESIGN-B.md 5.2.
+ * The emitter must not run on a module with a violation.
  * W2 (expressions are pure) holds by construction: no [Expr] subtype has an effect, and every effectful node is a
  * [Stmt], so the Kotlin compiler rejects an effectful node in an expression position.
  */
@@ -31,6 +32,7 @@ internal fun Expr.children(): List<Expr> =
         is Or -> listOf(a, b)
         is TokenOf -> listOf(n)
         is Carried -> listOf(key, token)
+        is Elvis -> listOf(a, b)
     }
 
 /** This expression and all its subexpressions. */
@@ -48,9 +50,11 @@ internal fun Stmt.exprs(): List<Expr> =
         is FieldWrite -> listOf(obj, e)
         is ModelOp -> listOfNotNull((target as? FieldTarget)?.obj) + args
         is New -> init.values.toList()
-        is Nondet, is Unsupported -> emptyList()
+        is Nondet, is Unsupported, is RunAction, is Fresh, is Raise -> emptyList()
         is If -> listOf(cond)
         is Exit -> listOfNotNull((result as? ExitResult.Put)?.e)
+        is RacyGet -> listOf(key)
+        is Return -> listOfNotNull(e)
     }
 
 /** These statements and all statements nested in them, in source order. */
@@ -102,6 +106,19 @@ private class WellFormedChecker(
     private val classes = m.classes.associateBy { it.name }
     private val types = m.types.associateBy { it.name }
 
+    /** The local that [s] declares or writes: a declaration's variable or an op's out. */
+    private fun outsOf(s: Stmt): List<Local> =
+        when (s) {
+            is Let -> listOf(s.v)
+            is Assign -> listOf(s.v)
+            is ModelOp -> listOfNotNull(s.out)
+            is New -> listOf(s.v)
+            is Nondet -> s.outs
+            is Fresh -> listOf(s.v)
+            is RacyGet -> listOf(s.v)
+            else -> emptyList()
+        }
+
     private fun report(
         rule: String,
         pos: Pos?,
@@ -116,6 +133,8 @@ private class WellFormedChecker(
         checkFreeValueNames()
         checkOperations()
         checkLedger()
+        checkFresh()
+        checkRacyGets()
         for (op in m.operations) checkAction(op.action, op)
         for (a in m.strayActions) checkAction(a, null)
         return out
@@ -127,7 +146,7 @@ private class WellFormedChecker(
     ) {
         if (a.status is Status.Supported) checkExits(a)
         checkNames(a, op)
-        checkModuleAccess(a)
+        checkModuleAccess(a, op)
         checkFlattenedFields(a)
         if (op != null) checkCells(a, op)
         checkCommit(a, op)
@@ -149,6 +168,13 @@ private class WellFormedChecker(
 
         fun local(l: Local) = pos("local ${l.name}", l.pos)
 
+        fun stmts(block: List<Stmt>) =
+            block.walk().forEach { s ->
+                pos("statement ${s::class.simpleName}", s.pos)
+                s.exprs().forEach(::expr)
+                outsOf(s).forEach(::local)
+            }
+
         fun action(a: Action) {
             pos("action ${a.id}", a.pos)
             (listOf(a.key) + a.free).forEach {
@@ -156,18 +182,9 @@ private class WellFormedChecker(
                 pos("origin of ${it.local.name}", it.origin.pos)
             }
             local(a.entry)
-            a.body.walk().forEach { s ->
-                pos("statement ${s::class.simpleName}", s.pos)
-                s.exprs().forEach(::expr)
-                when (s) {
-                    is Let -> local(s.v)
-                    is Assign -> local(s.v)
-                    is ModelOp -> s.out?.let(::local)
-                    is New -> local(s.v)
-                    is Nondet -> s.outs.forEach(::local)
-                    else -> Unit
-                }
-            }
+            a.value?.let(::expr)
+            a.out?.let(::local)
+            stmts(a.body)
             a.commit.forEach { g ->
                 pos("ghost op ${g::class.simpleName}", g.pos)
                 g.exprs().forEach(::expr)
@@ -188,11 +205,8 @@ private class WellFormedChecker(
                 local(it.local)
                 expr(it.init)
             }
-            op.result?.let {
-                pos("result of ${op.name}", it.pos)
-                local(it.local)
-                expr(it.e)
-            }
+            op.result?.let(::local)
+            stmts(op.body)
             action(op.action)
         }
         m.strayActions.forEach(::action)
@@ -202,7 +216,13 @@ private class WellFormedChecker(
 
     // ---- W3: no early exits; every path of a supported action ends with exactly one Exit ----
 
-    private fun checkExits(a: Action) = tailBlock(a.body, a.pos)
+    private fun checkExits(a: Action) {
+        if (a.kind == ActionKind.COMPUTE || a.kind == ActionKind.COMPUTE_IF_ABSENT) {
+            tailBlock(a.body, a.pos)
+        } else if (a.body.isNotEmpty()) {
+            report("W3", a.pos, "a ${a.kind.name.lowercase()} action has no lambda body, but ${a.id} has statements")
+        }
+    }
 
     /** A block that ends the action: it ends with an Exit or with an If whose branches are tail blocks. */
     private fun tailBlock(
@@ -216,7 +236,8 @@ private class WellFormedChecker(
         }
         block.dropLast(1).forEach(::notTail)
         when (last) {
-            is Exit -> Unit
+            // DESIGN-B.md 5.2 W3: a path that raises ends without writing the map.
+            is Exit, is Raise -> Unit
             is If -> {
                 tailBlock(last.then, last.pos)
                 tailBlock(last.els, last.pos)
@@ -225,10 +246,11 @@ private class WellFormedChecker(
         }
     }
 
-    /** A statement that other statements follow: neither it nor anything nested in it may exit. */
+    /** A statement that other statements follow: neither it nor anything nested in it may exit or raise. */
     private fun notTail(s: Stmt) {
         when (s) {
             is Exit -> report("W3", s.pos, "exit is followed by more statements on its path")
+            is Raise -> report("W3", s.pos, "raise is followed by more statements on its path")
             is If -> (s.then + s.els).forEach(::notTail)
             else -> Unit
         }
@@ -274,13 +296,29 @@ private class WellFormedChecker(
         // Two cells with one name break W8, not W4.
         op?.cells?.distinctBy { it.local.name }?.forEach { headerDecl(Binding(it.local, true, Kind.CELL), it.pos) }
         block(a.body, header, ::unique)
+        if (op == null) return
+        // The operation section sees the header without the entry; RunAction declares the action's out.
+        val section = header.filterKeys { it != a.entry.name }
+        block(op.body, section, ::unique) { scope ->
+            val o = a.out ?: return@block
+            if (o == a.entry) {
+                scope[o.name] = header.getValue(o.name)
+            } else {
+                unique(o.name, o.pos)
+                scope[o.name] = Binding(o, false, Kind.LOCAL)
+            }
+        }
     }
 
-    /** Checks [stmts] with the names of [outer] in scope; [unique] checks a new name against the whole action. */
+    /**
+     * Checks [stmts] with the names of [outer] in scope; [unique] checks a new name against the whole action and
+     * its operation section. [run] puts the names a RunAction declares in scope.
+     */
     private fun block(
         stmts: List<Stmt>,
         outer: Map<String, Binding>,
         unique: (String, Pos) -> Unit,
+        run: ((MutableMap<String, Binding>) -> Unit)? = null,
     ) {
         val scope = outer.toMutableMap()
 
@@ -316,6 +354,9 @@ private class WellFormedChecker(
                 }
                 is ModelOp -> s.out?.let { output(it, s.pos) }
                 is New -> decl(Binding(s.v, false, Kind.LOCAL))
+                is Fresh -> decl(Binding(s.v, false, Kind.LOCAL))
+                is RacyGet -> decl(Binding(s.v, false, Kind.LOCAL))
+                is RunAction -> run?.invoke(scope)
                 is Nondet ->
                     s.outs.forEach { o ->
                         val b = scope[o.name]
@@ -324,10 +365,10 @@ private class WellFormedChecker(
                         if (b == null) decl(Binding(o, false, Kind.LOCAL)) else if (!bindsFree) report("W4", s.pos, "${o.name} is already declared")
                     }
                 is If -> {
-                    block(s.then, scope, unique)
-                    block(s.els, scope, unique)
+                    block(s.then, scope, unique, run)
+                    block(s.els, scope, unique, run)
                 }
-                is FieldWrite, is Exit, is Unsupported -> Unit
+                is FieldWrite, is Exit, is Unsupported, is Return, is Raise -> Unit
             }
         }
     }
@@ -393,12 +434,14 @@ private class WellFormedChecker(
             }
         }
 
-        fun action(a: Action) {
-            (listOf(a.key) + a.free).forEach { local(it.local) }
-            local(a.entry)
-            if (a.entry.type != KType.RefT(a.map.valueClass, true)) report("W5", a.entry.pos, "entry ${a.entry.name} must have type ${a.map.valueClass}?")
-            if (a.key.local.type != a.map.key) report("W5", a.key.local.pos, "key ${a.key.local.name} must have type ${a.map.key.name}")
-            a.body.walk().forEach { s ->
+        val mapValue = { a: Action -> KType.RefT(a.map.valueClass, true) }
+
+        /** The statements of an action body or an operation section; [a] is the action they belong to. */
+        fun stmts(
+            block: List<Stmt>,
+            a: Action,
+        ) {
+            block.walk().forEach { s ->
                 when (s) {
                     is Let -> {
                         local(s.v)
@@ -433,10 +476,36 @@ private class WellFormedChecker(
                         expr(s.cond)
                         if (s.cond.type != KType.BoolT) report("W5", s.cond.pos, "condition has type ${s.cond.type}")
                     }
-                    is Exit -> (s.result as? ExitResult.Put)?.let { assign(it.e, KType.RefT(a.map.valueClass, true), "put") }
-                    is Unsupported -> Unit
+                    is Exit -> (s.result as? ExitResult.Put)?.let { assign(it.e, mapValue(a), "put") }
+                    is Fresh -> {
+                        local(s.v)
+                        if (s.v.type != KType.RefT(s.cls.name, false)) report("W5", s.pos, "fresh ${s.v.name} must have type ${s.cls.name}")
+                    }
+                    is RacyGet -> {
+                        local(s.v)
+                        assign(s.key, s.map.key, "key of the racy read ${s.v.name}")
+                        val want = if (s.contains) KType.BoolT else KType.RefT(s.map.valueClass, true)
+                        if (s.v.type != want) report("W5", s.pos, "racy read ${s.v.name} must have type $want")
+                    }
+                    is Return -> Unit // checked against the operation result
+                    is Unsupported, is RunAction, is Raise -> Unit
                 }
             }
+        }
+
+        fun action(a: Action) {
+            (listOf(a.key) + a.free).forEach { local(it.local) }
+            local(a.entry)
+            if (a.entry.type != mapValue(a)) report("W5", a.entry.pos, "entry ${a.entry.name} must have type ${a.map.valueClass}?")
+            if (a.key.local.type != a.map.key) report("W5", a.key.local.pos, "key ${a.key.local.name} must have type ${a.map.key.name}")
+            a.out?.let {
+                local(it)
+                if (it.type != mapValue(a)) report("W5", it.pos, "out ${it.name} must have type ${a.map.valueClass}?")
+            }
+            a.value?.let { assign(it, mapValue(a), "value of ${a.id}") }
+            val needsValue = a.kind == ActionKind.PUT || a.kind == ActionKind.PUT_IF_ABSENT
+            if (a.status is Status.Supported && needsValue != (a.value != null)) report("W5", a.pos, "a ${a.kind.name.lowercase()} action ${if (needsValue) "needs" else "takes no"} value")
+            stmts(a.body, a)
             a.commit.forEach { g -> g.exprs().forEach(::expr) }
         }
 
@@ -445,9 +514,16 @@ private class WellFormedChecker(
                 local(it.local)
                 assign(it.init, it.local.type, "cell ${it.local.name}")
             }
-            op.result?.let {
-                local(it.local)
-                assign(it.e, it.local.type, "result of ${op.name}")
+            op.result?.let(::local)
+            stmts(op.body, op.action)
+            op.body.walk().filterIsInstance<Return>().forEach { r ->
+                val e = r.e
+                val result = op.result
+                when {
+                    e != null && result != null -> assign(e, result.type, "result of ${op.name}")
+                    e != null -> report("W5", r.pos, "operation ${op.name} has no result, but returns a value")
+                    result != null -> report("W5", r.pos, "operation ${op.name} returns no value for its result ${result.name}")
+                }
             }
             action(op.action)
         }
@@ -494,6 +570,7 @@ private class WellFormedChecker(
                 if (key !is KType.Abs || types[key.name]?.template != null) report("W5", e.key.pos, "carried needs an opaque key, got $key")
                 if (token !is KType.Abs || types[token.name]?.template == null) report("W5", e.token.pos, "carried needs a template token, got $token")
             }
+            is Elvis -> if (!sameBase(e.a.type, e.b.type) || e.a.type !is KType.RefT) report("W5", e.pos, "?: needs two objects of one class, got ${e.a.type} and ${e.b.type}")
             is IntLit, is BoolLit, is NullLit, is Var -> Unit
         }
     }
@@ -510,15 +587,24 @@ private class WellFormedChecker(
 
     // ---- W6: inside an action, module objects are reached only through the entry, new objects and counters ----
 
-    private fun checkModuleAccess(a: Action) {
+    private fun checkModuleAccess(
+        a: Action,
+        op: Operation?,
+    ) {
         if (a.map !in m.state) report("W6", a.pos, "action ${a.id} maps ${a.map.name}, which is not module state")
-        val owned = setOf(a.entry.name) + a.body.walk().filterIsInstance<New>().map { it.v.name }
+        // DESIGN-B.md 5.2 W6: a fresh object is created by the action too.
+        val owned = setOf(a.entry.name) + a.body.walk().mapNotNull { (it as? New)?.v?.name ?: (it as? Fresh)?.v?.name }
+        // M5 (DESIGN-B.md 7.2): an action may map an object it got from outside if no field of its class is modeled,
+        // so that nothing reaches into it; MI_OWN decides whether that object may be mapped.
+        fun opaque(e: Expr) = (e.type as? KType.RefT)?.let { t -> classes[t.cls]?.fields?.isEmpty() } == true
 
         fun ownedObj(
             e: Expr,
             what: String,
+            alsoOpaque: Boolean = false,
         ) {
-            if (!(e is Var && e.local.name in owned)) report("W6", e.pos, "$what an object that is neither the entry nor created by the action")
+            val ok = e is Var && (e.local.name in owned || alsoOpaque && opaque(e))
+            if (!ok) report("W6", e.pos, "$what an object that is neither the entry nor created by the action")
         }
         a.body.walk().forEach { s ->
             when (s) {
@@ -529,13 +615,18 @@ private class WellFormedChecker(
                         is StateTarget ->
                             if (t.v !is CounterVar || t.v !in m.state) report("W6", s.pos, "${s.op} on ${t.v.name}: only module counters are op targets")
                     }
-                is Exit -> (s.result as? ExitResult.Put)?.let { ownedObj(it.e, "puts") }
+                is Exit -> (s.result as? ExitResult.Put)?.let { ownedObj(it.e, "puts", alsoOpaque = true) }
                 else -> Unit
             }
             s.exprs().flatMap { it.walk() }.forEach { x ->
                 if (x is FieldRead) ownedObj(x.obj, "reads ${x.field.name} of")
                 if (x is Carried) report("W6", x.pos, "carried reads the map; it may appear only in the commit")
             }
+        }
+        // The operation section works outside every action: it does not reach into module objects.
+        op?.body?.walk()?.forEach { s ->
+            val reaches = s is FieldWrite || s is ModelOp && s.target is FieldTarget || s.exprs().any { e -> e.walk().any { it is FieldRead || it is Carried } }
+            if (reaches) report("W6", s.pos, "the operation section of ${op.name} reaches into a module object outside its action")
         }
     }
 
@@ -572,13 +663,8 @@ private class WellFormedChecker(
             report("W8", cells[1].pos, "cell $name is represented by ${cells.size} cells")
         }
         val names = op.cells.map { it.local.name }.toSet()
-        a.body.walk().forEach { s ->
-            val outs =
-                when (s) {
-                    is ModelOp -> listOfNotNull(s.out)
-                    is Nondet -> s.outs
-                    else -> emptyList()
-                }
+        (a.body.walk() + op.body.walk()).forEach { s ->
+            val outs = if (s is ModelOp || s is Nondet || s is Fresh || s is RacyGet) outsOf(s) else emptyList()
             outs.filter { it.name in names }.forEach { report("W8", s.pos, "cell ${it.name} is written by ${s::class.simpleName}, not by Assign") }
         }
     }
@@ -606,7 +692,7 @@ private class WellFormedChecker(
         }
     }
 
-    // ---- W10: one action per operation; the result reads only cells and constants ----
+    // ---- W10: one action per operation, run at most once per path; each path ends with Return or Raise; results ----
 
     private fun checkOperations() {
         val owners = mutableMapOf<String, String>()
@@ -622,15 +708,92 @@ private class WellFormedChecker(
         m.strayActions.forEach { own(it, "the stray actions") }
 
         m.operations.forEach { op ->
-            val cells = op.cells.map { it.local }.toSet()
-            op.result?.e?.walk()?.forEach { x ->
+            val a = op.action
+            if (op.body.walk().none { it is RunAction }) report("W10", op.pos, "operation ${op.name} never runs its action ${a.id}")
+            if (m.kind == ModuleKind.OBJECT && !(op.body.size == 2 && op.body[0] is RunAction && op.body[1] is Return)) {
+                report("W10", op.pos, "an object module's operation ${op.name} is `run action; return` (DESIGN-v0.md 2.4)")
+            }
+            section(op, op.body, ran = false)
+            (a.body.walk().filter { it is RunAction || it is Return }).forEach { report("W10", it.pos, "${it::class.simpleName} inside action ${a.id}: it belongs to the operation section") }
+            results(op)
+        }
+        m.strayActions.flatMap { it.body.walk().filter { s -> s is RunAction || s is Return }.toList() }.forEach { report("W10", it.pos, "${it::class.simpleName} inside a stray action") }
+    }
+
+    /**
+     * A tail block of [op]'s section: it ends with Return, Raise or an If whose branches are tail blocks, and runs the
+     * action at most once on each path ([ran]: the action ran before the block). Returns nothing; reports W10.
+     */
+    private fun section(
+        op: Operation,
+        block: List<Stmt>,
+        ran: Boolean,
+    ) {
+        var done = ran
+        val last = block.lastOrNull() ?: return report("W10", op.pos, "a path of operation ${op.name} ends without return or raise")
+        for (s in block.dropLast(1)) done = inner(op, s, done)
+        when (last) {
+            is Return, is Raise -> Unit
+            is If -> {
+                section(op, last.then, done)
+                section(op, last.els, done)
+            }
+            else -> {
+                inner(op, last, done)
+                report("W10", last.pos, "a path of operation ${op.name} ends after this ${last::class.simpleName} without return or raise")
+            }
+        }
+    }
+
+    /** A statement of [op]'s section that more statements follow; returns whether a path through it ran the action. */
+    private fun inner(
+        op: Operation,
+        s: Stmt,
+        ran: Boolean,
+    ): Boolean =
+        when (s) {
+            is RunAction -> {
+                if (ran) report("W10", s.pos, "operation ${op.name} runs its action twice on one path")
+                true
+            }
+            is Return, is Raise -> {
+                report("W10", s.pos, "${s::class.simpleName.orEmpty().lowercase()} is followed by more statements on its path")
+                ran
+            }
+            is Exit -> {
+                report("W10", s.pos, "exit outside the action of operation ${op.name}")
+                ran
+            }
+            is If -> {
+                var t = ran
+                var e = ran
+                s.then.forEach { t = inner(op, it, t) }
+                s.els.forEach { e = inner(op, it, e) }
+                t || e
+            }
+            else -> ran
+        }
+
+    /**
+     * The values an operation returns (DESIGN-B.md 2.6 rule 2): section locals, the action's out, racy read values,
+     * cells and constants; never a field, `carried`, the key or a named free value. An object module's operation
+     * returns only cells and constants (DESIGN-v0.md W10).
+     */
+    private fun results(op: Operation) {
+        val cells = op.cells.map { it.local }.toSet()
+        val inputs = (listOf(op.action.key) + op.action.free.filter { it.sidecarName != null }).map { it.local }.toSet()
+        op.body.walk().filterIsInstance<Return>().forEach { r ->
+            r.e?.walk()?.forEach { x ->
                 val ok =
                     when (x) {
-                        is Var -> x.local in cells
+                        is Var -> if (m.kind == ModuleKind.OBJECT) x.local in cells else x.local !in inputs
                         is FieldRead, is Carried -> false
                         else -> true
                     }
-                if (!ok) report("W10", x.pos, "result of ${op.name} reads ${x::class.simpleName} ${(x as? Var)?.local?.name ?: ""}; only cells and constants")
+                if (!ok) {
+                    val allowed = if (m.kind == ModuleKind.OBJECT) "only cells and constants" else "section locals, the action out, racy reads, cells and constants"
+                    report("W10", x.pos, "result of ${op.name} reads ${x::class.simpleName} ${(x as? Var)?.local?.name ?: ""}; $allowed")
+                }
             }
         }
     }
@@ -641,7 +804,7 @@ private class WellFormedChecker(
         a: Action,
         op: Operation?,
     ) {
-        val result = op?.result?.local
+        val result = op?.result
         val readable = (listOf(a.key) + a.free).map { it.local }.toSet() + listOfNotNull(result)
 
         fun value(e: Expr) =
@@ -712,11 +875,57 @@ private class WellFormedChecker(
         }
 
         // Ghost values (the commit) are mathematical integers by definition, so W13 covers only Kotlin code.
-        val exprs = a.body.walk().flatMap { it.exprs() } + op?.cells?.map { it.init }.orEmpty() + listOfNotNull(op?.result?.e)
+        val exprs = a.body.walk().flatMap { it.exprs() } + op?.cells?.map { it.init }.orEmpty() + op?.body?.walk()?.flatMap { it.exprs() }.orEmpty() + listOfNotNull(a.value)
         exprs.flatMap { it.walk() }.filterIsInstance<Arith>().forEach { assumption(it.assumption, it.pos, "Long ${it.op.symbol}") }
         a.body.walk().filterIsInstance<ModelOp>().filter { it.op in TrustedModels.unboundedLongOps }.forEach {
             assumption(it.assumption, it.pos, it.op)
         }
+    }
+
+    // ---- W15: a Fresh is a call of a `returns fresh` function; the class it returns has no other construction ----
+
+    private fun checkFresh() {
+        val all = (m.operations.flatMap { it.body.walk().toList() + it.action.body.walk() } + m.strayActions.flatMap { it.body.walk().toList() })
+        all.filterIsInstance<Fresh>().forEach { f ->
+            val cls = m.freshFunctions[f.fn]
+            when {
+                cls == null -> report("W15", f.pos, "fresh ${f.v.name} comes from ${f.fn}, which is not a `returns fresh` trusted function")
+                cls != f.cls.name -> report("W15", f.pos, "fresh ${f.v.name} is a ${f.cls.name}, but ${f.fn} returns fresh ${cls}s")
+            }
+        }
+        val values = m.freshFunctions.values.toSet()
+        all.filterIsInstance<New>().filter { it.cls.name in values }.forEach {
+            report("W15", it.pos, "new ${it.v.name}: ${it.cls.name} objects come only from a `returns fresh` function (DESIGN-B.md 3.3 rule 4)")
+        }
+    }
+
+    // ---- W16: a racy read is in an operation section, of a state map; its contract needs the map to be set-once ----
+
+    private fun checkRacyGets() {
+        val inActions = (m.operations.map { it.action } + m.strayActions).flatMap { it.body.walk().filterIsInstance<RacyGet>().toList() }
+        inActions.forEach { report("W16", it.pos, "racy read ${it.v.name} inside an action: an action reads its map only through its entry") }
+        for (op in m.operations) racyGets(op.body, ranBefore = false)
+    }
+
+    /** [ranBefore]: the action ran earlier on the path. A read after the action is arbitrary (DESIGN-B.md 2.4 rule 3). */
+    private fun racyGets(
+        block: List<Stmt>,
+        ranBefore: Boolean,
+    ): Boolean {
+        var ran = ranBefore
+        for (s in block) {
+            when (s) {
+                is RunAction -> ran = true
+                is If -> ran = racyGets(s.then, ran) or racyGets(s.els, ran)
+                is RacyGet -> {
+                    if (s.map !in m.state) report("W16", s.pos, "racy read ${s.v.name} reads ${s.map.name}, which is not module state")
+                    if (s.contract && s.map.setOnce == null) report("W16", s.pos, "racy read ${s.v.name} has the set-once contract, but map ${s.map.name} is not set-once")
+                    if (s.contract && ran) report("W16", s.pos, "racy read ${s.v.name} has the set-once contract, but it follows the action on its path")
+                }
+                else -> Unit
+            }
+        }
+        return ran
     }
 
     // ---- W14: every FIR node of the module file has exactly one disposition ----

@@ -188,7 +188,8 @@ object TryLockFixture {
             pos = p(145, 5),
             action = action,
             cells = listOf(Cell(acquiredToken, NullLit(tokenOrNull, p(151, 54)), p(151, 9))),
-            result = OpResult(res, v(acquiredToken, p(195, 16)), p(195, 16)),
+            result = res,
+            body = listOf(RunAction(p(155, 9)), Return(v(acquiredToken, p(195, 16)), p(195, 16))),
         )
 
     val module =

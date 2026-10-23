@@ -91,7 +91,7 @@ class FrontendSession(
         errors += errs
         if (errs.isNotEmpty()) return
         try {
-            kvir = lowerModule(sidecar, resolver, res, file, found, moduleClass)
+            kvir = lowerModule(sidecar, resolver, res, file, seen.map { it.first }, found, moduleClass)
         } catch (e: SidecarException) {
             errors += e.errors
         }

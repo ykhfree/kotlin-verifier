@@ -6,6 +6,7 @@ import kv.frontend.Frontend
 import kv.kvir.Captured
 import kv.kvir.DispositionKind
 import kv.kvir.Var
+import kv.kvir.returnedValue
 import kv.sidecar.parseSidecar
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -61,8 +62,8 @@ class FromCallableTest {
         val m = f.lower(dir)
         val text = assertSupported(m)
         val op = m.operations.single { it.name == "run" }
-        assertEquals(f.at("result.get()"), op.result!!.pos.line to op.result!!.pos.col, text)
-        assertEquals(f.result(), (op.result!!.e as Var).local.name, text)
+        assertEquals(f.at("result.get()"), op.returnedValue!!.pos.line to op.returnedValue!!.pos.col, text)
+        assertEquals(f.result(), (op.returnedValue as Var).local.name, text)
         assertEquals(listOf(f.result()), op.cells.map { it.local.name }, text)
         // The ledger: the cell and its read as the last expression; the free key and the named parameter now; the
         // rest of fun run, the fromCallable call included, is the frame of the operation (not modeled).
@@ -86,7 +87,7 @@ class FromCallableTest {
         val run = "    fun run(key: String, now: Long): $MONO<String?> {\n        return $MONO.fromCallable {\n${lambda()}\n        }\n    }"
         val f = LockFixture("", run = run, operations = OPERATION)
         val op = f.lower(dir).also { assertSupported(it) }.operations.single { it.name == "run" }
-        assertEquals(f.at("result.get()"), op.result!!.pos.line to op.result!!.pos.col)
+        assertEquals(f.at("result.get()"), op.returnedValue!!.pos.line to op.returnedValue!!.pos.col)
     }
 
     // ---- decision 1: rejected shapes, each UNSUPPORTED at its Kotlin position ----

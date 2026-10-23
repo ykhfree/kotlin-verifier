@@ -235,7 +235,7 @@ class WellFormedTest {
     @Test
     fun `W10 rejects a result that reads a free value`() {
         val last = FreeValue(Local("last__152", f.tokenOrNull, p(152, 9)), RacyRead(p(152, 20)), null, "lockMap[completeKey]?.token")
-        val op = f.operation.copy(action = f.action.copy(free = f.freeValues + last), result = f.operation.result!!.copy(e = Var(last.local, p(195, 16))))
+        val op = f.operation.copy(action = f.action.copy(free = f.freeValues + last), body = listOf(RunAction(p(155, 9)), Return(Var(last.local, p(195, 16)), p(195, 16))))
         assertOnly("W10", f.module.copy(operations = listOf(op)))
     }
 

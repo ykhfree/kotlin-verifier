@@ -9,7 +9,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** `kv lower` through the CLI: the KVIR of a module, its W1-W14 check and its completeness. */
+/** `kv lower` through the CLI: the KVIR of a module, its W1-W16 check and its completeness. */
 class LowerCliTest {
     private val specDir = File(System.getProperty("kv.specDir"), "reqshield")
 
@@ -27,7 +27,7 @@ class LowerCliTest {
         assertEquals(0, exit, err)
         assertTrue("  action tryLock#173 = lockMap.compute" in out, out)
         assertTrue("          newLock__206.token := token__205" in out, out)
-        assertTrue(out.trimEnd().endsWith("module complete; W1-W14: 0 violation(s)"), out)
+        assertTrue(out.trimEnd().endsWith("module complete; W1-W16: 0 violation(s)"), out)
     }
 
     @Test
@@ -40,6 +40,6 @@ class LowerCliTest {
         val (exit, out, err) = lower(File(dir, "keylocallock.coroutine.kv"))
         assertEquals(0, exit, err)
         assertTrue(out.lines().any { it.trimStart().startsWith("U129_9 UNSUPPORTED operation stop") && "0 action calls" in it }, out)
-        assertTrue(out.trimEnd().endsWith("module INCOMPLETE (unsupported parts above); W1-W14: 0 violation(s)"), out)
+        assertTrue(out.trimEnd().endsWith("module INCOMPLETE (unsupported parts above); W1-W16: 0 violation(s)"), out)
     }
 }

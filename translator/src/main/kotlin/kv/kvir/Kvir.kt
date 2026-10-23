@@ -22,11 +22,18 @@ sealed interface KType {
     ) : KType
 }
 
-/** A sidecar `type`: opaque when [template] is null, else a string template abstracted to its Long part. */
+/**
+ * A sidecar `type`: opaque when [template] is null, else a string template abstracted to its Long part. [kclass] is
+ * the Kotlin class an opaque type stands for (DESIGN-B.md 2.2), e.g. `java/lang/reflect/Method`; null for a String type.
+ */
 data class AbsType(
     val name: String,
     val template: String?,
+    val kclass: String? = null,
 )
+
+/** An object module (v0: a Kotlin object or companion object) or an instance module (DESIGN-B.md 2.1: a class, S = this). */
+enum class ModuleKind { OBJECT, INSTANCE }
 
 enum class GhostKind { SET_ONCE, FROZEN, ENDS }
 
@@ -51,6 +58,11 @@ data class Module(
     /** One entry per FIR node outside actions (DESIGN-v0.md 2.14). */
     val ledger: List<Disposition>,
     val diagnostics: List<Diagnostic>,
+    val kind: ModuleKind = ModuleKind.OBJECT,
+    /** The trusted `returns fresh` functions, by short name, with the class each returns (DESIGN-B.md 3.2, W15). */
+    val freshFunctions: Map<String, String> = emptyMap(),
+    /** The module file. Positions in other files print with their file name. */
+    val file: String? = null,
 )
 
 sealed interface StateVar {
@@ -59,13 +71,14 @@ sealed interface StateVar {
     val pos: Pos
 }
 
-/** `ConcurrentHashMap<String, C>` module field. */
+/** `ConcurrentHashMap<K, C>` module field. [setOnce] is the ID of its `set-once` declaration (DESIGN-B.md 2.4), if any. */
 data class MapVar(
     override val name: String,
     override val kotlin: String,
     override val pos: Pos,
     val key: KType.Abs,
     val valueClass: String,
+    val setOnce: String? = null,
 ) : StateVar
 
 /** `AtomicLong` module field. */
@@ -101,30 +114,51 @@ data class Operation(
     val pos: Pos,
     val action: Action,
     val cells: List<Cell>,
-    val result: OpResult?,
+    /** The sidecar `result`: its name and type. Null without one. */
+    val result: Local?,
+    /**
+     * The operation section (DESIGN-B.md 2.6): what the operation does around [action]. [RunAction] marks where the
+     * action runs, at most once per path; every path ends with one [Return] or [Raise] (W10). An object module's
+     * operation is `run action; return e` (DESIGN-v0.md 2.4, 8.3).
+     */
+    val body: List<Stmt>,
 )
 
-/** The operation result: [local] is the sidecar `result` name, [e] reads cells and constants (W10). */
-data class OpResult(
-    val local: Local,
-    val e: Expr,
-    val pos: Pos,
-)
+/** The value an operation of the shape `run action; return e` returns; null for another shape or no value. */
+val Operation.returnedValue: Expr?
+    get() = body.takeIf { it.size == 2 && it[0] is RunAction }?.let { (it[1] as? Return)?.e }
+
+/** True if a path of the operation raises: a `throws` call or a failed `!!` (DESIGN-B.md 2.7). */
+val Operation.canThrow: Boolean
+    get() = (body.walk() + action.body.walk()).any { it is Raise }
+
+/** The map call of an action (DESIGN-B.md 2.3). Only [COMPUTE] and [COMPUTE_IF_ABSENT] have a lambda body. */
+enum class ActionKind { COMPUTE, COMPUTE_IF_ABSENT, PUT_IF_ABSENT, PUT, REMOVE }
 
 data class Action(
     val id: String,
-    /** Position of the compute call. */
+    /** Position of the map call. */
     val pos: Pos,
     val map: MapVar,
     val key: FreeValue,
+    /** The key's current value at the start of the action: compute's value parameter, else `cur_<line>_<col>`. */
     val entry: Local,
     val free: List<FreeValue>,
+    /** The lambda body of [ActionKind.COMPUTE] and [ActionKind.COMPUTE_IF_ABSENT]; empty for the other kinds. */
     val body: List<Stmt>,
     /** Filled by the ghost binder only. */
     val commit: List<GhostOp>,
     val status: Status,
     /** Ids of the FIR nodes this action translated (W14). An inlined helper's nodes may appear in several actions. */
     val translated: Set<Int>,
+    val kind: ActionKind = ActionKind.COMPUTE,
+    /** The value [ActionKind.PUT_IF_ABSENT] and [ActionKind.PUT] map the key to. */
+    val value: Expr? = null,
+    /**
+     * The local that receives the call's result in the operation section; null if the result is unused. compute:
+     * the new value; computeIfAbsent: the current or computed value; putIfAbsent, put, remove: [entry].
+     */
+    val out: Local? = null,
 )
 
 sealed interface Status {
@@ -176,6 +210,11 @@ data class InstanceVal(
 
 /** compute's key argument. */
 data class ActionKey(
+    override val pos: Pos,
+) : Origin
+
+/** A value computed outside every action by code the model does not translate, e.g. a call (DESIGN-B.md 2.6 rule 5). */
+data class Computed(
     override val pos: Pos,
 ) : Origin
 
@@ -265,6 +304,50 @@ data class Exit(
 data class Unsupported(
     val what: String,
     val reason: String,
+    override val pos: Pos,
+) : Stmt
+
+/** Runs the operation's action (DESIGN-B.md 5.2); the action's `out`, if any, holds the call's result after it. */
+data class RunAction(
+    override val pos: Pos,
+) : Stmt
+
+/**
+ * A call of the trusted `returns fresh` function [fn] that returned normally: [v] is a new object of [cls]. The tool
+ * records it in `S.created` with `gFor := k` (DESIGN-B.md 3.2, 4.1).
+ */
+data class Fresh(
+    val v: Local,
+    val cls: ObjClass,
+    val fn: String,
+    override val pos: Pos,
+) : Stmt
+
+/**
+ * A read of [map] outside every action, before the action (DESIGN-B.md 2.4): `get` gives [v] (an object or null),
+ * `containsKey` ([contains]) gives a Bool. With [contract] (only for a `set-once` map, W16) the read value is null or
+ * the map's current value, and a true containsKey means the key is mapped; without it, [v] is arbitrary.
+ */
+data class RacyGet(
+    val v: Local,
+    val map: MapVar,
+    val key: Expr,
+    val contains: Boolean,
+    val contract: Boolean,
+    override val pos: Pos,
+) : Stmt
+
+/** Ends the operation with [e] as its result; [e] is null for an operation without a value. */
+data class Return(
+    val e: Expr?,
+    override val pos: Pos,
+) : Stmt
+
+/**
+ * Ends the operation, or the action, with an exception (`exc := true`): a `throws` call threw or `!!` met null
+ * (DESIGN-B.md 2.7). In an action, the map is not written.
+ */
+data class Raise(
     override val pos: Pos,
 ) : Stmt
 
@@ -392,6 +475,15 @@ data class TokenOf(
     override val pos: Pos,
 ) : Expr
 
+/** `a ?: b`: [a] if it is not null, else [b] (both pure). Its type is [b]'s. */
+data class Elvis(
+    val a: Expr,
+    val b: Expr,
+    override val pos: Pos,
+) : Expr {
+    override val type get() = b.type
+}
+
 /** The entry of [key] carries [token] in its witness field. Commit vocabulary only. */
 data class Carried(
     val key: Expr,
@@ -435,6 +527,9 @@ enum class DispositionKind(
     STRUCTURE("structure"),
     NOT_MODELED("not-modeled"),
     UNSUPPORTED("unsupported"),
+
+    /** The body of a reviewed trusted function: read by a person, checked by the tool, not translated (DESIGN-B.md 3.3 rule 5). */
+    TRUSTED("trusted"),
 }
 
 /** How the translator handled one FIR node outside the actions. */

@@ -1,0 +1,20 @@
+operation getOrCreate = fun ReqShieldAspect.getOrCreateReqShield  @124:5
+  result res: Shield?
+  throws
+  body
+    run action getOrCreate#125                                    @125:9
+    return out_125_9                                              @125:9 fake=FromExpressionBody
+  action getOrCreate#125 = reqShieldMap.computeIfAbsent           @125:9
+    key   k: MethodKey <- getTargetMethod(joinPoint) (action key @125:38) @125:38
+    entry cur_125_9: Shield?                                      @125:9
+    out   out_125_9: Shield?                                      @125:9
+    free  thrown: Bool <- ReqShieldAspect.createReqShield(...) (nondet ReqShieldAspect.createReqShield @126:13) @126:13
+    translates FIR nodes 166-169,173-181
+    body
+      nondet thrown := ReqShieldAspect.createReqShield            @126:13
+      if thrown                                                   @126:13
+        raise                                                     @126:13
+      else
+        fresh r_126_13: Shield := createReqShield                 @126:13
+        exit put(r_126_13)                                        @126:13
+    commit (empty)

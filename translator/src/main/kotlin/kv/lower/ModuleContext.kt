@@ -13,6 +13,7 @@ import kv.kvir.GhostSchema
 import kv.kvir.IntLit
 import kv.kvir.KType
 import kv.kvir.MapVar
+import kv.kvir.ModuleKind
 import kv.kvir.NullLit
 import kv.kvir.ObjClass
 import kv.kvir.ObjField
@@ -29,6 +30,7 @@ import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.declarations.FirAnonymousFunction
 import org.jetbrains.kotlin.fir.declarations.FirConstructor
 import org.jetbrains.kotlin.fir.declarations.FirDeclaration
+import org.jetbrains.kotlin.fir.declarations.FirFile
 import org.jetbrains.kotlin.fir.declarations.FirFunction
 import org.jetbrains.kotlin.fir.declarations.FirNamedFunction
 import org.jetbrains.kotlin.fir.declarations.FirProperty
@@ -44,6 +46,7 @@ import org.jetbrains.kotlin.fir.expressions.FirQualifiedAccessExpression
 import org.jetbrains.kotlin.fir.expressions.FirReturnExpression
 import org.jetbrains.kotlin.fir.expressions.FirSmartCastExpression
 import org.jetbrains.kotlin.fir.expressions.FirStringConcatenationCall
+import org.jetbrains.kotlin.fir.expressions.FirThisReceiverExpression
 import org.jetbrains.kotlin.fir.expressions.FirVariableAssignment
 import org.jetbrains.kotlin.fir.expressions.arguments
 import org.jetbrains.kotlin.fir.expressions.resolvedArgumentMapping
@@ -59,11 +62,15 @@ import org.jetbrains.kotlin.fir.types.ConeKotlinType
 import org.jetbrains.kotlin.fir.types.classId
 import org.jetbrains.kotlin.fir.types.coneType
 import org.jetbrains.kotlin.fir.types.lowerBoundIfFlexible
+import org.jetbrains.kotlin.fir.types.isMarkedNullable
 import org.jetbrains.kotlin.fir.types.resolvedType
 import org.jetbrains.kotlin.fir.types.type
 import org.jetbrains.kotlin.fir.unwrapSubstitutionOverrides
 import org.jetbrains.kotlin.fir.visitors.FirVisitorVoid
 import org.jetbrains.kotlin.name.ClassId
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.descriptors.ClassKind
+import java.util.IdentityHashMap
 import org.jetbrains.kotlin.types.ConstantValueKind
 import org.jetbrains.kotlin.realElement
 
@@ -93,11 +100,17 @@ internal class ModuleContext(
     val index: FirIndex,
     val moduleClass: FirRegularClass,
 ) {
-    val positions = Positions(index.file)
+    private val positions = IdentityHashMap<FirFile, Positions>().apply { index.all.forEach { put(it, Positions(it)) } }
     val diagnostics = mutableListOf<Diagnostic>()
     val abstraction = Abstraction()
 
-    val types = sidecar.types.map { AbsType(it.name.text, it.template) }
+    /** DESIGN-B.md 2.1: a class module is an instance module; an object or companion object is an object module. */
+    val kind: ModuleKind = if (moduleClass.classKind == ClassKind.CLASS) ModuleKind.INSTANCE else ModuleKind.OBJECT
+
+    val types = sidecar.types.map { AbsType(it.name.text, it.template, it.kclass?.text?.let { k -> ClassId.topLevel(FqName(k)).asString() }) }
+
+    /** The `returns fresh` trusted functions by short name, with their sidecar class (DESIGN-B.md 3.2). */
+    val freshFunctions: Map<String, String> = sidecar.trusted.mapNotNull { t -> t.fresh?.let { t.shortName to it.text } }.toMap()
     val templates =
         sidecar.types.mapNotNull { t ->
             val text = t.template ?: return@mapNotNull null
@@ -123,13 +136,14 @@ internal class ModuleContext(
      * kind of a property declared in a constructor; an expression is placed without its smart casts.
      */
     fun posOf(e: FirElement): Pos {
+        val positions = positions.getValue(index.fileOf(e))
         val p =
             if (e is FirDeclaration) {
                 positions.ofDeclaration(e.source?.realElement())
             } else {
                 positions.of(unwrap(e)?.source)
             }
-        return p ?: positions.ofDeclaration(moduleClass.source?.realElement())!!
+        return p ?: this.positions.getValue(index.file).ofDeclaration(moduleClass.source?.realElement())!!
     }
 
     fun calleeOf(e: FirQualifiedAccessExpression): FirCallableSymbol<*>? = e.calleeReference.toResolvedCallableSymbol()?.unwrapSubstitutionOverrides()
@@ -154,8 +168,18 @@ internal class ModuleContext(
 
     fun stateOf(sym: FirBasedSymbol<*>?): StateVar? = stateBySymbol[sym]
 
-    /** The state variable [e] reads, if [e] is a read of a module state property. */
-    fun stateRead(e: FirExpression?): StateVar? = (unwrap(e) as? FirPropertyAccessExpression)?.let { stateOf(calleeOf(it)) }
+    /**
+     * The state variable [e] reads, if [e] is a read of a module state property of this module. In an instance module
+     * that is a read through `this` of the module class (DESIGN-B.md 2.1 rule 3); see [foreignState].
+     */
+    fun stateRead(e: FirExpression?): StateVar? = (unwrap(e) as? FirPropertyAccessExpression)?.takeUnless { foreignState(it) }?.let { stateOf(calleeOf(it)) }
+
+    /** True if [e] reads a state property of an instance module through another receiver than `this`: another module. */
+    fun foreignState(e: FirPropertyAccessExpression): Boolean {
+        if (kind != ModuleKind.INSTANCE || stateOf(calleeOf(e)) == null) return false
+        val receiver = unwrap(e.dispatchReceiver) as? FirThisReceiverExpression ?: return true
+        return receiver.calleeReference.boundSymbol != moduleClass.symbol
+    }
 
     // ---- classes ----
 
@@ -168,6 +192,13 @@ internal class ModuleContext(
     fun fieldOf(sym: FirBasedSymbol<*>?): ObjField? = fieldBySymbol[sym]
 
     fun classOfType(t: ConeKotlinType): ObjClass? = t.lowerBoundIfFlexible().classId?.let { id -> classBySymbol.entries.find { it.key.classId == id }?.value }
+
+    /** The opaque sidecar type bound to [t]'s class (DESIGN-B.md 2.2), e.g. MethodKey for java.lang.reflect.Method. */
+    fun absOfType(t: ConeKotlinType): KType.Abs? {
+        val low = t.lowerBoundIfFlexible()
+        val id = low.classId?.asString() ?: return null
+        return types.find { it.kclass == id }?.let { KType.Abs(it.name, low.isMarkedNullable) }
+    }
 
     /** The sidecar class [sym] constructs, if [sym] is a constructor of one. */
     fun constructedClass(sym: FirCallableSymbol<*>?): ObjClass? = (sym as? FirConstructorSymbol)?.let { s -> classBySymbol.entries.find { it.key.classId == s.callableId.classId }?.value }
@@ -189,7 +220,8 @@ internal class ModuleContext(
                             if (decl == null || !isEmptyMap(decl.initializer)) {
                                 unsupportedModule("state ${st.name.text}: v0 needs an empty ConcurrentHashMap() initializer", pos)
                             }
-                            MapVar(st.name.text, sym.name.asString(), pos, KType.Abs(kind.key.text, false), kind.value.text)
+                            val setOnce = sidecar.setOnce.find { it.map.text == st.name.text }?.id?.text
+                            MapVar(st.name.text, sym.name.asString(), pos, KType.Abs(kind.key.text, false), kind.value.text, setOnce)
                         }
                         StateKind.Counter -> {
                             val initial = decl?.let { counterInitial(it.initializer) }

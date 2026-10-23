@@ -122,8 +122,11 @@ class SidecarResolver(
     /** Sidecar class and field name to the Kotlin property. */
     internal val fields = mutableMapOf<Pair<String, String>, FirPropertySymbol>()
 
-    /** Operation name to its compute call. */
+    /** Operation name to its action call. */
     internal val computeOf = mutableMapOf<String, FoundAction>()
+
+    /** The functions `fun` operations select, translatable or not (DESIGN-B.md 3.3 rule 2). */
+    internal val operationFunctions = mutableSetOf<FirNamedFunctionSymbol>()
 
     /** Operation name to the Kotlin declaration each `free` item names: a local, parameter, property or call. */
     internal val freeOf = mutableMapOf<String, MutableList<Pair<FreeItem, Any>>>()
@@ -381,6 +384,7 @@ class SidecarResolver(
                         fns.size > 1 -> return err(target.pos, "ambiguous", "'${target.text}' names ${fns.size} overloads")
                     }
                     val fn = fns.single()
+                    operationFunctions += fn
                     bind("operation ${op.name.text}", op.pos, fn)
                     val fnFile = runCatching { session.firProvider.getFirCallableContainerFile(fn) }.getOrNull()
                     if (fnFile != file) {
