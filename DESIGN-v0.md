@@ -399,7 +399,8 @@ action 밖의 FIR 노드는 번역하지 않지만, 모두 다음 중 하나로 
 | 처리 | 뜻 | KeyLocalLock 예 |
 |---|---|---|
 | `free-source` | 자유 값을 계산하는 식 | `lockKeyOf(...)`, `nowToEpochTime()` |
-| `racy-read` | action 밖의 모듈 상태 읽기 (임의 값) | coroutine `lockMap.keys` 96:33; core `lockMap.size` 102:34, 126:33 |
+| `racy-read` | action 밖의 모듈 상태 읽기 (임의 값) | coroutine `lockMap.keys` 96:33; core `lockMap.size` 102:34, `lockMap.keys` 108:21, `lockMap.size` 126:33 |
+| `structure` | 모델이 쓰는 선언: 모듈 객체, `state` 필드, sidecar 클래스와 그 생성자·필드 | `Companion`, `lockMap`, `tokenSequence`, `LockInfo` |
 | `cell` | 셀 생성과 action 뒤의 읽기 | `AtomicReference(null)` 151:29, `released.get()` 227:16 |
 | `not-modeled` | 모듈 상태를 건드리지 않는 코드 | `launch`, `while (isActive)`, `delay`, `synchronized`, `scheduleWithFixedDelay`, shutdown hook, 로그 |
 | `unsupported` | action 밖의 모듈 상태 쓰기, action 밖 객체를 action 안에서 역참조 | 원본에는 없음 |
@@ -1076,6 +1077,12 @@ L3 연결 자리 (v0에서는 구현하지 않음):
 | J7 | (c)를 채택한다. 세 방식을 같은 모델에서 측정했고 (b)는 재현 가능한 대조군 실패로 탈락했으므로 critic은 두지 않는다 |
 | Silicon 예산 | `--assertTimeout 20000 --checkTimeout 20000`, 실행당 벽시계 300 s. 시간 초과는 ERROR이고 PROVEN이 아니다 |
 | `init` inhale | emitter가 주석으로 표시하고, 보고서의 가정 목록에 싣는다 |
+| M3/M4 질문 1 | ledger의 6번째 종류 `structure`를 받아들인다 (2.14 표). 모델이 쓰는 선언은 다른 5종류 어디에도 맞지 않는다 |
+| M3/M4 질문 2 (D6) | emitter는 이름 없는 `Nondet`도 5.2 표대로 `var o: T`로 낸다. 읽히지 않는 값을 버리는 규칙은 만들지 않는다. 대신 `target.vpr` tryLock에 `var n_181_52: Int`(`mappingCount()` @181:52)를 더한다 |
+| M3/M4 질문 3 | 2.14 표의 core 경쟁 읽기에 `lockMap.keys` 108:21을 더한다 (4.5절과 같은 사실) |
+| M3/M4 질문 4 | 호출되지 않는 private helper가 모듈 상태를 바꾸면 모듈은 INCOMPLETE다. 보수적이지만 건전하다. 호출 그래프 검사는 v1 목록에 둔다 |
+| M3/M4 질문 5 | 받아들인다: unsupported action의 본문은 발견 순서의 `Unsupported` 문장만 갖는다 (그 action은 출력하지 않으므로 판정과 무관하다). ledger 항목은 구문 단위로 위치를 적는다. 두 번 인라인한 helper의 이름은 `b`, `c` 접미사, 같은 줄의 두 번째 선언은 `_<col>` 접미사를 받는다 |
+| M3/M4 질문 6 | `= clock`을 포함해 모든 `trusted fun`에 `reviewed`가 필요하다. 시계 선언도 "모듈 상태를 바꾸지 않고 임의 값을 준다"는 신뢰 주장이다 |
 
 ## 부록 A. 실험 재현
 

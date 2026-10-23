@@ -163,6 +163,7 @@ method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) re
     }
     // exit: existing @175:17 (mapping unchanged)
   } else {
+    var n_181_52: Int                          // lockMap.mappingCount() @181:52: nondet Long, no contract, unread
     if (rej) { // @181:21
       S.seq := S.seq + 1                       // nextToken() @182:39
       var n_80_52b: Int := S.seq
