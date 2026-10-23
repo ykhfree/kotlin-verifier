@@ -6,8 +6,9 @@ import kv.model.TrustedModels
 
 /**
  * Checks of a parsed sidecar that need no Kotlin code: required declarations, name clashes (DESIGN-v0.md 4.6),
- * references between sidecar names, trusted model names (4.3), R1 for issue values (3.5) and the `reviewed`
- * notes that U7 requires (8.3). Kotlin names are resolved later, against FIR.
+ * references between sidecar names, trusted model names (4.3), R1 for issue values (3.5), and the `reviewed`
+ * notes that U7 requires (8.3) on issue rules and allowance clauses, and decision 2 on trusted functions.
+ * Kotlin names are resolved later, against FIR.
  */
 fun checkSidecar(sidecar: Sidecar): List<SidecarError> = SidecarChecker(sidecar).run()
 
@@ -46,6 +47,10 @@ private class SidecarChecker(
             err(it.model.pos, "unknown-model", "unknown trusted model '${it.model.text}'; built-in models: ${TrustedModels.builtIn.sorted().joinToString()}")
         }
         witness()
+        // Decision 2 (2026-10-23): a trusted function contract counts only after a person reads the function body.
+        s.trusted.filter { it.reviewed == null }.forEach {
+            err(it.pos, "unreviewed", "trusted fun ${it.fn.text} needs a 'reviewed' note: its contract counts only after a person reads the body")
+        }
         s.operations.forEach(::operation)
         s.probes.forEach(::probe)
         return errors

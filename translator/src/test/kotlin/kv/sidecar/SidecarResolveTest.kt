@@ -237,6 +237,22 @@ class SidecarResolveTest {
         assertSingleError(resolve("coroutine"), "unreviewed", "keylocallock.common.kv", at("keylocallock.common.kv", "issue res {", "issue"))
     }
 
+    @Test
+    fun `reports a trusted function without a reviewed note`() {
+        copySpecs()
+        dropReviewedAfter("keylocallock.common.kv", "trusted fun com.linecorp.cse.reqshield.support.utils.nowToEpochTime() = clock")
+        val e = assertSingleError(resolve("core"), "unreviewed", "keylocallock.common.kv", at("keylocallock.common.kv", "trusted fun com.linecorp.cse.reqshield.support.utils.nowToEpochTime", "trusted"))
+        assertTrue("trusted fun com.linecorp.cse.reqshield.support.utils.nowToEpochTime" in e.message, e.message)
+    }
+
+    @Test
+    fun `reports a trusted function with clauses but no reviewed note`() {
+        copySpecs()
+        dropReviewedAfter("keylocallock.common.kv", "  effects none                          // rejectionCount and logging are outside the model")
+        val e = assertSingleError(resolve("coroutine"), "unreviewed", "keylocallock.common.kv", at("keylocallock.common.kv", "trusted fun com.linecorp.cse.reqshield.support.config", "trusted"))
+        assertTrue("rejectsNewEntry" in e.message, e.message)
+    }
+
     // ---- further resolver cases ----
 
     @Test
