@@ -973,6 +973,8 @@ Assumptions (not checked by Silicon):
 Racy reads (modeled as arbitrary values): lockMap.keys 96:33
 Not modeled (no module-state access): ensureMonitorStarted 82:9 (launch, while, try, delay), stopMonitoring 128:9, cancel 230:5, ...
 Unsupported: none
+Branch reachability (INFO, not part of any verdict): 25 branch(es) probed, 3 unreachable
+  INFO unreachable branch: tryLock KeyLocalLock.kt:161:49 compareAndSet fails  (also unLock 213:44, sweep 104:49)
 ```
 
 | 대상 | 판정 |
@@ -988,8 +990,8 @@ Kotlin 편집은 coroutine 변형 기준이다. core는 같은 문자열을 쓴�
 
 | 변이 | Kotlin 편집 | KVIR 변화 | Viper 변화 | 결과 | 실패한 의무 |
 |---|---|---|---|---|---|
-| SB1 | 213행 조건에서 `existing.token == token &&` 삭제 | `cond_213_17`이 CAS 결과만 받음 | `if (existing.token == t)` 감싸기 사라짐 | FAILED | unLock P1 |
-| SB2 | 204행 뒤에 `val sawMatch = lockMap[completeKey]?.token == token` 추가, 조건을 `sawMatch && ...`로 | 이름 없는 자유 값 `sawMatch` (출처 `RacyRead`) | `var sawMatch__205: Bool` (임의 값), 조건이 이것을 씀 | FAILED | unLock P1, progress_owner |
+| SB1 | 213행 조건에서 `existing.token == token &&` 삭제 | `cond_213_17`이 CAS 결과만 받음 | `if (existing.token == t)` 감싸기 사라짐 | FAILED | unLock P3a (`ends_only_if`) |
+| SB2 | 204행 뒤에 `val sawMatch = lockMap[completeKey]?.token == token` 추가, 조건을 `sawMatch && ...`로 | 이름 없는 자유 값 `sawMatch` (출처 `RacyRead`) | `var sawMatch__205: Bool` (임의 값), 조건이 이것을 씀 | FAILED | unLock P3a (`ends_only_if`), progress_owner |
 | SB3 | 172행 `existing.expiresAt = now + lockTimeoutMillis` 삭제 | `FieldWrite(expiresAt)` 사라짐 | 대입 1줄 사라짐 | FAILED | MI (hole conjunct 4: entry ↔ 토큰 기록 lease 연결) |
 | SB4 | 80행 `incrementAndGet()` → `get()` | 인라인한 helper 3곳에서 `ModelOp(incrementAndGet)` → `ModelOp(get)` | `S.seq := S.seq + 1` 3줄 사라짐 | FAILED | 커밋 블록 set-once 검사 `assert !tok(res).gIssued` |
 | SB6 | 168행 `existing.semaphore.tryAcquire()` → `true` | `ModelOp(tryAcquire)` 사라짐, `If(true)` | `if (true)` | FAILED | MI (INV-E), P3a |
@@ -998,7 +1000,7 @@ Kotlin 편집은 coroutine 변형 기준이다. core는 같은 문자열을 쓴�
 | SB5b (대조) | 104행 `lockInfo.isHeld.compareAndSet(true, false)` → `true` | CAS `ModelOp` 사라짐 | `if (true)` | PROVEN | — |
 
 변이마다 (c)가 판정을 지키는 이유:
-1. SB1, SB2: END 규칙은 "entry가 사라졌다"는 효과로 발동한다. 편집은 이 효과를 바꾸지 않는다. P1이 `old(S.m[k].token) == t`를 요구하므로 거부된다. SB2의 새 값은 이름이 없어 sidecar와 probe를 고치지 않아도 된다.
+1. SB1, SB2: END 규칙은 "entry가 사라졌다"는 효과로 발동한다. 편집은 이 효과를 바꾸지 않는다. 그래서 다른 보유자의 토큰이 끝나고, unLock의 `ends_only_if P3a: qt == t && res`가 거부한다. P1(`old(S.m[k].token) == t`)도 거짓이지만 보고되지 않는다: Silicon은 경로마다 처음 실패한 사후조건만 보고하고, 5.2 템플릿은 권한 절을 sidecar `ensures`보다 앞에 둔다 (측정: 순서를 바꾸면 SB1은 P1로 보고된다). SB2의 새 값은 이름이 없어 sidecar와 probe를 고치지 않아도 된다.
 2. SB3: `gLease`는 명세 항 `now + timeout`에서 온다 (R1). 코드가 쓰는 `expiresAt`에서 오지 않는다. 그래서 MI의 lease 연결이 깨진다.
 3. SB4: 발급 규칙은 돌려준 값에 묶인다. 같은 값이 다시 나오면 set-once 검사가 깨진다.
 4. SB6, E4: END 규칙이 밀려난 보유자의 종료를 기록한다. `ends_only_if` P3a가 "만료 전 종료"를 거부한다. E4는 상한 분기가 entry를 지우며 unbacked 토큰을 내므로 P3b도 깨진다.
@@ -1026,7 +1028,7 @@ feature-developer가 순서대로 구현한다. 각 마일스톤은 수락 테�
 | M6 | ghost binder (END, ISSUE, 권한 기본값, set-once, HIST) | 1. 이름 없는 compute를 하나 더한 fixture(조건 없이 entry 삭제) → 기본 `ends_only_if false`로 FAILED. 2. 같은 토큰을 다시 발급하는 fixture → set-once 검사 실패. 3. 생성한 HIST가 목표 모델의 HIST와 같다 | 1-2 |
 | M7 | `MI_INV` hole 흐름 (skeleton 출력, hole 검사, 채택, 진단용 분할) | 1. `MI_INV = true` skeleton은 검증에 실패한다. 2. hole 검사기가 hole 밖 편집과 금지어(`assume`, `inhale` 등)를 거부한다 (spike `e3_harness.py` 테스트 이식). 3. 4.4절 hole을 채택하면 검증된다 | 1 |
 | M8 | Kotlin 변이 스크립트, 두 변형 end-to-end | PHASE1 완료 조건 1-5. 6절 표의 판정이 모두 나온다 | 1-2 |
-| M9 (선택) | 분기 도달성 보고 | coroutine에서 도달 불가 분기가 정확히 161:49, 213:44, 104:49의 CAS 실패 분기다 | 0.5-1 |
+| M9 | 분기 도달성 보고 (`kv verify`가 항상 실행, INFO) | coroutine에서 도달 불가 분기가 정확히 161:49, 213:44, 104:49의 CAS 실패 분기다 | 0.5-1 |
 | 합계 | M0-M8 | | 15.5-25 (추정) |
 
 참고:
@@ -1099,6 +1101,11 @@ L3 연결 자리 (v0에서는 구현하지 않음):
 | M5/M6 Q7 | `kv verify` 종료 코드: 0 PROVEN, 1 FAILED, 2 사용법 오류, 3 INCOMPLETE, 4 ERROR (컴파일 오류, sidecar 오류, W 위반, Silicon 비정상 포함). CI와 M8 스크립트가 보고서 문구를 읽지 않아도 된다 |
 | M7 편집 면 | LLM은 sidecar의 `hole MI_INV """..."""` 문자열만 고친다. 검사기는 고치기 전후의 sidecar를 비교한다: hole 문자열 밖은 바이트 단위로 같아야 하고, 안에는 금지어가 없어야 한다 (spike `e3_harness.py`의 규칙). `.vpr`의 marker 사이를 고치는 방식은 쓰지 않는다: emitter가 hole을 조각으로 나누므로 LLM이 나눈 형태를 써야 하고, sidecar가 원본이라는 원칙과도 어긋난다 |
 | 다음 작업 순서 | SB1/SB2 수정 → Q3/Q5/Q7 코드 → M8(두 변형) → M7 → M9. M8이 v0 완료 조건이고, sidecar의 hole은 이미 채워져 있으므로 M8은 M7에 기대지 않는다 |
+| v0 검증 (메인 세션) | 테스트 246개, 두 gate exit 0, `./gradlew mutantsReqShield` 22회 불일치 0 (84 s). 원본·SB5·SB5b·R1·R2는 두 변형 모두 PROVEN, SB1-SB4·SB6·E4는 FAILED. M9 INFO는 정확히 161:49, 213:44, 104:49. `kv hole check`는 hole 안 `inhale`과 hole 밖 편집을 위치와 함께 거부한다 |
+| SB1/SB2 수정 | 원인 (A): 코드가 `token`을 sidecar 필드와 비교하지 않으면 추상 타입이 정해지지 않았다. 4.2 제한 4의 표기로 고친다. 원인 (B): action 밖 선언을 action 안 노드로 표시해 W14가 깨졌다. lowering에서 고쳤고, 같은 경로(`Long?`, 모델 밖 클래스)에 fixture를 더했다 |
+| v0 질문 1 | SB1/SB2의 실패 의무는 측정값(P3a)으로 6절 표를 고친다. 어떤 `ensures` 순서도 6절의 옛 표 전체를 재현하지 못한다 (측정). 템플릿 순서는 그대로 둔다 |
+| v0 질문 2, 3 | M9는 `kv verify`에서 항상 두 번째 Silicon으로 동시에 돈다 (INFO, 판정 무관). 분기: 번역된 `if`의 then 팔과 비어 있지 않은 else 팔, 결과를 읽는 CAS/tryAcquire의 성공·실패. 결과를 읽지 않는 연산(189:17)과 빈 else는 뺀다 |
+| v0 질문 4, 5 | `call` 출처의 자유 값에는 타입 표기를 쓸 수 없다 (trusted fun의 `returns`/`ghost`가 정한다). `kv hole`은 hole을 담은 파일(`keylocallock.common.kv`)을 직접 받는다 |
 
 ## 부록 A. 실험 재현
 

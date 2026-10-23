@@ -1,6 +1,6 @@
 # Phase 1: translator v0 for the KeyLocalLock subset
 
-Date: 2026-10-23. Status: plan.
+Date: 2026-10-23. Status: v0 built (translator/). Done criteria 1-5 are met; evidence in DESIGN-v0.md 8.3 "v0 검증".
 
 ## Decision: own frontend, not a SnaKt fork
 
