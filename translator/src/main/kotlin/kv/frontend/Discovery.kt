@@ -3,6 +3,8 @@ package kv.frontend
 import kv.kvir.Pos
 import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.KtSourceElement
+import org.jetbrains.kotlin.com.intellij.lang.LighterASTNode
+import org.jetbrains.kotlin.com.intellij.openapi.util.Ref
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.declarations.FirAnonymousFunction
 import org.jetbrains.kotlin.fir.declarations.FirFile
@@ -20,6 +22,7 @@ import org.jetbrains.kotlin.fir.types.classId
 import org.jetbrains.kotlin.fir.types.lowerBoundIfFlexible
 import org.jetbrains.kotlin.fir.unwrapSubstitutionOverrides
 import org.jetbrains.kotlin.fir.visitors.FirVisitorVoid
+import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.Name
@@ -129,9 +132,22 @@ class Positions(
     private val path = file.sourceFile?.path ?: file.name
     private val lines = file.sourceFileLinesMapping
 
-    fun of(source: KtSourceElement?): Pos? {
-        if (source == null || lines == null) return null
-        val (line, col) = lines.getLineAndColumnByOffset(source.startOffset)
+    fun of(source: KtSourceElement?): Pos? = source?.let { at(it, it.startOffset) }
+
+    /** Position of a declaration: where its code starts, after the KDoc and comments its source range includes. */
+    fun ofDeclaration(source: KtSourceElement?): Pos? {
+        if (source == null) return null
+        val children = Ref<Array<LighterASTNode?>>()
+        source.treeStructure.getChildren(source.lighterASTNode, children)
+        val code = children.get().orEmpty().filterNotNull().firstOrNull { it.tokenType != KtTokens.WHITE_SPACE && it.tokenType !in KtTokens.COMMENTS }
+        return at(source, code?.startOffset ?: source.startOffset)
+    }
+
+    private fun at(
+        source: KtSourceElement,
+        offset: Int,
+    ): Pos? {
+        val (line, col) = lines?.getLineAndColumnByOffset(offset) ?: return null
         return Pos(path, line + 1, col + 1, (source.kind as? KtFakeSourceElementKind)?.let { it::class.simpleName })
     }
 }

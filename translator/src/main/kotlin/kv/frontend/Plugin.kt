@@ -72,6 +72,6 @@ class KvFileChecker(
 ) : FirDeclarationChecker<FirFile>(MppCheckerKind.Common) {
     context(context: CheckerContext, reporter: DiagnosticReporter)
     override fun check(declaration: FirFile) {
-        session.analyze(declaration)
+        session.analyze(declaration, context.session)
     }
 }

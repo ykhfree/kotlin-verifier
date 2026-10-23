@@ -1,7 +1,13 @@
 package kv.frontend
 
+import kv.sidecar.Sidecar
+import kv.sidecar.SidecarError
+import kv.sidecar.SidecarException
+import kv.sidecar.SidecarLoader
+import kv.sidecar.checkSidecar
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.jvm.K2JVMCompiler
+import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.FirFile
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -20,22 +26,56 @@ data class FrontendResult(
     val messages: String,
     /** `ConcurrentHashMap.compute` calls in all compiled sources, in file and source order. */
     val sites: List<ComputeSite>,
+    /** The sidecar's Kotlin names bound to FIR symbols; null without a sidecar or if no source declares the module. */
+    val resolution: Resolution?,
+    /** Sidecar names that did not resolve. */
+    val sidecarErrors: List<SidecarError>,
 )
 
 /** Input and output of one compiler run. The plugin finds it by id, so it must run in this JVM. */
-class FrontendSession {
+class FrontendSession(
+    /** A sidecar that passed [kv.sidecar.checkSidecar]; null to only discover compute calls. */
+    private val sidecar: Sidecar?,
+) {
     private val sites = Collections.synchronizedList(mutableListOf<ComputeSite>())
+    private val errors = Collections.synchronizedList(mutableListOf<SidecarError>())
+
+    @Volatile
+    private var resolution: Resolution? = null
 
     /** Called by the plugin once per source file, after full body resolution. */
-    internal fun analyze(file: FirFile) {
-        sites += findComputes(file).map { it.site }
+    internal fun analyze(
+        file: FirFile,
+        firSession: FirSession,
+    ) {
+        val found = findComputes(file)
+        sites += found.map { it.site }
+        val module = sidecar?.modules?.single() ?: return
+        val moduleClass = findClass(file, module.fqn.text) ?: return
+        val (res, errs) = SidecarResolver(sidecar, file, firSession, found, moduleClass).resolve()
+        resolution = res
+        errors += errs
     }
 
     internal fun result(
         compiled: Boolean,
         messages: String,
-    ) = FrontendResult(compiled, messages, sites.toList())
+    ): FrontendResult {
+        val module = sidecar?.modules?.single()
+        if (module != null && compiled && resolution == null) {
+            errors += SidecarError(module.fqn.pos, "unresolved", "no source file declares module class ${module.fqn.text}")
+        }
+        return FrontendResult(compiled, messages, sites.toList(), resolution, errors.toList())
+    }
 }
+
+/** Outcome of resolving a sidecar file: sidecar errors, or compiler messages, or the resolution. */
+data class ResolveOutcome(
+    val errors: List<SidecarError>,
+    /** Set when the sources did not compile. */
+    val compileMessages: String?,
+    val resolution: Resolution?,
+)
 
 /** Runs the K2 compiler in-process with the kv FIR plugin. */
 object Frontend {
@@ -53,9 +93,10 @@ object Frontend {
         sources: List<File>,
         classpath: List<File>,
         kotlincArgs: List<String> = emptyList(),
+        sidecar: Sidecar? = null,
     ): FrontendResult {
         val id = UUID.randomUUID().toString()
-        val session = FrontendSession()
+        val session = FrontendSession(sidecar)
         sessions[id] = session
         val classesDir = Files.createTempDirectory("kv-classes").toFile()
         try {
@@ -76,6 +117,31 @@ object Frontend {
             sessions.remove(id)
             classesDir.deleteRecursively()
         }
+    }
+
+    /**
+     * Loads and checks [sidecarFile], compiles the `source` files it names (relative to [root]), and binds its Kotlin
+     * names to FIR symbols. Stops at the first stage that reports errors.
+     */
+    fun resolve(
+        sidecarFile: File,
+        root: File,
+        classpath: List<File>,
+        kotlincArgs: List<String> = emptyList(),
+    ): ResolveOutcome {
+        val sidecar =
+            try {
+                SidecarLoader.load(sidecarFile)
+            } catch (e: SidecarException) {
+                return ResolveOutcome(e.errors, null, null)
+            }
+        val errors = checkSidecar(sidecar)
+        if (errors.isNotEmpty()) return ResolveOutcome(errors, null, null)
+        val missing = sidecar.sources.filter { !File(root, it.path).isFile }
+        if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file ${File(root, it.path)}") }, null, null)
+        val result = run(sidecar.sources.map { File(root, it.path) }, classpath, kotlincArgs, sidecar)
+        if (!result.compiled) return ResolveOutcome(emptyList(), result.messages, null)
+        return ResolveOutcome(result.sidecarErrors, null, result.resolution.takeIf { result.sidecarErrors.isEmpty() })
     }
 
     /**

@@ -9,6 +9,8 @@ import kotlin.system.exitProcess
 private const val USAGE = """usage:
   kv discover [--classpath CP] [--kotlinc "ARGS"] FILE.kt...
       Compiles the files and lists every ConcurrentHashMap.compute call (one candidate action each).
+  kv resolve --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
+      Checks the sidecar, compiles its source files (relative to DIR) and binds its Kotlin names to FIR symbols.
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
@@ -32,6 +34,7 @@ fun runCli(
         }
     return when (command) {
         "discover" -> discover(options, out, err)
+        "resolve" -> resolve(options, out, err)
         else -> {
             err.println(USAGE)
             2
@@ -58,6 +61,35 @@ private fun discover(
     return 0
 }
 
+private fun resolve(
+    options: Options,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    val root = options.root
+    if (root == null || options.files.size != 1) {
+        err.println("kv: resolve needs --root DIR and one sidecar file")
+        return 2
+    }
+    val outcome = Frontend.resolve(options.files.single(), root, options.classpath, options.kotlincArgs)
+    outcome.compileMessages?.let {
+        err.print(it)
+        err.println("kv: compilation failed")
+        return 1
+    }
+    if (outcome.errors.isNotEmpty()) {
+        outcome.errors.forEach { err.println(it) }
+        return 1
+    }
+    val resolution = outcome.resolution!!
+    resolution.bindings.forEach { b ->
+        val where = b.kotlinPos?.let { "@${it.file.substringAfterLast('/')}:${it.line}:${it.col}" } ?: "(library)"
+        out.println("${b.sidecar} -> ${b.kotlin} $where")
+    }
+    resolution.unsupported.forEach { out.println("unsupported operation ${it.operation} (${it.at}): ${it.reason}") }
+    return 0
+}
+
 private fun format(site: ComputeSite): String {
     val lambda = site.lambda?.let { "${it.line}:${it.col}" } ?: "none"
     return "${site.pos} ${site.receiver ?: "?"}.compute class=${site.inClass ?: "-"} fun=${site.inFunction ?: "-"} lambda=$lambda"
@@ -68,24 +100,27 @@ private class UsageError(
 ) : Exception(message)
 
 private class Options(
+    val root: File?,
     val classpath: List<File>,
     val kotlincArgs: List<String>,
     val files: List<File>,
 ) {
     companion object {
         fun parse(args: List<String>): Options {
+            var root: File? = null
             var classpath = emptyList<File>()
             val kotlincArgs = mutableListOf<String>()
             val files = mutableListOf<File>()
             val it = args.iterator()
             while (it.hasNext()) {
                 when (val arg = it.next()) {
+                    "--root" -> root = File(value(it, arg))
                     "--classpath" -> classpath = value(it, arg).split(File.pathSeparator).filter { p -> p.isNotEmpty() }.map(::File)
                     "--kotlinc" -> kotlincArgs += value(it, arg).split(Regex("\\s+")).filter { a -> a.isNotEmpty() }
                     else -> if (arg.startsWith("--")) throw UsageError("unknown option $arg") else files += File(arg)
                 }
             }
-            return Options(classpath, kotlincArgs, files)
+            return Options(root, classpath, kotlincArgs, files)
         }
 
         private fun value(
