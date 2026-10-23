@@ -651,6 +651,22 @@ feature-developer가 순서대로 구현한다. 마일스톤은 수락 테스트
 | 구현 순서 | 두 번에 나눈다. 1차: B0, B1, B2 (KeyLocalLock 회귀 유지). 2차: B3, B4, B6 |
 | 메인 세션 확인 | `spike/aspect/target.vpr` Silicon 1.89 s, 변이 13개 판정이 `expected-verdicts.txt`와 같다. `15e24d5` 이전의 core `KeyLocalLock`은 인스턴스마다 `lockMap`과 `newSingleThreadExecutor`, `while (true)` 감시를 가졌다 (req-shield 기록) |
 
+### 9.4 1차 구현 뒤 결정 (2026-10-24)
+
+메인 세션 확인: 테스트 345개, KeyLocalLock gate 3개 exit 0, `mutantsReqShield` 33회 불일치 0 (120.5 s). `lowerAspectCoreSpring`의 KVIR은 `spike/aspect/target.vpr`의 `getOrCreate`와 구조가 같다.
+
+| 질문 | 결정 |
+|---|---|
+| 1 | 연산 구간 번역은 instance 모듈에만 둔다. object 모듈(KeyLocalLock)은 v0 규칙 그대로다. 합칠 필요가 생기면 그때 정한다 |
+| 2 | 연산 하나의 action 호출은 정확히 1개다. 서로 다른 경로의 2개도 UNSUPPORTED다 (v0 U2와 같은 방향, 보수적) |
+| 3 | emitter 이름 규칙: 연산이 그대로 돌려주는 action 값(`return out`)은 결과 변수 `res`로 쓴다. `out_` 지역은 만들지 않는다. 목표 모델과 `mutants.py`의 형태가 이 규칙이다. 다른 경우에 `out_`이 필요하면 열린 질문으로 보고한다 (보호 파일 `vpr_normalize.py`는 메인 세션이 고친다) |
+| 4 | B4에서 측정한다. 모듈 판정 규칙은 v0 5.8 그대로다 (FAILED가 하나라도 있으면 FAILED) |
+| 5 | 건전성 규칙: 같은 경로에서 `fresh` 호출 뒤, action 앞에 실행되는 모델 밖 호출과 `!!`는 던질 수 있다 (비결정 raise). 그런 raise는 만든 객체를 버리므로 `MI_INV_1`/`P_once`가 실패해야 한다. 그 밖의 위치(생성 전, action 뒤)의 raise는 생성 수에 영향이 없으므로 v0처럼 자유 값으로 둔다. 이유: 이 규칙이 없으면 "생성 → 던질 수 있는 호출 → putIfAbsent" 코드에서 실제로 가능한 중복 생성을 PROVEN으로 놓친다 |
+| 6 | 신뢰 본문 규칙 2(연산 호출 금지)의 기계 검사는 직접 호출만 본다. 헬퍼를 거친 호출은 사람 검토(`reviewed`)가 맡는다. 보고서의 가정 목록에 싣는다 |
+| 7 | state 가시성 규칙(public/protected state는 sidecar 오류)을 모든 모듈에 적용한다. 감사 밖의 코드가 state에 쓸 수 있으면 건전하지 않기 때문이다 |
+| 8 | `use kotlin.collections.getOrPut` 하나로 충분하다. 보고서의 신뢰 모델 목록에 getOrPut의 inline 본문 가정(부록 B 6)을 싣는다 |
+| 9 | `createReqShield` 초안 메모 3개는 B 끝에 사용자 서명을 받는다. 지문(B6)은 함수 본문에 묶이므로 메모 문장과 무관하다 |
+
 ## 부록 A. 재현
 
 1. 목표 모델: `spike/silicon.sh spike/aspect/target.vpr` (`TIMES=1`이면 메서드별 시간).
