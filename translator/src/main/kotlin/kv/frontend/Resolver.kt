@@ -65,7 +65,7 @@ data class UnsupportedOperation(
 data class Resolution(
     val bindings: List<Binding>,
     /** Each translatable operation's action: its compute call. */
-    val actions: Map<String, ComputeSite>,
+    val actions: Map<String, ActionSite>,
     val unsupported: List<UnsupportedOperation>,
 )
 
@@ -103,13 +103,13 @@ class SidecarResolver(
     private val sidecar: Sidecar,
     private val file: FirFile,
     private val session: FirSession,
-    private val computes: List<FoundCompute>,
+    private val computes: List<FoundAction>,
     private val module: FirRegularClass,
 ) {
     private val errors = mutableListOf<SidecarError>()
     private val bindings = mutableListOf<Binding>()
     private val unsupported = mutableListOf<UnsupportedOperation>()
-    private val actions = linkedMapOf<String, ComputeSite>()
+    private val actions = linkedMapOf<String, ActionSite>()
     private val positions = Positions(file)
     private val outer = module.symbol.classId.outerClassId?.let(::classSymbol)
     private val pkg = file.packageDirective.packageFqName
@@ -122,7 +122,7 @@ class SidecarResolver(
     internal val fields = mutableMapOf<Pair<String, String>, FirPropertySymbol>()
 
     /** Operation name to its compute call. */
-    internal val computeOf = mutableMapOf<String, FoundCompute>()
+    internal val computeOf = mutableMapOf<String, FoundAction>()
 
     /** Operation name to the Kotlin declaration each `free` item names: a local, parameter, property or call. */
     internal val freeOf = mutableMapOf<String, MutableList<Pair<FreeItem, Any>>>()
@@ -142,7 +142,7 @@ class SidecarResolver(
         sidecar.classes.forEach(::cls)
         sidecar.states.forEach(::state)
         sidecar.trusted.forEach(::trustedFun)
-        val claimed = mutableMapOf<FoundCompute, String>()
+        val claimed = mutableMapOf<FoundAction, String>()
         sidecar.operations.forEach { operation(it, claimed) }
         return Resolution(bindings, actions, unsupported) to errors
     }
@@ -330,11 +330,11 @@ class SidecarResolver(
 
     private fun operation(
         op: OperationDecl,
-        claimed: MutableMap<FoundCompute, String>,
+        claimed: MutableMap<FoundAction, String>,
     ) {
         val sel = op.selector
         val target = sel.target
-        val found: FoundCompute =
+        val found: FoundAction =
             when (sel) {
                 is Selector.Fun -> {
                     val fns = lookupMember(target.text.split('.'), FirNamedFunctionSymbol::class)
@@ -377,12 +377,12 @@ class SidecarResolver(
         op.free.forEach { free(op, it, found) }
     }
 
-    private fun at(c: FoundCompute) = "${c.site.pos.line}:${c.site.pos.col}"
+    private fun at(c: FoundAction) = "${c.site.pos.line}:${c.site.pos.col}"
 
     private fun free(
         op: OperationDecl,
         item: FreeItem,
-        found: FoundCompute,
+        found: FoundAction,
     ) {
         val what = "free ${op.name.text}.${item.names.joinToString(", ") { it.text }}"
         val src = item.source
@@ -449,7 +449,7 @@ class SidecarResolver(
     }
 
     /** Local properties declared before [found]'s call in the blocks that enclose it, outermost first. */
-    private fun visibleLocals(found: FoundCompute): List<FirProperty> {
+    private fun visibleLocals(found: FoundAction): List<FirProperty> {
         val outermost = found.scopes.firstOrNull() ?: return emptyList()
         val blocks = ArrayDeque<MutableList<FirProperty>>()
         var visible: List<FirProperty>? = null

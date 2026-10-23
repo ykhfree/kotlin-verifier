@@ -44,3 +44,21 @@ object ReqShield {
     /** The files a variant compiles: KeyLock.kt declares the interface KeyLocalLock.kt implements. */
     fun sources(variantDir: File) = listOf(File(variantDir, "KeyLock.kt"), File(variantDir, "KeyLocalLock.kt"))
 }
+
+/** req-shield's three Spring aspect modules (DESIGN-B.md), passed in by Gradle (see build.gradle.kts). Read only. */
+object Aspects {
+    val classpath: List<File> = System.getProperty("kv.aspectClasspath").split(File.pathSeparator).map(::File)
+
+    /** Module name to the main source root, relative to the req-shield checkout. */
+    val roots =
+        mapOf(
+            "core-spring" to "core-spring/src/main/kotlin",
+            "webflux" to "core-spring-webflux/src/main/kotlin",
+            "coroutine" to "core-spring-webflux-kotlin-coroutine/src/main/kotlin",
+        )
+
+    /** The aspect file of [module], relative to the req-shield checkout. */
+    fun aspectFile(module: String): String =
+        roots.getValue(module) + "/com/linecorp/cse/reqshield/spring/" +
+            mapOf("core-spring" to "", "webflux" to "webflux/", "coroutine" to "webflux/kotlin/coroutine/").getValue(module) + "aspect/ReqShieldAspect.kt"
+}

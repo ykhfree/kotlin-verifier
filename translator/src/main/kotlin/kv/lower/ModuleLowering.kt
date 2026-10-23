@@ -1,6 +1,6 @@
 package kv.lower
 
-import kv.frontend.FoundCompute
+import kv.frontend.FoundAction
 import kv.frontend.Resolution
 import kv.frontend.SidecarResolver
 import kv.kvir.Diagnostic
@@ -25,7 +25,7 @@ internal fun lowerModule(
     resolver: SidecarResolver,
     resolution: Resolution,
     file: FirFile,
-    computes: List<FoundCompute>,
+    computes: List<FoundAction>,
     moduleClass: FirRegularClass,
 ): Module {
     val ctx = ModuleContext(sidecar, resolver, FirIndex(file), moduleClass)
@@ -36,7 +36,7 @@ internal fun lowerModule(
     actionSites.forEach { ctx.collectAbstractions(it, maps.getValue(it)!!.key.name) }
     ctx.fixAnnotations().takeIf { it.isNotEmpty() }?.let { throw SidecarException(it) }
 
-    val lowered = mutableListOf<Pair<FoundCompute, Lowered>>()
+    val lowered = mutableListOf<Pair<FoundAction, Lowered>>()
     val operations =
         sidecar.operations.mapNotNull { decl ->
             val found = resolver.computeOf[decl.name.text] ?: return@mapNotNull null

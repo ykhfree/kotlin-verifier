@@ -20,6 +20,10 @@ val reqShieldDir = providers.gradleProperty("reqShieldDir").getOrElse("/Users/yk
 // req-shield's libs.versions.toml. KeyLocalLock needs nothing else.
 val reqShieldClasspath: Configuration by configurations.creating
 
+// Compile classpath of req-shield's three Spring aspect modules (DESIGN-B.md): core-spring, core-spring-webflux and
+// core-spring-webflux-kotlin-coroutine. One classpath serves all three; their ReqShield packages differ.
+val aspectClasspath: Configuration by configurations.creating
+
 dependencies {
     // The plugin part compiles against the compiler API and does not bundle it.
     compileOnly("org.jetbrains.kotlin:kotlin-compiler-embeddable:$kotlinCompilerVersion")
@@ -33,6 +37,36 @@ dependencies {
     reqShieldClasspath("org.slf4j:slf4j-api:1.7.36")
     reqShieldClasspath("io.projectreactor:reactor-core:3.7.19")
     reqShieldClasspath(files("$reqShieldDir/support/build/libs/support-1.0.0.jar"))
+
+    // DESIGN-B.md 6.2 rule 4: the jars the three Spring aspect modules compile against, from the Gradle cache.
+    // The ReqShield classes come from the jars req-shield built from the same commit (build/libs), as the support jar.
+    for (coordinates in listOf(
+        "org.jetbrains.kotlin:kotlin-stdlib:2.0.21",
+        "org.jetbrains:annotations:13.0",
+        "org.springframework:spring-context:6.2.19",
+        "org.springframework:spring-aop:6.2.19",
+        "org.springframework:spring-beans:6.2.19",
+        "org.springframework:spring-core:6.2.19",
+        "org.springframework:spring-expression:6.2.19",
+        "org.springframework:spring-jcl:6.2.19",
+        "org.aspectj:aspectjweaver:1.9.25.1",
+        "org.slf4j:slf4j-api:1.7.36",
+        "io.projectreactor:reactor-core:3.7.19",
+        "org.reactivestreams:reactive-streams:1.0.4",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-reactor:1.8.1",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-reactive:1.8.1",
+    )) {
+        aspectClasspath(coordinates) { isTransitive = false }
+    }
+    aspectClasspath(
+        files(
+            "$reqShieldDir/support/build/libs/support-1.0.0.jar",
+            "$reqShieldDir/core/build/libs/core-1.0.0.jar",
+            "$reqShieldDir/core-reactor/build/libs/core-reactor-1.0.0.jar",
+            "$reqShieldDir/core-kotlin-coroutine/build/libs/core-kotlin-coroutine-1.0.0.jar",
+        ),
+    )
 }
 
 application {
@@ -48,6 +82,7 @@ tasks.test {
     systemProperty("kv.reqShieldDir", reqShieldDir)
     systemProperty("kv.reqShieldClasspath", reqShieldClasspath.asPath)
     systemProperty("kv.reqShieldKotlincArgs", reqShieldKotlincArgs)
+    systemProperty("kv.aspectClasspath", aspectClasspath.asPath)
     systemProperty("kv.specDir", rootProject.layout.projectDirectory.dir("../specs").asFile.absolutePath)
     // The M5 gate (vpr_normalize.py) and the hand-written target models.
     systemProperty("kv.spikeDir", rootProject.layout.projectDirectory.dir("../spike").asFile.absolutePath)
@@ -79,14 +114,20 @@ val verifyReqShield by tasks.registering {
     description = "Verifies the three KeyLocalLock variants with Silicon and prints the reports."
 }
 
-/** Runs the kv CLI with [args]: the command first, then its arguments after the req-shield classpath and flags. */
-fun JavaExec.kv(vararg args: String) {
+/**
+ * Runs the kv CLI with [args]: the command first, then its arguments after the compile classpath [cp] (default: the
+ * KeyLocalLock one) and the req-shield flags.
+ */
+fun JavaExec.kv(
+    vararg args: String,
+    cp: Configuration = reqShieldClasspath,
+) {
     group = "kv"
     classpath = sourceSets.main.get().runtimeClasspath
     mainClass.set("kv.cli.MainKt")
     argumentProviders.add(
         CommandLineArgumentProvider {
-            listOf(args[0], "--classpath", reqShieldClasspath.asPath, "--kotlinc", reqShieldKotlincArgs) + args.drop(1)
+            listOf(args[0], "--classpath", cp.asPath, "--kotlinc", reqShieldKotlincArgs) + args.drop(1)
         },
     )
 }
@@ -108,6 +149,22 @@ for ((variant, dir) in listOf(
     lowerReqShield { dependsOn(lower) }
     emitReqShield { dependsOn(emit) }
     verifyReqShield { dependsOn(verify) }
+}
+
+// `./gradlew discoverAspect`: run `kv discover` on the main sources of the three req-shield Spring aspect modules
+// (DESIGN-B.md 8, B0). Each module also has its own task, e.g. `discoverAspectCoreSpring`.
+val discoverAspect by tasks.registering {
+    group = "kv"
+    description = "Lists the ConcurrentHashMap action calls of the three req-shield Spring aspect modules."
+}
+
+for ((module, dir) in listOf(
+    "CoreSpring" to "core-spring",
+    "Webflux" to "core-spring-webflux",
+    "Coroutine" to "core-spring-webflux-kotlin-coroutine",
+)) {
+    val discover = tasks.register<JavaExec>("discoverAspect$module") { kv("discover", "$reqShieldDir/$dir/src/main/kotlin", cp = aspectClasspath) }
+    discoverAspect { dependsOn(discover) }
 }
 
 // `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of the three
