@@ -3,7 +3,7 @@
 // The variant files keylocallock.coroutine.kv and keylocallock.core.kv add module, source and state seq.
 //
 // U7: an issue rule, an allowance clause and a trusted fun count only with a `reviewed` note. ykhfree reviewed the
-// issue rule and the four allowance clauses on 2026-10-23. The two trusted fun notes cite source lines only.
+// issue rule, the four allowance clauses and the two trusted funs on 2026-10-23.
 
 // ---- Abstract types for String values ----
 type Key   = opaque                     // compute keys: lockKeyOf(key, lockType)
@@ -33,13 +33,13 @@ use slf4j.Logger
 
 // ---- Trusted project functions (bodies read by a human) ----
 trusted fun com.linecorp.cse.reqshield.support.utils.nowToEpochTime() = clock
-  reviewed "support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()"
+  reviewed "ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()"
 trusted fun com.linecorp.cse.reqshield.support.config.LocalLockLimit.rejectsNewEntry(kotlin.Long)
   returns rej: Bool
   ghost   limit: Int                    // the cap the call read
   ensures rej ==> limit != 0
   effects none                          // rejectionCount and logging are outside the model
-  reviewed "support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit"
+  reviewed "ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit"
 
 // ---- Ghost state ----
 ghost record tok(Token) {
