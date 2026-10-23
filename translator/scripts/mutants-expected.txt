@@ -6,6 +6,7 @@
 # The 5.2 template (and spike/effect_ghost/target.vpr) checks `ends_only_if P3a` before P1, and Silicon reports
 # only the first failing postcondition on each path. The hand-written target.vpr mutants SB1_no_token_check and
 # SB2_toctou_unlock fail at the same clauses as below (measured 2026-10-23).
+# The reactor rows were measured before they were written here; they equal the coroutine rows (2026-10-23).
 #
 # variant   mutant    verdict  action   obligations
 coroutine   original  PROVEN   -        -
@@ -30,3 +31,14 @@ core        SB5       PROVEN   -        -
 core        SB5b      PROVEN   -        -
 core        R1        PROVEN   -        -
 core        R2        PROVEN   -        -
+reactor     original  PROVEN   -        -
+reactor     SB1       FAILED   unLock   ends_only_if P3a
+reactor     SB2       FAILED   unLock   ends_only_if P3a; progress_owner
+reactor     SB3       FAILED   tryLock  MI_INV_4
+reactor     SB4       FAILED   tryLock  issue tryLock: set-once gIssued
+reactor     SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
+reactor     E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
+reactor     SB5       PROVEN   -        -
+reactor     SB5b      PROVEN   -        -
+reactor     R1        PROVEN   -        -
+reactor     R2        PROVEN   -        -

@@ -36,7 +36,7 @@ class MutantScriptTest {
 
     private val p3a = "Postcondition of unLock might not hold: sidecar ends_only_if P3a keylocallock.common.kv:78:3 (incomplete quantifiers)"
     private val sb1Failed = Response(1, report("FAILED", "FAILED", listOf(p3a)))
-    private val sb1Rows = "coroutine  SB1  FAILED  unLock  ends_only_if P3a\ncore  SB1  FAILED  unLock  ends_only_if P3a\n"
+    private val sb1Rows = "coroutine  SB1  FAILED  unLock  ends_only_if P3a\ncore  SB1  FAILED  unLock  ends_only_if P3a\nreactor  SB1  FAILED  unLock  ends_only_if P3a\n"
 
     private data class Response(
         val exit: Int,
@@ -45,7 +45,7 @@ class MutantScriptTest {
     )
 
     /**
-     * Runs the script on mutant [only] of both variants with a fake kv. [responses] maps `<variant>-<mutant>` to the
+     * Runs the script on mutant [only] of the three variants with a fake kv. [responses] maps `<variant>-<mutant>` to the
      * fake run's result. [expected] is the expected table. Returns the exit code and the output.
      */
     private fun run(
@@ -88,27 +88,31 @@ class MutantScriptTest {
 
     @Test
     fun `matching verdicts and obligations exit 0, and the copy holds the mutant`() {
-        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to sb1Failed))
+        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to sb1Failed, "reactor-SB1" to sb1Failed))
         assertEquals(0, exit, out)
         assertTrue(out.lines().any { it.startsWith("coroutine  SB1       FAILED") && it.endsWith("unLock {ends_only_if P3a}") }, out)
-        assertTrue("2 run(s), 0 mismatch(es)" in out, out)
-        val rel = "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt"
-        val copy = File(dir, "out/roots/coroutine-SB1/$rel").readText()
-        assertTrue("existing.token == token && " !in copy && "if (existing.isHeld.compareAndSet(true, false))" in copy, copy)
-        assertTrue("existing.token == token && " in File(ReqShield.dir, rel).readText(), "req-shield is not touched")
+        assertTrue("3 run(s), 0 mismatch(es)" in out, out)
+        for ((variant, rel) in listOf(
+            "coroutine" to "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt",
+            "reactor" to "core-reactor/src/main/kotlin/com/linecorp/cse/reqshield/reactor/KeyLocalLock.kt",
+        )) {
+            val copy = File(dir, "out/roots/$variant-SB1/$rel").readText()
+            assertTrue("existing.token == token && " !in copy && "if (existing.isHeld.compareAndSet(true, false))" in copy, copy)
+            assertTrue("existing.token == token && " in File(ReqShield.dir, rel).readText(), "req-shield is not touched")
+        }
     }
 
     @Test
     fun `a different set of failing obligations is a mismatch`() {
         val p1 = "Postcondition of unLock might not hold: sidecar P1 keylocallock.common.kv:76:3"
-        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to Response(1, report("FAILED", "FAILED", listOf(p3a, p1))), "core-SB1" to sb1Failed))
+        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to Response(1, report("FAILED", "FAILED", listOf(p3a, p1))), "core-SB1" to sb1Failed, "reactor-SB1" to sb1Failed))
         assertEquals(1, exit, out)
         assertTrue("MISMATCH: FAILED rows unLock {P1, ends_only_if P3a}, expected unLock {ends_only_if P3a}" in out, out)
     }
 
     @Test
     fun `a PROVEN run where FAILED is expected is a mismatch`() {
-        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to Response(0, report("PROVEN"))))
+        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to Response(0, report("PROVEN")), "reactor-SB1" to sb1Failed))
         assertEquals(1, exit, out)
         assertTrue(out.lines().any { it.startsWith("core       SB1") && "MISMATCH: verdict PROVEN, expected FAILED" in it }, out)
     }
@@ -116,11 +120,11 @@ class MutantScriptTest {
     @Test
     fun `INCOMPLETE and ERROR always fail the script`() {
         val incomplete = Response(3, report("INCOMPLETE", "UNSUPPORTED", listOf("UNSUPPORTED String value in action unLock#209")))
-        val (exit1, out1) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to incomplete, "core-SB1" to sb1Failed))
+        val (exit1, out1) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to incomplete, "core-SB1" to sb1Failed, "reactor-SB1" to sb1Failed))
         assertEquals(1, exit1, out1)
         assertTrue("verdict INCOMPLETE, expected FAILED" in out1 && "rows that are neither PROVEN nor FAILED: unLock" in out1, out1)
         val error = Response(4, report("ERROR", "ERROR", others = "init ERROR · lemma P3c ERROR · probe ERROR"))
-        val (exit2, out2) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to error))
+        val (exit2, out2) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to error, "reactor-SB1" to sb1Failed))
         assertEquals(1, exit2, out2)
         assertTrue("verdict ERROR, expected FAILED" in out2 && "init ERROR" in out2, out2)
     }
@@ -128,7 +132,7 @@ class MutantScriptTest {
     @Test
     fun `a mutant that does not compile is a script error, not a verdict`() {
         val notCompiled = Response(4, "", "KeyLocalLock.kt:213:5: error: unresolved reference\nkv: compilation failed\n")
-        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to notCompiled, "core-SB1" to sb1Failed))
+        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to notCompiled, "core-SB1" to sb1Failed, "reactor-SB1" to sb1Failed))
         assertEquals(2, exit, out)
         assertTrue("does not compile (rule 3)" in out, out)
     }
@@ -137,12 +141,16 @@ class MutantScriptTest {
     fun `an edit that does not match exactly once is a script error`() {
         // A req-shield copy whose coroutine unLock has no token check: the SB1 edit matches 0 times there.
         val fake = File(dir, "req-shield")
-        for (variant in listOf("core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine", "core/src/main/kotlin/com/linecorp/cse/reqshield")) {
+        for (variant in listOf(
+            "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine",
+            "core/src/main/kotlin/com/linecorp/cse/reqshield",
+            "core-reactor/src/main/kotlin/com/linecorp/cse/reqshield/reactor",
+        )) {
             for (name in listOf("KeyLock.kt", "KeyLocalLock.kt")) File(ReqShield.dir, "$variant/$name").copyTo(File(fake, "$variant/$name"))
         }
         val kt = File(fake, "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt")
         kt.writeText(kt.readText().replace("existing.token == token && ", ""))
-        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to sb1Failed), fake)
+        val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to sb1Failed, "reactor-SB1" to sb1Failed), fake)
         assertEquals(2, exit, out)
         assertTrue("coroutine SB1: edit matches 0 times (must be 1)" in out, out)
     }

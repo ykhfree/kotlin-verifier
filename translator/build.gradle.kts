@@ -110,13 +110,13 @@ for ((variant, dir) in listOf(
     verifyReqShield { dependsOn(verify) }
 }
 
-// `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of both
+// `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of the three
 // KeyLocalLock variants, runs the installed `kv verify` on each, and checks the verdicts and failing obligations
 // against scripts/mutants-expected.txt. Needs python3 and Silicon. It takes about a minute, so `test` does not run it.
 // Options: -PmutantJobs=N (parallel runs, default 3), -PmutantOnly=SB1,SB2 (a subset).
 val mutantsReqShield by tasks.registering(Exec::class) {
     group = "kv"
-    description = "Runs the M8 Kotlin mutant script on both KeyLocalLock variants."
+    description = "Runs the M8 Kotlin mutant script on the three KeyLocalLock variants."
     dependsOn(tasks.installDist)
     executable = "python3"
     val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
