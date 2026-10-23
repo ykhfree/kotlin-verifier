@@ -6,6 +6,12 @@ private const val POS_COLUMN = 66
 /** Prints [module] as indented text, one node per line, each with its Kotlin `@line:col`. Used by golden tests. */
 fun printModule(module: Module): String = KvirPrinter(module).print()
 
+/** Prints operation [name] of [module] and the ASSUMPTION diagnostics its action names. Used by golden tests. */
+fun printOperation(
+    module: Module,
+    name: String,
+): String = KvirPrinter(module).printOperation(module.operations.single { it.name == name })
+
 private class KvirPrinter(
     private val m: Module,
 ) {
@@ -52,9 +58,28 @@ private class KvirPrinter(
         if (m.strayActions.isEmpty()) line(0, "stray actions: none")
         m.strayActions.forEach { action(0, "stray action", it) }
         line(0, "ledger: ${m.firNodeCount} FIR nodes, ${m.ledger.size} in the ledger, ${translatedIds().size} translated")
-        m.ledger.sortedBy { it.node }.forEach { line(1, "${it.node} ${it.kind.label} ${it.what}", it.pos) }
+        // Consecutive nodes of one construct share a line: `first-last kind what`.
+        val runs = mutableListOf<MutableList<Disposition>>()
+        for (d in m.ledger.sortedBy { it.node }) {
+            val run = runs.lastOrNull()
+            val prev = run?.last()
+            if (prev != null && prev.node + 1 == d.node && prev.kind == d.kind && prev.what == d.what && prev.pos == d.pos) run.add(d) else runs += mutableListOf(d)
+        }
+        runs.forEach { r ->
+            val nodes = if (r.size == 1) "${r[0].node}" else "${r[0].node}-${r.last().node}"
+            line(1, "$nodes ${r[0].kind.label} ${r[0].what}", r[0].pos)
+        }
         line(0, "diagnostics")
         m.diagnostics.forEach { line(1, "${it.id} ${it.kind} ${it.message}", it.pos) }
+        return out.toString()
+    }
+
+    fun printOperation(op: Operation): String {
+        operation(op)
+        val ids = (op.action.body.walk().flatMap { s -> s.exprs().flatMap { it.walk() }.filterIsInstance<Arith>().mapNotNull { it.assumption } + listOfNotNull((s as? ModelOp)?.assumption) }).toSet()
+        val used = m.diagnostics.filter { it.id in ids }
+        if (used.isNotEmpty()) line(0, "assumptions")
+        used.forEach { line(1, "${it.id} ${it.kind} ${it.message}", it.pos) }
         return out.toString()
     }
 
