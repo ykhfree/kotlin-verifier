@@ -75,6 +75,13 @@ class SiliconTest {
     }
 
     @Test
+    fun `with 10 or more errors Silicon pads the index, and every error is still read`() {
+        val lines = (0..10).joinToString("") { i -> "  [${"%2d".format(i)}] Assert might fail. Assertion ok might not hold. (gen.vpr@${100 + i}.10--${100 + i}.12)\n\n" }
+        val failed = assertIs<SiliconOutcome.Failed>(run(1, banner + "Silicon found 11 errors in 4.60s:\n" + lines))
+        assertEquals((100..110).toList(), failed.errors.map { it.line })
+    }
+
+    @Test
     fun `a prover query canceled at the assert timeout is ERROR, not a failure`() {
         val out =
             banner + "Silicon found 1 error in 3.62s:\n" +
