@@ -1,0 +1,364 @@
+file /Users/ykhfree/IdeaProjects/req-shield/core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt package=com.linecorp.cse.reqshield.kotlin.coroutine
+  property val com/linecorp/cse/reqshield/kotlin/coroutine/log: org.slf4j.Logger! @37:1
+    init: CALL org/slf4j/LoggerFactory.getLogger(java.lang.Class<*>!) [public origin=Enhancement] : org.slf4j.Logger! @37:19
+      dispatch-receiver(explicit): qualifier org/slf4j/LoggerFactory : kotlin.Unit @37:19
+      arg p0: java.lang.Class<*>!: READ property val kotlin/jvm/java [public origin=Library] : java.lang.Class<com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock> @37:43
+        extension-receiver(explicit): ?FirGetClassCallImpl : kotlin.reflect.KClass<com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock> @37:43
+          ?FirArgumentListImpl @?
+            qualifier com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock @37:43
+  class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock kind=CLASS [public] supertypes=[com.linecorp.cse.reqshield.kotlin.coroutine.KeyLock, kotlinx.coroutines.CoroutineScope] @39:1
+    constructor com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.KeyLocalLock(lockTimeoutMillis: kotlin.Long): com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock [public origin=Source] @39:19
+    property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.lockTimeoutMillis: kotlin.Long @39:20 fake=PropertyFromParameter
+      init: READ param lockTimeoutMillis{39:20} : kotlin.Long @39:20 fake=PropertyFromParameter
+    class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo kind=CLASS [private] supertypes=[kotlin.Any] @40:5
+      constructor com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.LockInfo(semaphore: java.util.concurrent.Semaphore, expiresAt: kotlin.Long, isHeld: java.util.concurrent.atomic.AtomicBoolean, token: kotlin.String?): com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo [public origin=Source] @44:27
+        default isHeld: NEW java/util/concurrent/atomic/AtomicBoolean(kotlin.Boolean) [public origin=Enhancement] : java.util.concurrent.atomic.AtomicBoolean @57:37
+          arg p0: kotlin.Boolean: const Boolean false : kotlin.Boolean @57:51
+        default token: const Null null : kotlin.Nothing? @65:40
+      property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.semaphore: java.util.concurrent.Semaphore @45:9 fake=PropertyFromParameter
+        init: READ param semaphore{45:9} : java.util.concurrent.Semaphore @45:9 fake=PropertyFromParameter
+      property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.expiresAt: kotlin.Long [VOLATILE annotations(field)=[kotlin/jvm/Volatile]] @46:9 fake=PropertyFromParameter
+        init: READ param expiresAt{46:9} : kotlin.Long @46:9 fake=PropertyFromParameter
+      property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.isHeld: java.util.concurrent.atomic.AtomicBoolean @51:9 fake=PropertyFromParameter
+        init: READ param isHeld{51:9} : java.util.concurrent.atomic.AtomicBoolean @51:9 fake=PropertyFromParameter
+      property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.token: kotlin.String? [VOLATILE annotations(field)=[kotlin/jvm/Volatile]] @58:9 fake=PropertyFromParameter
+        init: READ param token{58:9} : kotlin.String? @58:9 fake=PropertyFromParameter
+    class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion kind=OBJECT [public] supertypes=[kotlin.Any] @68:5
+      property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.lockMap: java.util.concurrent.ConcurrentHashMap<kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo> @69:9
+        init: NEW java/util/concurrent/ConcurrentHashMap() [public origin=Enhancement typeArgs=<kotlin.String!, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo!>] : java.util.concurrent.ConcurrentHashMap<kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo> @69:31
+      property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.tokenSequence: java.util.concurrent.atomic.AtomicLong @71:9
+        init: NEW java/util/concurrent/atomic/AtomicLong() [public origin=Enhancement] : java.util.concurrent.atomic.AtomicLong @75:37
+      property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.monitorJob: kotlinx.coroutines.Job? [VOLATILE annotations(field)=[kotlin/jvm/Volatile]] @77:9
+        init: const Null null : kotlin.Nothing? @78:40
+      fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.nextToken(): kotlin.String [private origin=Source] @80:9
+        return label=nextToken -> fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.nextToken @80:43 fake=FromExpressionBody
+          string-template : kotlin.String @80:43
+            part: const String local- : kotlin.String @80:44
+            part: CALL java/util/concurrent/atomic/AtomicLong.incrementAndGet() [public origin=Enhancement] : kotlin.Long @80:52
+              dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.tokenSequence [private origin=Source] : java.util.concurrent.atomic.AtomicLong @80:52
+                dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @80:52 fake=ImplicitReceiver
+      fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.ensureMonitorStarted(): kotlin.Unit [private origin=Source] @82:9
+        when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @83:13
+          branch @83:17
+            cond: equality == : kotlin.Boolean @83:17
+              safe-call : kotlin.Boolean? @83:17
+                receiver: READ property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.monitorJob [VOLATILE private origin=Source] : kotlinx.coroutines.Job? @83:17
+                  dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @83:17 fake=ImplicitReceiver
+                selector: READ property val kotlinx/coroutines/Job.isActive [public origin=Library] : kotlin.Boolean @83:17 fake=DesugaredSafeCallExpression
+                  dispatch-receiver(explicit): safe-call-subject (non-null receiver) : kotlinx.coroutines.Job @83:17 fake=CheckedSafeCallSubject
+              const Boolean true : kotlin.Boolean @83:41
+            then: block @83:47 fake=SingleExpressionBlock
+              return label=ensureMonitorStarted -> fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.ensureMonitorStarted @83:47
+                ?FirUnitExpression : kotlin.Unit @83:47 fake=Return
+        CALL kotlin/synchronized(kotlin.Any, () -> R) [inline public origin=Library typeArgs=<kotlin.Unit>] : kotlin.Unit @84:13
+          arg lock: kotlin.Any: this bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @84:26
+          arg block: () -> R: lambda label=synchronized (): kotlin.Unit inlineStatus=Inline invocationKind=EXACTLY_ONCE type=() -> kotlin.Unit @84:32
+            when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @85:17
+              branch @85:21
+                cond: equality == : kotlin.Boolean @85:21
+                  safe-call : kotlin.Boolean? @85:21
+                    receiver: READ property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.monitorJob [VOLATILE private origin=Source] : kotlinx.coroutines.Job? @85:21
+                      dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @85:21 fake=ImplicitReceiver
+                    selector: smartcast kotlin.Boolean -> kotlin.Boolean stable=false @85:21 fake=SmartCastExpression
+                      READ property val kotlinx/coroutines/Job.isActive [public origin=Library] : kotlin.Boolean @85:21 fake=DesugaredSafeCallExpression
+                        dispatch-receiver(explicit): safe-call-subject (non-null receiver) : kotlinx.coroutines.Job @85:21 fake=CheckedSafeCallSubject
+                  const Boolean true : kotlin.Boolean @85:45
+                then: block @85:51 fake=SingleExpressionBlock
+                  return label=ensureMonitorStarted -> fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.ensureMonitorStarted @85:51
+                    ?FirUnitExpression : kotlin.Unit @85:51 fake=Return
+            WRITE property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.monitorJob [VOLATILE private origin=Source] @86:17
+              dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @86:17 fake=ImplicitReceiver
+              value: CALL kotlinx/coroutines/launch(kotlin.coroutines.CoroutineContext, kotlinx.coroutines.CoroutineStart, suspend kotlinx.coroutines.CoroutineScope.() -> kotlin.Unit) [public origin=Library] : kotlinx.coroutines.Job @87:21
+                extension-receiver(explicit): CALL kotlinx/coroutines/CoroutineScope(kotlin.coroutines.CoroutineContext) [public origin=Library] : kotlinx.coroutines.CoroutineScope @87:21
+                  arg context: kotlin.coroutines.CoroutineContext: READ property val kotlinx/coroutines/Dispatchers.IO [public origin=Library] : kotlinx.coroutines.CoroutineDispatcher @87:36
+                    dispatch-receiver(explicit): qualifier kotlinx/coroutines/Dispatchers : kotlinx.coroutines.Dispatchers @87:36
+                arg block: suspend kotlinx.coroutines.CoroutineScope.() -> kotlin.Unit: lambda label=launch () receiver=kotlinx.coroutines.CoroutineScope: kotlin.Unit inlineStatus=NoInline invocationKind=null type=suspend kotlinx.coroutines.CoroutineScope.() -> kotlin.Unit @87:59
+                  while label=null @88:25
+                    cond: READ property val kotlinx/coroutines/isActive [public origin=Library] : kotlin.Boolean @88:32
+                      extension-receiver: this (implicit) bound=receiver of lambda{87:59} : kotlinx.coroutines.CoroutineScope @88:32 fake=ImplicitReceiver
+                    body: block @88:42
+                      try : kotlin.Unit @89:29
+                        try: block @89:33
+                          local val now: kotlin.Long @90:33
+                            init: CALL java/lang/System.currentTimeMillis() [public origin=Enhancement] : kotlin.Long @90:43
+                              dispatch-receiver(explicit): qualifier java/lang/System : kotlin.Unit @90:43
+                          CALL kotlin/collections/forEach((T) -> kotlin.Unit) [inline public origin=Library typeArgs=<kotlin.String!>] : kotlin.Unit @96:33
+                            extension-receiver(explicit): READ property val java/util/concurrent/ConcurrentHashMap.keys [override public origin=SubstitutionOverride(CallSite)] : java.util.concurrent.ConcurrentHashMap.KeySetView<kotlin.String!, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo!> @96:33
+                              dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.lockMap [private origin=Source] : java.util.concurrent.ConcurrentHashMap<kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo> @96:33
+                                dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @96:33 fake=ImplicitReceiver
+                            arg action: (T) -> kotlin.Unit: lambda label=forEach (key: kotlin.String!): kotlin.Unit inlineStatus=Inline invocationKind=UNKNOWN type=(kotlin.String!) -> kotlin.Unit @96:54
+                              CALL java/util/concurrent/ConcurrentHashMap.compute(kotlin.String, java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?>) [override public origin=SubstitutionOverride(CallSite)] : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @97:37
+                                dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.lockMap [private origin=Source] : java.util.concurrent.ConcurrentHashMap<kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo> @97:37
+                                  dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @97:37 fake=ImplicitReceiver
+                                arg p0: kotlin.String: READ param key{96:56} : kotlin.String! @97:53
+                                arg p1: java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?>: function-conversion kind=Sam : java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?> @97:58 fake=SamConversion
+                                  lambda label=compute (<unused var>: kotlin.String, lockInfo: com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?): com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? inlineStatus=NoInline invocationKind=null type=(kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?) -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @97:58
+                                    when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @98:41
+                                      branch @98:45
+                                        cond: equality == : kotlin.Boolean @98:45
+                                          READ param lockInfo{97:63} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @98:45
+                                          const Null null : kotlin.Nothing? @98:57
+                                        then: block @98:63 fake=SingleExpressionBlock
+                                          return label=compute -> lambda@compute{97:58} @98:63
+                                            const Null null : kotlin.Nothing? @98:78
+                                    return label=null -> lambda@compute{97:58} @100:41 fake=FromLastStatement
+                                      when exhaustive=ProperlyExhaustive usedAsExpression=false : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @100:41
+                                        branch @100:45
+                                          cond: compare > : kotlin.Boolean @100:45
+                                            CALL kotlin/Long.compareTo(kotlin.Long) [public origin=Library syntax=Operator] : kotlin.Int @100:45 fake=GeneratedComparisonExpression
+                                              dispatch-receiver(explicit): READ local now{90:33} : kotlin.Long @100:45
+                                              arg other: kotlin.Long: READ property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.expiresAt [VOLATILE public origin=Source] : kotlin.Long @100:51
+                                                dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @100:51 fake=SmartCastExpression
+                                                  READ param lockInfo{97:63} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @100:51
+                                          then: block @100:71
+                                            when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @104:45
+                                              branch @104:49
+                                                cond: CALL java/util/concurrent/atomic/AtomicBoolean.compareAndSet(kotlin.Boolean, kotlin.Boolean) [public origin=Enhancement] : kotlin.Boolean @104:49
+                                                  dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.isHeld [public origin=Source] : java.util.concurrent.atomic.AtomicBoolean @104:49
+                                                    dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @104:49 fake=SmartCastExpression
+                                                      READ param lockInfo{97:63} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @104:49
+                                                  arg p0: kotlin.Boolean: const Boolean true : kotlin.Boolean @104:79
+                                                  arg p1: kotlin.Boolean: const Boolean false : kotlin.Boolean @104:85
+                                                then: block @104:93
+                                                  WRITE property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.token [VOLATILE public origin=Source] @105:49
+                                                    dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @105:49 fake=SmartCastExpression
+                                                      READ param lockInfo{97:63} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @105:49
+                                                    value: const Null null : kotlin.Nothing? @105:66
+                                                  CALL java/util/concurrent/Semaphore.release() [public origin=Enhancement] : kotlin.Unit @106:49
+                                                    dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.semaphore [public origin=Source] : java.util.concurrent.Semaphore @106:49
+                                                      dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @106:49 fake=SmartCastExpression
+                                                        READ param lockInfo{97:63} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @106:49
+                                            const Null null : kotlin.Nothing? @108:45
+                                        branch @109:48
+                                          cond: else
+                                          then: block @109:48
+                                            smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @110:45 fake=SmartCastExpression
+                                              READ param lockInfo{97:63} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @110:45
+                        catch e: java.util.concurrent.CancellationException @114:31
+                          block @114:64
+                            throw @115:33
+                              READ local e{114:38} : java.util.concurrent.CancellationException @115:39
+                        catch e: java.lang.Exception @116:31
+                          block @116:52
+                            CALL org/slf4j/Logger.error(kotlin.String!, kotlin.Any!, kotlin.Any!) [public origin=Enhancement] : kotlin.Unit @117:33
+                              dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/log [private origin=Source] : org.slf4j.Logger! @117:33
+                              arg p0: kotlin.String!: const String Error in lock lifecycle monitoring: {} : kotlin.String @117:43
+                              arg p1: kotlin.Any!: READ property val kotlin/Throwable.message [public origin=Library] : kotlin.String? @117:85
+                                dispatch-receiver(explicit): READ local e{116:38} : java.lang.Exception @117:85
+                              arg p2: kotlin.Any!: READ local e{116:38} : java.lang.Exception @117:96
+                      CALL kotlinx/coroutines/delay(kotlin.Long) [SUSPEND public origin=Library] : kotlin.Unit @122:29
+                        arg timeMillis: kotlin.Long: READ property val com/linecorp/cse/reqshield/support/constant/ConfigValues.LOCK_MONITOR_INTERVAL_MILLIS [public origin=Library] : kotlin.Long @122:35
+                          dispatch-receiver: qualifier com/linecorp/cse/reqshield/support/constant/ConfigValues : com.linecorp.cse.reqshield.support.constant.ConfigValues @122:35 fake=ImplicitReceiver
+      fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.stopMonitoring(): kotlin.Unit [internal origin=Source] @128:9
+        CALL kotlin/synchronized(kotlin.Any, () -> R) [inline public origin=Library typeArgs=<kotlin.Unit>] : kotlin.Unit @130:13
+          arg lock: kotlin.Any: this bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @130:26
+          arg block: () -> R: lambda label=synchronized (): kotlin.Unit inlineStatus=Inline invocationKind=EXACTLY_ONCE type=() -> kotlin.Unit @130:32
+            safe-call : kotlin.Unit? @131:17
+              receiver: READ property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.monitorJob [VOLATILE private origin=Source] : kotlinx.coroutines.Job? @131:17
+                dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @131:17 fake=ImplicitReceiver
+              selector: CALL kotlinx/coroutines/Job.cancel(java.util.concurrent.CancellationException?) [public origin=Library] : kotlin.Unit @131:17 fake=DesugaredSafeCallExpression
+                dispatch-receiver(explicit): safe-call-subject (non-null receiver) : kotlinx.coroutines.Job @131:17 fake=CheckedSafeCallSubject
+            WRITE property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.monitorJob [VOLATILE private origin=Source] @132:17
+              dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @132:17 fake=ImplicitReceiver
+              value: const Null null : kotlin.Nothing? @132:30
+    property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.job: kotlinx.coroutines.CompletableJob @137:5
+      init: CALL kotlinx/coroutines/Job(kotlinx.coroutines.Job?) [public origin=Library] : kotlinx.coroutines.CompletableJob @137:23
+    property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.coroutineContext: kotlin.coroutines.CoroutineContext @138:5
+      getter com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.coroutineContext(): kotlin.coroutines.CoroutineContext [public origin=Source] @139:9
+        return label=null -> fun special/accessor @139:17 fake=FromExpressionBody
+          CALL kotlin/coroutines/CoroutineContext.plus(kotlin.coroutines.CoroutineContext) [public origin=Library syntax=Operator] : kotlin.coroutines.CoroutineContext @139:17
+            dispatch-receiver(explicit): READ property val kotlinx/coroutines/Dispatchers.IO [public origin=Library] : kotlinx.coroutines.CoroutineDispatcher @139:17
+              dispatch-receiver(explicit): qualifier kotlinx/coroutines/Dispatchers : kotlinx.coroutines.Dispatchers @139:17
+            arg context: kotlin.coroutines.CoroutineContext: READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.job [private origin=Source] : kotlinx.coroutines.CompletableJob @139:34
+              dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock @139:34 fake=ImplicitReceiver
+    init @141:5
+      CALL com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.ensureMonitorStarted() [private origin=Source] : kotlin.Unit @142:9
+        dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @142:9 fake=ImplicitReceiver
+    fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.tryLock(key: kotlin.String, lockType: com.linecorp.cse.reqshield.kotlin.coroutine.LockType): kotlin.String? [SUSPEND override public origin=Source] @145:5
+      local val completeKey: kotlin.String @149:9
+        init: CALL com/linecorp/cse/reqshield/kotlin/coroutine/lockKeyOf(kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.LockType) [internal origin=Source] : kotlin.String @149:27
+          arg key: kotlin.String: READ param key{146:9} : kotlin.String @149:37
+          arg lockType: com.linecorp.cse.reqshield.kotlin.coroutine.LockType: READ param lockType{147:9} : com.linecorp.cse.reqshield.kotlin.coroutine.LockType @149:42
+      local val now: kotlin.Long @150:9
+        init: CALL com/linecorp/cse/reqshield/support/utils/nowToEpochTime() [public origin=Library] : kotlin.Long @150:19
+      local val acquiredToken: java.util.concurrent.atomic.AtomicReference<kotlin.String?> @151:9
+        init: NEW java/util/concurrent/atomic/AtomicReference(V!) [public origin=Enhancement typeArgs=<kotlin.String!>] : java.util.concurrent.atomic.AtomicReference<kotlin.String?> @151:29
+          arg p0: V!: const Null null : kotlin.Nothing? @151:54
+      CALL java/util/concurrent/ConcurrentHashMap.compute(kotlin.String, java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?>) [override public origin=SubstitutionOverride(CallSite)] : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @155:9
+        dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.lockMap [private origin=Source] : java.util.concurrent.ConcurrentHashMap<kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo> @155:9
+          dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @155:9 fake=ImplicitReceiver
+        arg p0: kotlin.String: READ local completeKey{149:9} : kotlin.String @155:25
+        arg p1: java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?>: function-conversion kind=Sam : java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?> @155:38 fake=SamConversion
+          lambda label=compute (<unused var>: kotlin.String, existing: com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?): com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? inlineStatus=NoInline invocationKind=null type=(kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?) -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @155:38
+            return label=null -> lambda@compute{155:38} @156:13 fake=FromLastStatement
+              when exhaustive=ProperlyExhaustive usedAsExpression=false : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @156:13
+                branch @156:17
+                  cond: equality != : kotlin.Boolean @156:17
+                    READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @156:17
+                    const Null null : kotlin.Nothing? @156:29
+                  then: block @156:35
+                    when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @161:17
+                      branch @161:21
+                        cond: boolean AND : kotlin.Boolean @161:21
+                          left: compare > : kotlin.Boolean @161:21
+                            CALL kotlin/Long.compareTo(kotlin.Long) [public origin=Library syntax=Operator] : kotlin.Int @161:21 fake=GeneratedComparisonExpression
+                              dispatch-receiver(explicit): READ local now{150:9} : kotlin.Long @161:21
+                              arg other: kotlin.Long: READ property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.expiresAt [VOLATILE public origin=Source] : kotlin.Long @161:27
+                                dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @161:27 fake=SmartCastExpression
+                                  READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @161:27
+                          right: CALL java/util/concurrent/atomic/AtomicBoolean.compareAndSet(kotlin.Boolean, kotlin.Boolean) [public origin=Enhancement] : kotlin.Boolean @161:49
+                            dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.isHeld [public origin=Source] : java.util.concurrent.atomic.AtomicBoolean @161:49
+                              dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @161:49 fake=SmartCastExpression
+                                READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @161:49
+                            arg p0: kotlin.Boolean: const Boolean true : kotlin.Boolean @161:79
+                            arg p1: kotlin.Boolean: const Boolean false : kotlin.Boolean @161:85
+                        then: block @161:93
+                          WRITE property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.token [VOLATILE public origin=Source] @163:21
+                            dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @163:21 fake=SmartCastExpression
+                              READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @163:21
+                            value: const Null null : kotlin.Nothing? @163:38
+                          CALL java/util/concurrent/Semaphore.release() [public origin=Enhancement] : kotlin.Unit @164:21
+                            dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.semaphore [public origin=Source] : java.util.concurrent.Semaphore @164:21
+                              dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @164:21 fake=SmartCastExpression
+                                READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @164:21
+                    when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @168:17
+                      branch @168:21
+                        cond: CALL java/util/concurrent/Semaphore.tryAcquire() [public origin=Enhancement] : kotlin.Boolean @168:21
+                          dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.semaphore [public origin=Source] : java.util.concurrent.Semaphore @168:21
+                            dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @168:21 fake=SmartCastExpression
+                              READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @168:21
+                        then: block @168:54
+                          local val token: kotlin.String @169:21
+                            init: CALL com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.nextToken() [private origin=Source] : kotlin.String @169:33
+                              dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @169:33 fake=ImplicitReceiver
+                          CALL java/util/concurrent/atomic/AtomicBoolean.set(kotlin.Boolean) [public origin=Enhancement] : kotlin.Unit @170:21
+                            dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.isHeld [public origin=Source] : java.util.concurrent.atomic.AtomicBoolean @170:21
+                              dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @170:21 fake=SmartCastExpression
+                                READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @170:21
+                            arg p0: kotlin.Boolean: const Boolean true : kotlin.Boolean @170:41
+                          WRITE property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.token [VOLATILE public origin=Source] @171:21
+                            dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @171:21 fake=SmartCastExpression
+                              READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @171:21
+                            value: READ local token{169:21} : kotlin.String @171:38
+                          WRITE property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.expiresAt [VOLATILE public origin=Source] @172:21
+                            dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @172:21 fake=SmartCastExpression
+                              READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @172:21
+                            value: CALL kotlin/Long.plus(kotlin.Long) [public origin=Library syntax=Operator] : kotlin.Long @172:42
+                              dispatch-receiver(explicit): READ local now{150:9} : kotlin.Long @172:42
+                              arg other: kotlin.Long: READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.lockTimeoutMillis [private origin=Source] : kotlin.Long @172:48
+                                dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock @172:48 fake=ImplicitReceiver
+                          CALL java/util/concurrent/atomic/AtomicReference.set(kotlin.String?) [override public origin=SubstitutionOverride(CallSite)] : kotlin.Unit @173:21
+                            dispatch-receiver(explicit): READ local acquiredToken{151:9} : java.util.concurrent.atomic.AtomicReference<kotlin.String?> @173:21
+                            arg p0: kotlin.String?: READ local token{169:21} : kotlin.String @173:39
+                    smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @175:17 fake=SmartCastExpression
+                      READ param existing{155:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @175:17
+                branch @176:20
+                  cond: else
+                  then: block @176:20
+                    when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @181:17
+                      branch @181:21
+                        cond: CALL com/linecorp/cse/reqshield/support/config/LocalLockLimit.rejectsNewEntry(kotlin.Long) [public origin=Library] : kotlin.Boolean @181:21
+                          dispatch-receiver(explicit): qualifier com/linecorp/cse/reqshield/support/config/LocalLockLimit : com.linecorp.cse.reqshield.support.config.LocalLockLimit @181:21
+                          arg currentSize: kotlin.Long: CALL java/util/concurrent/ConcurrentHashMap.mappingCount() [override public origin=SubstitutionOverride(CallSite)] : kotlin.Long @181:52
+                            dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.lockMap [private origin=Source] : java.util.concurrent.ConcurrentHashMap<kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo> @181:52
+                              dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @181:52 fake=ImplicitReceiver
+                        then: block @181:77
+                          CALL java/util/concurrent/atomic/AtomicReference.set(kotlin.String?) [override public origin=SubstitutionOverride(CallSite)] : kotlin.Unit @182:21
+                            dispatch-receiver(explicit): READ local acquiredToken{151:9} : java.util.concurrent.atomic.AtomicReference<kotlin.String?> @182:21
+                            arg p0: kotlin.String?: CALL com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.nextToken() [private origin=Source] : kotlin.String @182:39
+                              dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @182:39 fake=ImplicitReceiver
+                          return label=compute -> lambda@compute{155:38} @183:21
+                            const Null null : kotlin.Nothing? @183:36
+                    local val token: kotlin.String @187:17
+                      init: CALL com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.nextToken() [private origin=Source] : kotlin.String @187:29
+                        dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @187:29 fake=ImplicitReceiver
+                    local val newLock: com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo @188:17
+                      init: NEW com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo(java.util.concurrent.Semaphore, kotlin.Long, java.util.concurrent.atomic.AtomicBoolean, kotlin.String?) [public origin=Source] : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo @188:31
+                        arg semaphore: java.util.concurrent.Semaphore: NEW java/util/concurrent/Semaphore(kotlin.Int) [public origin=Enhancement] : java.util.concurrent.Semaphore @188:40
+                          arg p0: kotlin.Int: const Int 1 : kotlin.Int @188:50
+                        arg expiresAt: kotlin.Long: CALL kotlin/Long.plus(kotlin.Long) [public origin=Library syntax=Operator] : kotlin.Long @188:54
+                          dispatch-receiver(explicit): READ local now{150:9} : kotlin.Long @188:54
+                          arg other: kotlin.Long: READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.lockTimeoutMillis [private origin=Source] : kotlin.Long @188:60
+                            dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock @188:60 fake=ImplicitReceiver
+                        arg token: kotlin.String?: READ local token{187:17} : kotlin.String @188:87
+                    CALL java/util/concurrent/Semaphore.tryAcquire() [public origin=Enhancement] : kotlin.Boolean @189:17
+                      dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.semaphore [public origin=Source] : java.util.concurrent.Semaphore @189:17
+                        dispatch-receiver(explicit): READ local newLock{188:17} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo @189:17
+                    CALL java/util/concurrent/atomic/AtomicBoolean.set(kotlin.Boolean) [public origin=Enhancement] : kotlin.Unit @190:17
+                      dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.isHeld [public origin=Source] : java.util.concurrent.atomic.AtomicBoolean @190:17
+                        dispatch-receiver(explicit): READ local newLock{188:17} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo @190:17
+                      arg p0: kotlin.Boolean: const Boolean true : kotlin.Boolean @190:36
+                    CALL java/util/concurrent/atomic/AtomicReference.set(kotlin.String?) [override public origin=SubstitutionOverride(CallSite)] : kotlin.Unit @191:17
+                      dispatch-receiver(explicit): READ local acquiredToken{151:9} : java.util.concurrent.atomic.AtomicReference<kotlin.String?> @191:17
+                      arg p0: kotlin.String?: READ local token{187:17} : kotlin.String @191:35
+                    READ local newLock{188:17} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo @192:17
+      return label=tryLock -> fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.tryLock @195:9
+        CALL java/util/concurrent/atomic/AtomicReference.get() [override public origin=SubstitutionOverride(CallSite)] : kotlin.String? @195:16
+          dispatch-receiver(explicit): READ local acquiredToken{151:9} : java.util.concurrent.atomic.AtomicReference<kotlin.String?> @195:16
+    fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.unLock(key: kotlin.String, lockType: com.linecorp.cse.reqshield.kotlin.coroutine.LockType, token: kotlin.String): kotlin.Boolean [SUSPEND override public origin=Source] @198:5
+      local val completeKey: kotlin.String @203:9
+        init: CALL com/linecorp/cse/reqshield/kotlin/coroutine/lockKeyOf(kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.LockType) [internal origin=Source] : kotlin.String @203:27
+          arg key: kotlin.String: READ param key{199:9} : kotlin.String @203:37
+          arg lockType: com.linecorp.cse.reqshield.kotlin.coroutine.LockType: READ param lockType{200:9} : com.linecorp.cse.reqshield.kotlin.coroutine.LockType @203:42
+      local val released: java.util.concurrent.atomic.AtomicBoolean @204:9
+        init: NEW java/util/concurrent/atomic/AtomicBoolean(kotlin.Boolean) [public origin=Enhancement] : java.util.concurrent.atomic.AtomicBoolean @204:24
+          arg p0: kotlin.Boolean: const Boolean false : kotlin.Boolean @204:38
+      CALL java/util/concurrent/ConcurrentHashMap.compute(kotlin.String, java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?>) [override public origin=SubstitutionOverride(CallSite)] : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @209:9
+        dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion.lockMap [private origin=Source] : java.util.concurrent.ConcurrentHashMap<kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo> @209:9
+          dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.Companion : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion @209:9 fake=ImplicitReceiver
+        arg p0: kotlin.String: READ local completeKey{203:9} : kotlin.String @209:25
+        arg p1: java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?>: function-conversion kind=Sam : java.util.function.BiFunction<in kotlin.String, in com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?, out com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?> @209:38 fake=SamConversion
+          lambda label=compute (<unused var>: kotlin.String, existing: com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?): com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? inlineStatus=NoInline invocationKind=null type=(kotlin.String, com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo?) -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @209:38
+            when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @210:13
+              branch @210:17
+                cond: equality == : kotlin.Boolean @210:17
+                  READ param existing{209:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @210:17
+                  const Null null : kotlin.Nothing? @210:29
+                then: block @210:35 fake=SingleExpressionBlock
+                  return label=compute -> lambda@compute{209:38} @210:35
+                    const Null null : kotlin.Nothing? @210:50
+            when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @213:13
+              branch @213:17
+                cond: boolean AND : kotlin.Boolean @213:17
+                  left: equality == : kotlin.Boolean @213:17
+                    READ property var com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.token [VOLATILE public origin=Source] : kotlin.String? @213:17
+                      dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @213:17 fake=SmartCastExpression
+                        READ param existing{209:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @213:17
+                    READ param token{201:9} : kotlin.String @213:35
+                  right: CALL java/util/concurrent/atomic/AtomicBoolean.compareAndSet(kotlin.Boolean, kotlin.Boolean) [public origin=Enhancement] : kotlin.Boolean @213:44
+                    dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.isHeld [public origin=Source] : java.util.concurrent.atomic.AtomicBoolean @213:44
+                      dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @213:44 fake=SmartCastExpression
+                        READ param existing{209:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @213:44
+                    arg p0: kotlin.Boolean: const Boolean true : kotlin.Boolean @213:74
+                    arg p1: kotlin.Boolean: const Boolean false : kotlin.Boolean @213:80
+                then: block @213:88
+                  CALL java/util/concurrent/Semaphore.release() [public origin=Enhancement] : kotlin.Unit @214:17
+                    dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.LockInfo.semaphore [public origin=Source] : java.util.concurrent.Semaphore @214:17
+                      dispatch-receiver(explicit): smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @214:17 fake=SmartCastExpression
+                        READ param existing{209:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @214:17
+                  CALL java/util/concurrent/atomic/AtomicBoolean.set(kotlin.Boolean) [public origin=Enhancement] : kotlin.Unit @215:17
+                    dispatch-receiver(explicit): READ local released{204:9} : java.util.concurrent.atomic.AtomicBoolean @215:17
+                    arg p0: kotlin.Boolean: const Boolean true : kotlin.Boolean @215:30
+                  return label=compute -> lambda@compute{209:38} @219:17
+                    const Null null : kotlin.Nothing? @219:32
+            return label=null -> lambda@compute{209:38} @221:13 fake=FromLastStatement
+              smartcast com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? -> com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo stable=true @221:13 fake=SmartCastExpression
+                READ param existing{209:43} : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.LockInfo? @221:13
+      when exhaustive=NotExhaustive usedAsExpression=false : kotlin.Unit @224:9
+        branch @224:13
+          cond: CALL kotlin/Boolean.not() [public origin=Library syntax=Operator] : kotlin.Boolean @224:13
+            dispatch-receiver(explicit): CALL java/util/concurrent/atomic/AtomicBoolean.get() [public origin=Enhancement] : kotlin.Boolean @224:14
+              dispatch-receiver(explicit): READ local released{204:9} : java.util.concurrent.atomic.AtomicBoolean @224:14
+          then: block @224:30
+            CALL org/slf4j/Logger.debug(kotlin.String!, kotlin.Any!, kotlin.Any!) [public origin=Enhancement] : kotlin.Unit @225:13
+              dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/log [private origin=Source] : org.slf4j.Logger! @225:13
+              arg p0: kotlin.String!: const String Attempted to unlock key '{}' that is not held by token '{}' : kotlin.String @225:23
+              arg p1: kotlin.Any!: READ local completeKey{203:9} : kotlin.String @225:86
+              arg p2: kotlin.Any!: READ param token{201:9} : kotlin.String @225:99
+      return label=unLock -> fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.unLock @227:9
+        CALL java/util/concurrent/atomic/AtomicBoolean.get() [public origin=Enhancement] : kotlin.Boolean @227:16
+          dispatch-receiver(explicit): READ local released{204:9} : java.util.concurrent.atomic.AtomicBoolean @227:16
+    fun com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.cancel(): kotlin.Unit [public origin=Source] @230:5
+      CALL kotlinx/coroutines/Job.cancel(java.util.concurrent.CancellationException?) [public origin=Library] : kotlin.Unit @231:9
+        dispatch-receiver(explicit): READ property val com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.job [private origin=Source] : kotlinx.coroutines.CompletableJob @231:9
+          dispatch-receiver: this (implicit) bound=class com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock : com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock @231:9 fake=ImplicitReceiver
