@@ -58,14 +58,14 @@ operation tryLock = fun KeyLocalLock.tryLock {
   free rej, limit = call rejectsNewEntry
   result res
   issue res { gKey = k; gBacked = carried(S, k, res); gLease = now + timeout }
-  reviewed "PENDING human review: copied from DESIGN-v0.md 4.4"
+  reviewed "ykhfree 2026-10-23: README Global lock guidance: every lock acquisition carries an ownership token"
   ensures P1a: res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued &&
       tok(res).gKey == k && tok(res).gHeld && tok(res).gLease == now + timeout
   ensures P1a_entry: res != NULL && tok(res).gBacked ==> has(S, k) && S.m[k].token == res
   ends_only_if P3a: now > old(tok(qt).gLease)
-  reviewed "PENDING human review: copied from DESIGN-v0.md 4.4"
+  reviewed "ykhfree 2026-10-23: README: only an expired lock is taken over (a slow holder whose lock already expired)"
   unbacked_only_if P3b: !old(has(S, k)) && rej && limit != 0
-  reviewed "PENDING human review: copied from DESIGN-v0.md 4.4"
+  reviewed "ykhfree 2026-10-23: README Local lock map size: at the cap a new key is handed a permit that no map entry backs"
   ensures progress_free: !old(has(S, k)) && !rej ==> res != NULL && tok(res).gBacked
   ensures progress_live: old(has(S, k)) && now <= old(S.m[k].expiresAt) ==> res == NULL
 }
@@ -76,14 +76,14 @@ operation unLock = fun KeyLocalLock.unLock {
   ensures P1: res ==> old(has(S, k)) && old(S.m[k].token) == t && old(tok(t).gIssued) &&
       old(tok(t).gKey) == k && old(tok(t).gBacked) && old(tok(t).gHeld) && !tok(t).gHeld && !has(S, k)
   ends_only_if P3a: qt == t && res
-  reviewed "PENDING human review: copied from DESIGN-v0.md 4.4"
+  reviewed "ykhfree 2026-10-23: README: only the holder that acquired the lock can release it"
   ensures progress_owner: old(has(S, k)) && old(S.m[k].token) == t ==> res
 }
 
 operation sweep = compute in KeyLocalLock.Companion {
   free now = local now                  // System.currentTimeMillis(), once per sweep pass
   ends_only_if P3a: now > old(tok(qt).gLease)
-  reviewed "PENDING human review: copied from DESIGN-v0.md 4.4"
+  reviewed "ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed"
 }
 
 // ---- State properties ----
