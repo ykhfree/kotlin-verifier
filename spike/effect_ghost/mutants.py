@@ -12,7 +12,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 END_RULE = (
-    "  if (pre_tok != NULL && !(has(S, k) && S.m[k].token == pre_tok)) {\n"
+    "  if (pre_tok != NULL && !carried(S, k, pre_tok)) {\n"
     "    tok(pre_tok).gHeld := false\n"
     "  }\n"
 )

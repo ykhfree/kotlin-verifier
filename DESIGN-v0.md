@@ -807,7 +807,7 @@ sweep 선택자 `compute in KeyLocalLock.Companion`은 coroutine에서는 `ensur
 2. 도메인: 불투명 타입(`domain Key {}`), ghost 기록 색인(`domain TokRec`, 단사 공리)
 3. `define NULL (-1)`
 4. 필드: 모듈 상태, `created`, ghost 기록 필드, 평탄화한 클래스 필드
-5. macro: `has`, `GHOST_PERMS`, `MI_PERMS`, `MI_OWN`, `invariant` 성질(P2), hole `MI_INV`(+ 진단용 분할), `MI`, `HIST`, 권한 절 macro
+5. macro: `has`, `carried`, `GHOST_PERMS`, `MI_PERMS`, `MI_OWN`, `invariant` 성질(P2), hole 조각 `MI_INV_1..n`과 그 곱 `MI_INV`, `MI`, `HIST`. 권한 절은 macro가 아니라 `ensures` 식으로 낸다
 6. `method init()`
 7. 연산마다 action 메서드 1개
 8. stray action마다 기본 계약 메서드 1개
@@ -847,21 +847,22 @@ method <op>(S: Ref, k: Key, <named free values...>) returns (<result>: <T>)
   <lowered body>
   <result> := <operation result expression>
   // commit point: effect-bound ghost rules
-  if (pre_tok != NULL && !(has(S, k) && S.m[k].<witness> == pre_tok)) {
+  if (pre_tok != NULL && !carried(S, k, pre_tok)) {
     tok(pre_tok).gHeld := false
   }
   if (<result> != NULL) {                           // only for an operation with an `issue` rule
     assert !tok(<result>).gIssued                   // set-once field
-    tok(<result>).gIssued := true
-    tok(<result>).gHeld := true                     // ends field
-    tok(<result>).<frozen field> := <issue value>   // one line per frozen field
+    tok(<result>).<field> := <value>                // one line per ghost field, in declaration order:
+                                                    // set-once true, frozen = issue value, ends true
   }
 }
 ```
 
-권한 절의 컴파일:
-- `ends_only_if C` → `ensures forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && old(tok(qt).gBacked) && old(tok(qt).gHeld) && !tok(qt).gHeld ==> C`
-- `unbacked_only_if C` → `ensures <result> != NULL && !tok(<result>).gBacked ==> C`
+권한 절의 컴파일 (`C`는 괄호로 감싼다):
+- `ends_only_if C` → `ensures forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && old(tok(qt).gBacked) && old(tok(qt).gHeld) && !tok(qt).gHeld ==> (C)`
+- `unbacked_only_if C` → `ensures <result> != NULL && !tok(<result>).gBacked ==> (C)`
+
+순서 규칙: `ensures`는 위 템플릿 순서이고, 같은 종류 안에서는 sidecar 선언 순서다. ghost 필드(`GHOST_PERMS`, `HIST`, 발급 대입)와 `new`의 필드 초기화는 sidecar 선언 순서다. `init`은 `state` 필드마다 초기값 `ensures`를 하나씩 낸다. `carried(S, qk, qt)`는 `has(S, qk) && S.m[qk].<witness> == qt`인 macro다.
 
 이 두 식은 `baseline.vpr`의 P3a(`P3A_EXPIRY`, unLock의 P3a), P3b와 같은 식이다 (괄호만 다르다).
 
@@ -1083,6 +1084,10 @@ L3 연결 자리 (v0에서는 구현하지 않음):
 | M3/M4 질문 4 | 호출되지 않는 private helper가 모듈 상태를 바꾸면 모듈은 INCOMPLETE다. 보수적이지만 건전하다. 호출 그래프 검사는 v1 목록에 둔다 |
 | M3/M4 질문 5 | 받아들인다: unsupported action의 본문은 발견 순서의 `Unsupported` 문장만 갖는다 (그 action은 출력하지 않으므로 판정과 무관하다). ledger 항목은 구문 단위로 위치를 적는다. 두 번 인라인한 helper의 이름은 `b`, `c` 접미사, 같은 줄의 두 번째 선언은 `_<col>` 접미사를 받는다 |
 | M3/M4 질문 6 | `= clock`을 포함해 모든 `trusted fun`에 `reviewed`가 필요하다. 시계 선언도 "모듈 상태를 바꾸지 않고 임의 값을 준다"는 신뢰 주장이다 |
+| M5 gate의 목표 형태 | `target.vpr`을 5.2 템플릿 형태로 고쳤다: 성질마다 `ensures` 1줄, hole을 `MI_INV_1..5`로 분할, `P3A_EXPIRY` 대신 권한 절 식, `carried` macro, 선언 순서 규칙, `init`의 `S.seq == 0`. 의미는 같다: Silicon 검증 3.93 s, 변이 판정 23개 동일 (`spike/effect_ghost/expected-verdicts.txt`). 실패 위치도 6절과 같다: SB3 → `MI_INV_4`, SB6 → `MI_INV_1`과 P3a, E4 → P3a와 P3b |
+| M5와 M6 | 한 작업으로 합친다. `target.vpr`은 커밋 블록과 권한 절을 가지므로, ghost binder 없이는 M5 수락 테스트 1·2가 성립하지 않는다 |
+| M5 gate | `python3 -I spike/vpr_normalize.py spike/effect_ghost/target.vpr <생성한 coroutine 모델>`이 0으로 끝난다. core는 `mutants.py`의 `CORE_variant.vpr`과 비교한다. 정규화는 주석 제거, 토큰 비교, 메서드별 위치 접미사 지역 이름의 첫 등장 순 이름 바꾸기뿐이다. 문장 순서는 정규화하지 않는다 |
+| Silicon 시간 | 8.3의 예산(`--assertTimeout 20000 --checkTimeout 20000`, 벽시계 300 s)이 M5 수락 테스트 1의 "메서드당 60 s"를 대신한다 |
 
 ## 부록 A. 실험 재현
 
