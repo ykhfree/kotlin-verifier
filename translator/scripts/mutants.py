@@ -1,15 +1,21 @@
-"""M8 (DESIGN-v0.md section 6, 7): apply Kotlin mutants to copies of KeyLocalLock.kt, run `kv verify`, check verdicts.
+"""M8 (DESIGN-v0.md section 6, 7) and B4 (DESIGN-B.md 7, 8): apply Kotlin mutants to copies of req-shield sources, run
+`kv verify`, check verdicts.
 
 Usage:
-  python3 -I mutants.py --kv KV --req-shield DIR --classpath CP --kotlinc ARGS --specs DIR --expected FILE --out DIR
-                        [--jobs N] [--only NAME[,NAME...]]
+  python3 -I mutants.py [--suite keylocallock|aspect] --kv KV --req-shield DIR --classpath CP --kotlinc ARGS
+                        --specs DIR --expected FILE --out DIR [--jobs N] [--only NAME[,NAME...]]
+  python3 -I mutants.py --suite SUITE --req-shield DIR --out DIR --roots-only [--only NAME[,NAME...]]
 
-For each variant and mutant (the unmutated original included), the script:
-  1. copies KeyLock.kt and KeyLocalLock.kt of the variant into OUT/roots/<variant>-<mutant>/<same relative path>,
-  2. applies the mutant's exact string edits; each edit must match exactly once (rule 1),
-  3. runs `KV verify --root <copy> ... <specs>/keylocallock.<variant>.kv` (rule 2: req-shield is not touched),
+Suites: `keylocallock` (default) has the three KeyLocalLock variants and the mutants of DESIGN-v0.md 6; `aspect` has
+the three Spring aspect modules and the mutants of DESIGN-B.md 7.2 (spike/aspect/mutants.py, in Kotlin).
+For each unit (variant or module) and mutant (the unmutated original included), the script:
+  1. copies the unit's sources into OUT/roots/<unit>-<mutant>/<same relative path>: KeyLock.kt and KeyLocalLock.kt of
+     a variant, the whole main source directory of an aspect module (its sidecar `source` is that directory),
+  2. applies the mutant's exact string edits to the unit's edited file; each edit must match exactly once (rule 1),
+  3. runs `KV verify --root <copy> ... <specs>/<sidecar of the unit>` (rule 2: req-shield is not touched),
   4. compares the module verdict (from the exit code, DESIGN-v0.md 8.3 Q7) and, for FAILED, the FAILED action and
      the set of failing obligation IDs (the sidecar IDs `kv verify` prints) with the EXPECTED table.
+With --roots-only it stops after step 2 and prints `<unit> <mutant> <root>` per copy (the B3 gate reads them).
 
 Exit code: 0 every row matches; 1 a row does not match; 2 a script error (bad usage, an edit that does not match
 exactly once, a mutant that does not compile: rule 3, never counted as a verdict).
@@ -113,6 +119,123 @@ VARIANT_EDITS = {
     },
 }
 
+# The Spring aspect modules (DESIGN-B.md 6.2): the main source directory, which the sidecar's `source` names, and the
+# aspect file in it.
+ASPECT_DIRS = {
+    "core-spring": "core-spring/src/main/kotlin",
+    "webflux": "core-spring-webflux/src/main/kotlin",
+    "coroutine": "core-spring-webflux-kotlin-coroutine/src/main/kotlin",
+}
+ASPECT_FILES = {
+    "core-spring": "com/linecorp/cse/reqshield/spring/aspect/ReqShieldAspect.kt",
+    "webflux": "com/linecorp/cse/reqshield/spring/webflux/aspect/ReqShieldAspect.kt",
+    "coroutine": "com/linecorp/cse/reqshield/spring/webflux/kotlin/coroutine/aspect/ReqShieldAspect.kt",
+}
+
+# getOrCreateReqShield is the same text in the three aspect files (core-spring 111, webflux 124, coroutine 231).
+GET_OR_CREATE = ("    private fun getOrCreateReqShield(joinPoint: ProceedingJoinPoint): ReqShield<T> =\n"
+                 "        reqShieldMap.computeIfAbsent(getTargetMethod(joinPoint)) {\n"
+                 "            createReqShield(joinPoint)\n"
+                 "        }\n")
+EXPR_HEAD = "    private fun getOrCreateReqShield(joinPoint: ProceedingJoinPoint): ReqShield<T> =\n"
+BLOCK_HEAD = "    private fun getOrCreateReqShield(joinPoint: ProceedingJoinPoint): ReqShield<T> {\n"
+
+
+def get_or_create(body, block=True):
+    """The edit that replaces getOrCreateReqShield with a new body (a block body, or an expression body)."""
+    return (GET_OR_CREATE, (BLOCK_HEAD + body + "    }\n") if block else (EXPR_HEAD + body))
+
+
+# Kotlin edits of DESIGN-B.md 7.2, the Kotlin side of spike/aspect/mutants.py (its comments give the same code). With
+# the edit, the positions of the core-spring file are the ones mutants.py names (getOrCreateReqShield starts at 111).
+ASPECT_EDITS = {
+    "original": [],
+    # R1: compute with an elvis in its lambda, and !! on its value.
+    "R1": [get_or_create("        reqShieldMap.compute(getTargetMethod(joinPoint)) { _, old -> old ?: createReqShield(joinPoint) }!!\n", block=False)],
+    # R2: a racy fast path before computeIfAbsent.
+    "R2": [get_or_create("        val method = getTargetMethod(joinPoint)\n"
+                         "        return reqShieldMap[method] ?: reqShieldMap.computeIfAbsent(method) { createReqShield(joinPoint) }\n")],
+    # M1: get, then put.
+    "M1": [get_or_create("        val method = getTargetMethod(joinPoint)\n"
+                         "        return reqShieldMap[method] ?: createReqShield(joinPoint).also { reqShieldMap[method] = it }\n")],
+    # M2: create, then an unconditional put.
+    "M2": [get_or_create("        val created = createReqShield(joinPoint)\n"
+                         "        reqShieldMap[getTargetMethod(joinPoint)] = created\n"
+                         "        return created\n")],
+    # M3: getOrPut.
+    "M3": [get_or_create("        reqShieldMap.getOrPut(getTargetMethod(joinPoint)) { createReqShield(joinPoint) }\n", block=False)],
+    # M4: create first, then putIfAbsent.
+    "M4": [get_or_create("        val created = createReqShield(joinPoint)\n"
+                         "        return reqShieldMap.putIfAbsent(getTargetMethod(joinPoint), created) ?: created\n")],
+    # M5: one shared ReqShield field for every method. TODO() keeps the constructor arguments short; the field is a
+    # free value of the action, and its ReqShield constructor makes the module INCOMPLETE (DESIGN-B.md 3.3 rule 4).
+    "M5": [
+        get_or_create("        reqShieldMap.computeIfAbsent(getTargetMethod(joinPoint)) {\n            sharedReqShield\n        }\n", block=False),
+        ("    internal val reqShieldMap = ConcurrentHashMap<Method, ReqShield<T>>()\n",
+         "    internal val reqShieldMap = ConcurrentHashMap<Method, ReqShield<T>>()\n"
+         "    private val sharedReqShield: ReqShield<T> = ReqShield(ReqShieldConfiguration({ _, _, _ -> TODO() }, { TODO() }))\n"),
+    ],
+    # M6: a failing call drops the mapping (a stray remove). webflux and coroutine: ASPECT_MODULE_EDITS.
+    "M6": [(
+        "        return reqShield\n"
+        "            .getAndSetReqShieldData(\n"
+        "                cacheKey,\n"
+        "                { joinPoint.proceed() as? T },\n"
+        "                annotation.timeToLiveMillis,\n"
+        "            ).value\n"
+        "    }\n",
+        "        try {\n"
+        "            return reqShield\n"
+        "                .getAndSetReqShieldData(\n"
+        "                    cacheKey,\n"
+        "                    { joinPoint.proceed() as? T },\n"
+        "                    annotation.timeToLiveMillis,\n"
+        "                ).value\n"
+        "        } catch (e: Exception) {\n"
+        "            reqShieldMap.remove(getTargetMethod(joinPoint))\n"
+        "            throw e\n"
+        "        }\n"
+        "    }\n")],
+    # M7: create first, then putIfAbsent, and ignore its result.
+    "M7": [get_or_create("        val created = createReqShield(joinPoint)\n"
+                         "        reqShieldMap.putIfAbsent(getTargetMethod(joinPoint), created)\n"
+                         "        return created\n")],
+}
+# The M6 edit of the other two modules: their around functions differ from core-spring's, so the stray remove goes
+# into a try around the getOrCreateReqShield call (the same mutant: a failure path that drops the mapping).
+M6_TRY = (
+    "val reqShield = getOrCreateReqShield(joinPoint)\n",
+    "val reqShield = try { getOrCreateReqShield(joinPoint) } catch (e: Exception) { reqShieldMap.remove(getTargetMethod(joinPoint)); throw e }\n",
+)
+ASPECT_MODULE_EDITS = {"webflux": {"M6": [M6_TRY]}, "coroutine": {"M6": [M6_TRY]}}
+
+
+class Suite:
+    """A set of units (KeyLocalLock variants or aspect modules), their mutants, and how a copy of a unit is made."""
+
+    def __init__(self, units, edits, unit_edits, sidecar, copies, edited):
+        self.units = units            # unit -> directory relative to the req-shield checkout
+        self.edits = edits            # mutant -> edits
+        self.unit_edits = unit_edits  # unit -> mutant -> edits that replace the shared ones
+        self.sidecar = sidecar        # unit -> sidecar file name
+        self.copies = copies          # unit -> paths to copy, relative to the checkout (files or directories)
+        self.edited = edited          # unit -> the file the edits apply to, relative to the checkout
+
+    def edits_for(self, unit, mutant):
+        return self.unit_edits.get(unit, {}).get(mutant, self.edits[mutant])
+
+
+SUITES = {
+    "keylocallock": Suite(
+        VARIANT_DIRS, EDITS, VARIANT_EDITS, lambda v: "keylocallock.%s.kv" % v,
+        lambda v: [os.path.join(VARIANT_DIRS[v], n) for n in ("KeyLock.kt", "KeyLocalLock.kt")],
+        lambda v: os.path.join(VARIANT_DIRS[v], "KeyLocalLock.kt")),
+    "aspect": Suite(
+        ASPECT_DIRS, ASPECT_EDITS, ASPECT_MODULE_EDITS, lambda m: "aspect.%s.kv" % m,
+        lambda m: [ASPECT_DIRS[m]],
+        lambda m: os.path.join(ASPECT_DIRS[m], ASPECT_FILES[m])),
+}
+
 # `kv verify` exit codes (DESIGN-v0.md 8.3, Q7).
 VERDICTS = {0: "PROVEN", 1: "FAILED", 3: "INCOMPLETE", 4: "ERROR"}
 
@@ -125,24 +248,23 @@ class ScriptError(Exception):
     pass
 
 
-def edits_for(variant, mutant):
-    return VARIANT_EDITS.get(variant, {}).get(mutant, EDITS[mutant])
-
-
-def make_root(req_shield, out, variant, mutant):
-    rel = VARIANT_DIRS[variant]
-    root = os.path.join(out, "roots", "%s-%s" % (variant, mutant))
+def make_root(suite, req_shield, out, unit, mutant):
+    root = os.path.join(out, "roots", "%s-%s" % (unit, mutant))
     shutil.rmtree(root, ignore_errors=True)
-    os.makedirs(os.path.join(root, rel))
-    for name in ("KeyLock.kt", "KeyLocalLock.kt"):
-        shutil.copy(os.path.join(req_shield, rel, name), os.path.join(root, rel, name))
-    path = os.path.join(root, rel, "KeyLocalLock.kt")
+    for rel in suite.copies(unit):
+        src, dst = os.path.join(req_shield, rel), os.path.join(root, rel)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
+        else:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy(src, dst)
+    path = os.path.join(root, suite.edited(unit))
     with open(path) as f:
         text = f.read()
-    for old, new in edits_for(variant, mutant):
+    for old, new in suite.edits_for(unit, mutant):
         n = text.count(old)
         if n != 1:
-            raise ScriptError("%s %s: edit matches %d times (must be 1): %r" % (variant, mutant, n, old))
+            raise ScriptError("%s %s: edit matches %d times (must be 1): %r" % (unit, mutant, n, old))
         text = text.replace(old, new)
     with open(path, "w") as f:
         f.write(text)
@@ -176,11 +298,11 @@ def parse_report(text):
     return rows, others
 
 
-def run_one(args, variant, mutant):
-    root = make_root(args.req_shield, args.out, variant, mutant)
+def run_one(args, suite, variant, mutant):
+    root = make_root(suite, args.req_shield, args.out, variant, mutant)
     vpr = os.path.join(args.out, "%s-%s.vpr" % (variant, mutant))
     command = [args.kv, "verify", "--root", root, "--classpath", args.classpath, "--kotlinc", args.kotlinc,
-               "--out", vpr, os.path.join(args.specs, "keylocallock.%s.kv" % variant)]
+               "--out", vpr, os.path.join(args.specs, suite.sidecar(variant))]
     start = time.time()
     try:
         p = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout)
@@ -205,8 +327,8 @@ def run_one(args, variant, mutant):
             "seconds": seconds}
 
 
-def read_expected(path):
-    """Rows `variant  mutant  verdict  action  obligations`, columns separated by two or more spaces."""
+def read_expected(path, suite):
+    """Rows `unit  mutant  verdict  action  obligations`, columns separated by two or more spaces."""
     out = {}
     with open(path) as f:
         for n, line in enumerate(f, 1):
@@ -217,7 +339,7 @@ def read_expected(path):
             if len(cols) != 5:
                 raise ScriptError("%s:%d: expected 5 columns, found %d: %r" % (path, n, len(cols), line))
             variant, mutant, verdict, action, obligations = cols
-            if variant not in VARIANT_DIRS or mutant not in EDITS:
+            if variant not in suite.units or mutant not in suite.edits:
                 raise ScriptError("%s:%d: unknown variant or mutant: %r" % (path, n, line))
             ids = set() if obligations == "-" else {o.strip() for o in obligations.split(";")}
             out[(variant, mutant)] = (verdict, None if action == "-" else action, ids)
@@ -245,30 +367,44 @@ def fmt(failed):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    for name in ("--kv", "--req-shield", "--classpath", "--kotlinc", "--specs", "--expected", "--out"):
+    ap.add_argument("--suite", choices=sorted(SUITES), default="keylocallock")
+    for name in ("--req-shield", "--out"):
         ap.add_argument(name, required=True)
+    for name in ("--kv", "--classpath", "--kotlinc", "--specs", "--expected"):
+        ap.add_argument(name)
+    ap.add_argument("--roots-only", action="store_true", help="write the mutant copies and list them; run nothing")
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--timeout", type=int, default=900, help="seconds per kv verify run")
     ap.add_argument("--only", help="comma-separated mutant names")
     args = ap.parse_args()
+    suite = SUITES[args.suite]
     try:
-        expected = read_expected(args.expected)
         only = set(args.only.split(",")) if args.only else None
-        if only and not only <= set(EDITS):
-            raise ScriptError("unknown mutant(s): %s" % sorted(only - set(EDITS)))
+        if only and not only <= set(suite.edits):
+            raise ScriptError("unknown mutant(s): %s" % sorted(only - set(suite.edits)))
+        if args.roots_only:
+            for u in suite.units:
+                for m in suite.edits:
+                    if only is None or m in only:
+                        print(u, m, make_root(suite, args.req_shield, args.out, u, m))
+            return 0
+        absent = [n for n in ("kv", "classpath", "kotlinc", "specs", "expected") if getattr(args, n) is None]
+        if absent:
+            raise ScriptError("a verify run needs %s" % ", ".join("--" + n for n in absent))
+        expected = read_expected(args.expected, suite)
         work = [k for k in expected if only is None or k[1] in only]
-        missing = [(v, m) for v in VARIANT_DIRS for m in EDITS if (v, m) not in expected and (only is None or m in only)]
+        missing = [(v, m) for v in suite.units for m in suite.edits if (v, m) not in expected and (only is None or m in only)]
         if missing:
             raise ScriptError("no expected row for %s" % missing)
         os.makedirs(args.out, exist_ok=True)
         start = time.time()
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-            results = list(pool.map(lambda k: run_one(args, *k), work))
+            results = list(pool.map(lambda k: run_one(args, suite, *k), work))
     except ScriptError as e:
         print("mutants.py: script error: %s" % e, file=sys.stderr)
         return 2
     bad = 0
-    print("%-10s %-9s %-8s %-6s %s" % ("variant", "mutant", "verdict", "time", "failing obligations"))
+    print("%-10s %-9s %-8s %-6s %s" % ("variant" if args.suite == "keylocallock" else "module", "mutant", "verdict", "time", "failing obligations"))
     for r in results:
         problems = check(r, expected[(r["variant"], r["mutant"])])
         bad += bool(problems)

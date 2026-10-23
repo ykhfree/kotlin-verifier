@@ -45,6 +45,8 @@ import kv.kvir.Return
 import kv.kvir.Raise
 import kv.kvir.Elvis
 import kv.kvir.returnedValue
+import kv.kvir.canThrow
+import kv.kvir.Local
 import kv.kvir.New
 import kv.kvir.Nondet
 import kv.kvir.Not
@@ -172,43 +174,68 @@ private class Emitter(
     private val anchor = s.modules.single().pos
 
     private val templates = m.types.filter { it.template != null }.map { it.name }.toSet()
-    private val ghost = s.ghosts.singleOrNull() ?: fail(anchor, "v0 emits a module with a ghost record (DESIGN-v0.md 3.5)")
-    private val issued =
+
+    /**
+     * An instance module (DESIGN-B.md 5.4): no ghost record, witness or HIST; `set-once` lines, fresh-object
+     * bookkeeping, `exc` and the operation section. An object module keeps the v0 template (DESIGN-B.md 9.4 question 1).
+     */
+    private val b = m.kind == ModuleKind.INSTANCE
+
+    // Lazy, so that an instance module never needs the v0 ghost declarations; [run] forces them in declaration order.
+    private val ghost by lazy { s.ghosts.singleOrNull() ?: fail(anchor, "v0 emits a module with a ghost record (DESIGN-v0.md 3.5)") }
+    private val issued by lazy {
         ghost.fields.filter { it.kind == GhostKind.SET_ONCE }.singleOrNull()?.name?.text
             ?: fail(ghost.pos, "v0 needs exactly one set-once field in the ghost record: the issued flag")
-    private val held =
+    }
+    private val held by lazy {
         ghost.fields.filter { it.kind == GhostKind.ENDS }.singleOrNull()?.name?.text
             ?: fail(ghost.pos, "v0 needs exactly one ends field in the ghost record: the held flag")
-    private val map: MapVar = m.state.filterIsInstance<MapVar>().singleOrNull() ?: fail(anchor, "v0 emits a module with exactly one state map")
-    private val cls: ObjClass =
+    }
+    private val map: MapVar by lazy { m.state.filterIsInstance<MapVar>().singleOrNull() ?: fail(anchor, "the emitter emits a module with exactly one state map") }
+    private val cls: ObjClass by lazy {
         m.classes.singleOrNull { it.name == map.valueClass }?.takeIf { m.classes.size == 1 }
-            ?: fail(anchor, "v0 emits a module with exactly one class, the value class of state ${map.name}")
-    private val witnessDecl = s.witnesses.singleOrNull() ?: fail(anchor, "v0 emits a module with a 'witness' field (DESIGN-v0.md 3.5, END)")
-    private val witness = cls.fields.find { it.name == witnessDecl.field.text } ?: fail(witnessDecl.pos, "witness field ${witnessDecl.field.text} is not a field of ${cls.name}")
-    private val witnessSource = Source.Sidecar(witnessDecl.pos, "witness ${witnessDecl.cls.text}.${witnessDecl.field.text}")
-    private val hole = splitHole(s.holes.single())
+            ?: fail(anchor, "the emitter emits a module with exactly one class, the value class of state ${map.name}")
+    }
+    private val witnessDecl by lazy { s.witnesses.singleOrNull() ?: fail(anchor, "v0 emits a module with a 'witness' field (DESIGN-v0.md 3.5, END)") }
+    private val witness by lazy { cls.fields.find { it.name == witnessDecl.field.text } ?: fail(witnessDecl.pos, "witness field ${witnessDecl.field.text} is not a field of ${cls.name}") }
+    private val witnessSource by lazy { Source.Sidecar(witnessDecl.pos, "witness ${witnessDecl.cls.text}.${witnessDecl.field.text}") }
+    private val hole by lazy { splitHole(s.holes.single()) }
     private val invariants = s.properties.filter { it.kind == PropertyKind.INVARIANT }
+
+    /** Local names written as another name while one action method is emitted: the action's out as the result. */
+    private var alias: Map<String, String> = emptyMap()
     private val keyType get() = vtype(map.key)
+
+    /** The `set-once` declarations of the state map (DESIGN-B.md 2.4): one ensures line each, in every action. */
+    private val setOnce by lazy { s.setOnce.filter { it.map.text == map.name } }
+
+    /** True if a `returns fresh` function makes objects of [cls]: they carry the tool ghost `gFor` (DESIGN-B.md 4.1). */
+    private val fresh by lazy { cls.name in m.freshFunctions.values }
 
     /**
      * The backed field: the frozen ghost field an issue rule sets to `carried(S, k, result)` (sidecar `gBacked`).
      * The allowance clauses of 5.2 name it. Null if no issue rule sets one.
      */
-    private val backed: String? =
+    private val backed: String? by lazy {
         m.operations.flatMap { op ->
             op.action.commit.filterIsInstance<Issue>().flatMap { issue -> issue.fields.filterValues { it is Carried && (it.token as? Var)?.local == op.result }.keys }
         }.distinct().let {
             if (it.size > 1) fail(ghost.pos, "issue rules set different backed fields $it to carried(S, k, result); v0 needs one")
             it.singleOrNull()
         }
+    }
 
     fun run(): Emitted {
-        // DESIGN-B.md 8: B3 emits instance modules, the map calls other than compute and operation sections.
-        val b =
-            m.kind == ModuleKind.INSTANCE ||
-                m.operations.any { !(it.body.size == 2 && it.body[0] is RunAction && it.body[1] is Return) } ||
-                (m.operations.map { it.action } + m.strayActions).any { a -> a.kind != ActionKind.COMPUTE || a.body.walk().any { it is Fresh || it is Raise } }
-        if (b) fail(anchor, "the emitter handles DESIGN-B.md modules from milestone B3 on")
+        if (b) {
+            listOf(map, cls, hole)
+        } else {
+            listOf(ghost, issued, held, map, cls, witnessDecl, witness, witnessSource, hole, backed)
+            // DESIGN-B.md 9.4 question 1: an object module keeps the v0 rules, so it has v0 actions and operations only.
+            val v0 =
+                m.operations.all { it.body.size == 2 && it.body[0] is RunAction && it.body[1] is Return } &&
+                    (m.operations.map { it.action } + m.strayActions).all { a -> a.kind == ActionKind.COMPUTE && a.body.walk().none { it is Fresh || it is Raise } }
+            if (!v0) fail(anchor, "an object module is emitted with the v0 rules: compute actions without fresh or throwing calls, and `run action; return` operations")
+        }
         header()
         domains()
         fields()
@@ -245,7 +272,8 @@ private class Emitter(
     // ---- 5.1 items 1-5 ----
 
     private fun header() {
-        w.comment("Generated by kv emit (translator v0, DESIGN-v0.md section 5). Do not edit: change the Kotlin source or the sidecar.")
+        val design = if (b) "DESIGN-B.md 5.4, an instance module" else "translator v0, DESIGN-v0.md section 5"
+        w.comment("Generated by kv emit ($design). Do not edit: change the Kotlin source or the sidecar.")
         w.comment("Module: ${m.id}")
         w.comment("Sidecar: ${s.file}")
         w.comment("Sources: ${s.sources.joinToString { it.path }}")
@@ -260,7 +288,12 @@ private class Emitter(
     private fun domains() {
         w.comment("---- Abstract types (sidecar: type) ----")
         m.types.filter { it.template == null }.forEach { t ->
-            w.line("domain ${t.name} {}", Source.Sidecar(s.types.single { it.name.text == t.name }.pos, "type ${t.name}"), comment = "opaque")
+            w.line("domain ${t.name} {}", Source.Sidecar(s.types.single { it.name.text == t.name }.pos, "type ${t.name}"), comment = "opaque${t.kclass?.let { k -> " $k: == is its equals" } ?: ""}")
+        }
+        if (b) {
+            if (templates.isNotEmpty()) nullDefine()
+            w.put("\n")
+            return
         }
         val index = stype(ghost.index.text)
         val gen = Source.Sidecar(ghost.pos, "ghost record $g")
@@ -271,9 +304,15 @@ private class Emitter(
         w.line("axiom ${g}_injective { forall t: $index :: { $g(t) } ${g}Of($g(t)) == t }", gen, 2)
         w.line("}")
         w.put("\n")
-        w.line("define NULL (-1)", Source.Generated("NULL"), comment = "null of a template type such as Token?; a template value \"...\${Long}\" is its Long n >= 0")
+        nullDefine()
         w.put("\n")
     }
+
+    private fun nullDefine() =
+        w.line("define NULL (-1)", Source.Generated("NULL"), comment = "null of a template type such as Token?; a template value \"...\${Long}\" is its Long n >= 0")
+
+    /** The fields an object of [cls] carries: its flattened fields and, for a class a fresh function makes, `gFor`. */
+    private val objectFields: List<String> get() = cls.fields.map { it.name } + listOfNotNull("gFor".takeIf { fresh })
 
     private fun fields() {
         w.comment("---- Module state: ${m.id} (sidecar: state) ----")
@@ -281,36 +320,47 @@ private class Emitter(
             val type = if (v is MapVar) "Map[$keyType, Ref]" else "Int"
             w.line("field ${v.name}: $type", Source.Kotlin(v.pos), comment = "${v.kotlin} ${at(v.pos)}")
         }
-        w.line("field created: Set[Ref]", Source.Generated("created"), comment = "tool ghost: every ${cls.name} allocated in an action")
+        val made = if (fresh) "a trusted fresh function returned" else "allocated in an action"
+        w.line("field created: Set[Ref]", Source.Generated("created"), comment = "tool ghost: every ${cls.name} $made")
         w.put("\n")
-        w.comment("---- Ghost record fields (sidecar: ghost record $g) ----")
-        ghost.fields.forEach { f ->
-            w.line("field ${f.name.text}: ${stype(f.type.text)}", Source.Sidecar(f.name.pos, "ghost field ${f.name.text}"), comment = f.kind.name.lowercase().replace('_', '-'))
+        if (!b) {
+            w.comment("---- Ghost record fields (sidecar: ghost record $g) ----")
+            ghost.fields.forEach { f ->
+                w.line("field ${f.name.text}: ${stype(f.type.text)}", Source.Sidecar(f.name.pos, "ghost field ${f.name.text}"), comment = f.kind.name.lowercase().replace('_', '-'))
+            }
+            w.put("\n")
         }
-        w.put("\n")
         w.comment("---- ${cls.name}, flattened (sidecar: class ${cls.name}) ----")
         cls.fields.forEach { f ->
             w.line("field ${f.name}: ${vtype(f.type)}", Source.Kotlin(f.pos), comment = "${f.kotlin}${f.model?.let { m -> " ($m)" } ?: ""}")
         }
+        if (fresh) w.line("field gFor: $keyType", Source.Generated("gFor"), comment = "tool ghost: the action key of the operation that created the object")
         w.put("\n")
     }
 
     private fun macros() {
         val ms = map.name
         w.line("define has(S, qk) (qk in domain(S.$ms) && S.$ms[qk] != null)", Source.Generated("has"))
-        w.line("define carried(S, qk, qt) (has(S, qk) && S.$ms[qk].${witness.name} == qt)", Source.Sidecar(witnessDecl.pos, "witness ${witnessDecl.cls.text}.${witness.name}"))
+        if (!b) w.line("define carried(S, qk, qt) (has(S, qk) && S.$ms[qk].${witness.name} == qt)", Source.Sidecar(witnessDecl.pos, "witness ${witnessDecl.cls.text}.${witness.name}"))
         w.put("\n")
         w.comment("---- Tool-generated: permissions and ownership (DESIGN-v0.md 5.3) ----")
-        val index = stype(ghost.index.text)
-        w.line("define GHOST_PERMS (", Source.Generated("GHOST_PERMS"))
-        w.line("forall qt: $index :: { $g(qt) }", indent = 2)
-        w.line(ghost.fields.joinToString(" && ") { "acc($g(qt).${it.name.text})" }, indent = 4)
-        w.line(")")
-        w.put("\n")
+        if (!b) {
+            val index = stype(ghost.index.text)
+            w.line("define GHOST_PERMS (", Source.Generated("GHOST_PERMS"))
+            w.line("forall qt: $index :: { $g(qt) }", indent = 2)
+            w.line(ghost.fields.joinToString(" && ") { "acc($g(qt).${it.name.text})" }, indent = 4)
+            w.line(")")
+            w.put("\n")
+        }
         w.line("define MI_PERMS(S) (", Source.Generated("MI_PERMS"))
-        w.line((m.state.map { "acc(S.${it.name})" } + "acc(S.created)" + "GHOST_PERMS").joinToString(" && ") + " &&", indent = 2)
-        w.line("(forall qr: Ref :: { qr in S.created } qr in S.created ==>", indent = 2)
-        w.line(cls.fields.joinToString(" && ") { "acc(qr.${it.name})" } + ")", indent = 5)
+        val perms = m.state.map { "acc(S.${it.name})" } + "acc(S.created)" + listOfNotNull("GHOST_PERMS".takeUnless { b })
+        if (objectFields.isEmpty()) {
+            w.line(perms.joinToString(" && "), indent = 2)
+        } else {
+            w.line(perms.joinToString(" && ") + " &&", indent = 2)
+            w.line("(forall qr: Ref :: { qr in S.created } qr in S.created ==>", indent = 2)
+            w.line(objectFields.joinToString(" && ") { "acc(qr.$it)" } + ")", indent = 5)
+        }
         w.line(")")
         w.put("\n")
         w.comment("Ownership: every map value is an allocated ${cls.name}, and no two keys share one.")
@@ -320,6 +370,16 @@ private class Emitter(
         w.line("has(S, qk1) && has(S, qk2) && qk1 != qk2 ==> S.$ms[qk1] != S.$ms[qk2])", indent = 5)
         w.line(")")
         w.put("\n")
+        setOnce.forEach { d ->
+            val src = Source.Sidecar(d.pos, d.id.text)
+            w.comment("---- Sidecar: set-once ${d.id.text}: ${d.map.text}. A mapped key keeps its value (every action, DESIGN-B.md 2.4) ----")
+            w.line("define ${d.id.text}(S) (", src)
+            // Two trigger sets: Silicon needs the domain one for a later `k in domain(S.m)` check (DESIGN-B.md 6.1 note 3).
+            w.line("forall qk: $keyType :: { qk in domain(S.$ms) } { S.$ms[qk] }", src, 2)
+            w.line("old(has(S, qk)) ==> has(S, qk) && S.$ms[qk] == old(S.$ms[qk])", src, 4)
+            w.line(")")
+            w.put("\n")
+        }
         invariants.forEach { p ->
             w.comment("---- Sidecar: invariant ${p.id.text} ----")
             w.line("define ${p.id.text}(S) (")
@@ -339,7 +399,7 @@ private class Emitter(
         w.put("\n")
         w.line("define MI(S) (${(listOf("MI_PERMS(S)", "MI_OWN(S)") + invariants.map { "${it.id.text}(S)" } + "MI_INV(S)").joinToString(" && ")})", Source.Generated("MI"))
         w.put("\n")
-        hist()
+        if (!b) hist()
     }
 
     /** HIST (DESIGN-v0.md 5.3 item 4): from the ghost field kinds, in declaration order. */
@@ -394,8 +454,10 @@ private class Emitter(
             w.line("S := new(${(m.state.map { it.name } + "created").joinToString()})", indent = 2)
             m.state.forEach { w.line("S.${it.name} := ${initial(it)}", Source.Kotlin(it.pos), 2, "${it.kotlin} ${at(it.pos)}") }
             w.line("S.created := Set[Ref]()", indent = 2)
-            w.comment("Ghost allocation: one record per ${ghost.index.text} value, none issued yet (trusted: an inhale).", 2)
-            w.line("inhale GHOST_PERMS && (forall qt: ${stype(ghost.index.text)} :: { $g(qt) } !$g(qt).$issued)", Source.Generated("init inhale"), 2)
+            if (!b) {
+                w.comment("Ghost allocation: one record per ${ghost.index.text} value, none issued yet (trusted: an inhale).", 2)
+                w.line("inhale GHOST_PERMS && (forall qt: ${stype(ghost.index.text)} :: { $g(qt) } !$g(qt).$issued)", Source.Generated("init inhale"), 2)
+            }
             w.put("}")
         }
     }
@@ -414,17 +476,19 @@ private class Emitter(
         decl: OperationDecl,
     ) {
         val named = a.free.filter { it.sidecarName != null }
-        w.comment("Action ${op.name}: ${map.kotlin}.compute ${at(a.pos)}, operation ${op.kotlin} ${at(op.pos)}")
+        val exc = b && raises(op)
+        w.comment("Action ${op.name}: ${map.kotlin}.${a.kind.method} ${at(a.pos)}, operation ${op.kotlin} ${at(op.pos)}")
         w.comment("  ${origin(a.key)}")
         a.free.forEach { w.comment("  ${origin(it)}${if (it.sidecarName == null) ", unnamed: arbitrary" else ""}") }
         method(op.name, MethodKind.ACTION, op.name, a.pos) {
             val params = (listOf("S: Ref") + (listOf(a.key) + named).map { "${it.local.name}: ${vtype(it.local.type)}" }).joinToString()
-            val returns = op.result?.let { " returns (${it.name}: ${vtype(it.type)})" } ?: ""
+            val outs = listOfNotNull(op.result?.let { "${it.name}: ${vtype(it.type)}" }, "exc: Bool".takeIf { exc })
+            val returns = if (outs.isEmpty()) "" else " returns (${outs.joinToString()})"
             w.line("method ${op.name}($params)$returns")
-            requires(a)
+            requires(a, op)
             if (!reach) {
                 ensuresInvariant()
-                allowances(decl, op)
+                if (!b) allowances(decl, op)
                 decl.items.filterIsInstance<EnsuresItem>().forEach { e ->
                     w.put("  ensures ")
                     sidecarExpr(e.expr, e.id.text)
@@ -432,19 +496,33 @@ private class Emitter(
                 }
             }
             w.line("{")
-            Body(a, op.name).run(op)
+            if (b) SectionBody(a, op, exc, op.name).run() else Body(a, op.name).run(op)
             w.put("}")
         }
+    }
+
+    /**
+     * True if the method of [op] has the result `exc` (DESIGN-B.md 5.4): a path raises, or the sidecar names `exc` in
+     * an ensures of the operation or in a probe call of it, so that a mutant without a throwing call still has it.
+     */
+    private fun raises(op: Operation): Boolean {
+        val decl = s.operations.single { it.name.text == op.name }
+        val ensures = decl.items.filterIsInstance<EnsuresItem>().any { EXC.containsMatchIn(it.expr.text) }
+        val probed = s.probes.flatMap { it.steps }.filterIsInstance<ProbeCall>().any { it.op.text == op.name && it.outs.size == 2 }
+        return op.canThrow || ensures || probed
     }
 
     private fun origin(fv: FreeValue): String = "${fv.local.name} <- ${fv.kotlin} ${at(fv.origin.pos)} (${fv.origin.kind()})"
 
     /** `requires`: MI, the trusted contracts of named Nondet values, the type facts of named values (5.2). */
-    private fun requires(a: Action) {
+    private fun requires(
+        a: Action,
+        op: Operation?,
+    ) {
         w.line("requires MI(S)", Source.Generated("MI"), 2)
         val named = a.free.filter { it.sidecarName != null }
         val namedLocals = named.map { it.local }.toSet()
-        a.body.walk().filterIsInstance<Nondet>().filter { n -> n.outs.isNotEmpty() && n.outs.all { it in namedLocals } }.forEach { n ->
+        (op?.body.orEmpty().walk() + a.body.walk()).filterIsInstance<Nondet>().filter { n -> n.outs.isNotEmpty() && n.outs.all { it in namedLocals } }.forEach { n ->
             contract(n)?.let { (t, renaming) -> t.ensures.forEach { e -> contractLine("requires", t, e, renaming, 2) } }
         }
         named.filter { (it.local.type as? KType.Abs)?.let { t -> !t.nullable && t.name in templates } == true }.forEach {
@@ -484,9 +562,11 @@ private class Emitter(
     private fun ensuresInvariant() {
         w.line("ensures MI_PERMS(S)", Source.Generated("MI_PERMS"), 2)
         w.line("ensures MI_OWN(S)", Source.Generated("MI_OWN"), 2)
+        // DESIGN-B.md 5.4 rule 1 (JB1): each set-once line right after MI_OWN.
+        setOnce.forEach { d -> w.line("ensures ${d.id.text}(S)", Source.Sidecar(d.pos, d.id.text), 2) }
         invariants.forEach { p -> w.line("ensures ${p.id.text}(S)", Source.Sidecar(p.expr.pos, p.id.text), 2) }
         hole.forEachIndexed { i, c -> w.line("ensures MI_INV_${i + 1}(S)", Source.Sidecar(c.expr.pos, "MI_INV_${i + 1}", c.name), 2) }
-        w.line("ensures HIST", Source.Generated("HIST"), 2)
+        if (!b) w.line("ensures HIST", Source.Generated("HIST"), 2)
     }
 
     /**
@@ -543,20 +623,33 @@ private class Emitter(
     /** A compute call that no sidecar operation names: a method with the default contract (DESIGN-v0.md 3.5 R2). */
     private fun stray(a: Action) {
         val name = "stray_" + a.id.replace(Regex("""\W"""), "_")
-        w.comment("Stray action ${a.id}: ${map.kotlin}.compute ${at(a.pos)}; no sidecar operation names it, so it has the default contract.")
+        w.comment("Stray action ${a.id}: ${map.kotlin}.${a.kind.method} ${at(a.pos)}; no sidecar operation names it, so it has the default contract.")
         w.comment("  ${origin(a.key)}")
         a.free.forEach { w.comment("  ${origin(it)}, unnamed: arbitrary") }
         method(name, MethodKind.STRAY, "stray action ${a.id}", a.pos) {
             w.line("method $name(S: Ref, ${a.key.local.name}: ${vtype(a.key.local.type)})")
             w.line("requires MI(S)", Source.Generated("MI"), 2)
             if (!reach) {
+                // DESIGN-B.md 5.4 rule 5: MI and every set-once line, and no allowance clause without a ghost record.
                 ensuresInvariant()
-                allowances(null, null)
+                if (!b) allowances(null, null)
             }
             w.line("{")
-            Body(a, "stray action ${a.id}").run(null)
+            if (b) SectionBody(a, null, false, "stray action ${a.id}").run() else Body(a, "stray action ${a.id}").run(null)
             w.put("}")
         }
+    }
+
+    /** In the reachability clone, the `refute false` that opens branch [what] of the construct at [pos] of action [label]. */
+    private fun branchProbe(
+        label: String,
+        pos: Pos,
+        what: String,
+        indent: Int,
+    ) {
+        if (!reach) return
+        branches += BranchProbe(w.line, label, pos, what)
+        w.line("refute false", Source.Kotlin(pos), indent, "branch reachability: $what ${at(pos)}")
     }
 
     /** The body of one action method: the template of DESIGN-v0.md 5.2 around the lowered statements. */
@@ -571,16 +664,11 @@ private class Emitter(
         /** The locals the action's code reads: a model operation whose out is not read is no branch (M9). */
         private val read = a.body.walk().flatMap { it.exprs() }.flatMap { it.walk() }.filterIsInstance<Var>().map { it.local }.toSet()
 
-        /** In the reachability clone, the `refute false` that opens branch [what] of the construct at [pos]. */
         private fun probe(
             pos: Pos,
             what: String,
             indent: Int,
-        ) {
-            if (!reach) return
-            branches += BranchProbe(w.line, label, pos, what)
-            w.line("refute false", Source.Kotlin(pos), indent, "branch reachability: $what ${at(pos)}")
-        }
+        ) = branchProbe(label, pos, what, indent)
 
         fun run(op: Operation?) {
             val e = a.entry.name
@@ -744,17 +832,248 @@ private class Emitter(
             }
         }
 
-        /** A named Nondet value is a method parameter; an unnamed one is an arbitrary local with its contract inhaled. */
         private fun nondet(
             s: Nondet,
             indent: Int,
-        ) {
-            if (s.outs.all { it in named }) return w.comment("${s.model} ${at(s.pos)}: named free value(s) ${s.outs.joinToString { it.name }}", indent)
-            s.outs.forEach {
-                declare(it.name)
-                w.line("var ${it.name}: ${vtype(it.type)}", Source.Kotlin(s.pos), indent, "${s.model} ${at(s.pos)}: arbitrary")
+        ) = nondet(s, indent, named, ::declare)
+    }
+
+    /** A named Nondet value is a method parameter; an unnamed one is an arbitrary local with its contract inhaled. */
+    private fun nondet(
+        s: Nondet,
+        indent: Int,
+        named: Set<Local>,
+        declare: (String) -> Unit,
+    ) {
+        if (s.outs.all { it in named }) return w.comment("${s.model} ${at(s.pos)}: named free value(s) ${s.outs.joinToString { it.name }}", indent)
+        s.outs.forEach {
+            declare(it.name)
+            w.line("var ${it.name}: ${vtype(it.type)}", Source.Kotlin(s.pos), indent, "${s.model} ${at(s.pos)}: arbitrary")
+        }
+        contract(s)?.let { (t, renaming) -> t.ensures.forEach { e -> contractLine("inhale", t, e, renaming, indent) } }
+    }
+
+    /**
+     * The body of an instance module's action method (DESIGN-B.md 5.4): `exc := false`, the action's unnamed free
+     * values, then the operation section with the action written out at its RunAction (the rows of 2.3). [op] is null
+     * for a stray action, whose body is the action alone. A raise sets `exc`; inside the action it skips the map
+     * write, and the section code after the action runs only if `!exc` (Viper has no early exit).
+     */
+    private inner class SectionBody(
+        private val a: Action,
+        private val op: Operation?,
+        private val exc: Boolean,
+        private val label: String,
+    ) {
+        private val declared = mutableSetOf<String>()
+        private val named = a.free.filter { it.sidecarName != null }.map { it.local }.toSet()
+        private val res = op?.result?.name
+
+        /** compute and computeIfAbsent have their own out local; for the other kinds the out is the current value `cur`. */
+        private val ownOut = a.out?.takeIf { it != a.entry }
+
+        /**
+         * DESIGN-B.md 9.4 question 3: an action value the operation returns directly (`return out`) is the result
+         * variable, written at each end of the action; no out local.
+         */
+        private val outIsResult = res != null && ownOut != null && op!!.body.walk().any { it is Return && (it.e as? Var)?.local == ownOut }
+
+        /** The variable that receives the action's value at its ends: the result, an out local, or none. */
+        private val outName: String? = if (outIsResult) res else ownOut?.name
+
+        private val actionRaises = a.body.walk().any { it is Raise }
+
+        private fun declare(name: String) {
+            check(declared.add(name)) { "local $name is declared twice in $label" }
+        }
+
+        fun run() {
+            alias = if (outIsResult) mapOf(ownOut!!.name to res!!) else emptyMap()
+            if (exc) w.line("exc := false", Source.Generated("exc"), 2)
+            op?.cells?.forEach { c ->
+                declare(c.local.name)
+                w.line("var ${c.local.name}: ${vtype(c.local.type)} := ${expr(c.init)}", Source.Kotlin(c.pos), 2, "cell ${at(c.pos)}")
             }
-            contract(s)?.let { (t, renaming) -> t.ensures.forEach { e -> contractLine("inhale", t, e, renaming, indent) } }
+            a.free.filter { it.sidecarName == null }.forEach { fv ->
+                declare(fv.local.name)
+                w.line("var ${fv.local.name}: ${vtype(fv.local.type)}", Source.Kotlin(fv.local.pos), 2, "unnamed free value: arbitrary")
+                // DESIGN-B.md 5.3 rule 5: a Ref free value of a non-null Kotlin type is not null.
+                if ((fv.local.type as? KType.RefT)?.nullable == false) {
+                    w.line("inhale ${fv.local.name} != null", Source.Kotlin(fv.local.pos), 2, "type fact: ${fv.kotlin} is not nullable")
+                }
+            }
+            if (op == null) runAction(2) else stmts(op.body, 2)
+            alias = emptyMap()
+        }
+
+        /** True if [s] writes Viper code: a return of the value the result already holds, and a named Nondet, do not. */
+        private fun emits(s: Stmt): Boolean =
+            when (s) {
+                is Return -> s.e != null && res != null && !(outIsResult && (s.e as? Var)?.local == ownOut)
+                is Nondet -> !s.outs.all { it in named }
+                else -> true
+            }
+
+        private fun stmts(
+            list: List<Stmt>,
+            indent: Int,
+        ) {
+            for ((i, s) in list.withIndex()) {
+                if (s !is RunAction) {
+                    stmt(s, indent)
+                    continue
+                }
+                runAction(indent)
+                val rest = list.drop(i + 1)
+                if (actionRaises && rest.any(::emits)) afterRaisingAction(rest, indent) else stmts(rest, indent)
+                return
+            }
+        }
+
+        /**
+         * The section code after an action that can raise runs only if it did not: `if (!exc && c) { ... }` for a
+         * single `if` without an else that writes code (DESIGN-B.md 7.2 R1: `!!` on the action's value), else
+         * `if (!exc) { ... }`.
+         */
+        private fun afterRaisingAction(
+            rest: List<Stmt>,
+            indent: Int,
+        ) {
+            val single = rest.singleOrNull() as? If
+            if (single != null && single.els.none(::emits)) {
+                w.line("if (!exc && ${operand(single.cond, PREC_AND)}) {", Source.Kotlin(single.pos), indent)
+                branchProbe(label, single.pos, "if-then", indent + 2)
+                stmts(single.then, indent + 2)
+            } else {
+                w.line("if (!exc) {", Source.Generated("exc"), indent, "the action did not raise")
+                stmts(rest, indent + 2)
+            }
+            w.line("}", indent = indent)
+        }
+
+        private fun stmt(
+            s: Stmt,
+            indent: Int,
+        ) {
+            val src = Source.Kotlin(s.pos)
+            when (s) {
+                is Let -> {
+                    declare(s.v.name)
+                    w.line("var ${s.v.name}: ${vtype(s.v.type)} := ${expr(s.e)}", src, indent)
+                }
+                is Assign -> w.line("${s.v.name} := ${expr(s.e)}", src, indent)
+                is FieldWrite -> w.line("${operand(s.obj, PREC_ATOM)}.${s.field.name} := ${expr(s.e)}", src, indent)
+                is Nondet -> nondet(s, indent, named, ::declare)
+                is If -> {
+                    w.line("if (${expr(s.cond)}) {", src, indent)
+                    branchProbe(label, s.pos, "if-then", indent + 2)
+                    stmts(s.then, indent + 2)
+                    if (s.els.any(::emits)) {
+                        w.line("} else {", indent = indent)
+                        branchProbe(label, s.pos, "if-else", indent + 2)
+                        stmts(s.els, indent + 2)
+                    }
+                    w.line("}", indent = indent)
+                }
+                is Exit -> exit(s, indent)
+                is Fresh -> {
+                    // DESIGN-B.md 3.2, 4.1: a new object, recorded in S.created with the action key in gFor.
+                    declare(s.v.name)
+                    w.line("var ${s.v.name}: Ref := new(${objectFields.joinToString()})", src, indent, "${s.fn}(...) ${at(s.pos)}: a fresh object")
+                    w.line("S.created := S.created union Set(${s.v.name})", src, indent)
+                    w.line("${s.v.name}.gFor := ${a.key.local.name}", src, indent)
+                }
+                is RacyGet -> racyGet(s, indent)
+                is Return -> if (emits(s)) w.line("$res := ${expr(s.e!!)}", src, indent, "result ${at(s.pos)}")
+                is Raise -> if (exc) w.line("exc := true", src, indent, "raise ${at(s.pos)}") else w.comment("raise ${at(s.pos)}: the stray action ends", indent)
+                is New -> fail(anchor, "an instance module creates objects only with a `returns fresh` function (DESIGN-B.md 3.3 rule 4); new ${s.cls.name} at ${at(s.pos)}")
+                is ModelOp -> fail(anchor, "the instance-module emitter has no Viper form for model operation ${s.op} at ${at(s.pos)}")
+                is RunAction, is Unsupported -> error("${s::class.simpleName} at ${s.pos} in ${a.id}")
+            }
+        }
+
+        /** DESIGN-B.md 2.4: a racy get of a set-once map is null or the current value; containsKey true means mapped. */
+        private fun racyGet(
+            s: RacyGet,
+            indent: Int,
+        ) {
+            declare(s.v.name)
+            val read = if (s.contains) "containsKey" else "get"
+            w.line("var ${s.v.name}: ${vtype(s.v.type)}", Source.Kotlin(s.pos), indent, "${s.map.kotlin}.$read ${at(s.pos)}: racy read")
+            if (!s.contract) return
+            val k = expr(s.key)
+            val fact = if (s.contains) "${s.v.name} ==> has(S, $k)" else "${s.v.name} == null || (has(S, $k) && S.${s.map.name}[$k] == ${s.v.name})"
+            w.line("inhale $fact", Source.Kotlin(s.pos), indent, "set-once ${s.map.setOnce}: the read is null or the current value")
+        }
+
+        /** The action at its RunAction (DESIGN-B.md 2.3 Viper table). */
+        private fun runAction(indent: Int) {
+            val src = Source.Kotlin(a.pos)
+            val k = a.key.local.name
+            val ms = map.name
+            val e = a.entry.name
+
+            fun current() {
+                declare(e)
+                w.line("var $e: Ref := has(S, $k) ? S.$ms[$k] : null", Source.Kotlin(a.entry.pos), indent, "${a.kind.method} ${at(a.pos)}: the current value of $k")
+            }
+            if (outName != null && outName != res) {
+                declare(outName)
+                w.line("var $outName: Ref", src, indent, "the value of ${a.kind.method} ${at(a.pos)}")
+            }
+            when (a.kind) {
+                ActionKind.COMPUTE -> {
+                    current()
+                    stmts(a.body, indent)
+                }
+                ActionKind.COMPUTE_IF_ABSENT -> {
+                    current()
+                    w.line("if ($e == null) {", src, indent)
+                    stmts(a.body, indent + 2)
+                    if (outName != null) {
+                        w.line("} else {", indent = indent)
+                        w.line("$outName := $e", src, indent + 2, "present: the function is not invoked")
+                    }
+                    w.line("}", indent = indent)
+                }
+                ActionKind.PUT_IF_ABSENT -> {
+                    current()
+                    w.line("if ($e == null) { S.$ms := S.$ms[$k := ${expr(a.value!!)}] }", src, indent, "putIfAbsent ${at(a.pos)}")
+                }
+                ActionKind.PUT, ActionKind.REMOVE -> {
+                    // The current value is the call's result: written only if the code reads it.
+                    if (a.out != null) current()
+                    val v = if (a.kind == ActionKind.PUT) expr(a.value!!) else "null"
+                    w.line("S.$ms := S.$ms[$k := $v]", src, indent, "${a.kind.method} ${at(a.pos)}")
+                }
+            }
+        }
+
+        /** An exit of a compute or computeIfAbsent lambda: the map write, then the action's value into [outName]. */
+        private fun exit(
+            s: Exit,
+            indent: Int,
+        ) {
+            val src = Source.Kotlin(s.pos)
+            val k = a.key.local.name
+            val ms = map.name
+            val value =
+                when (val r = s.result) {
+                    // computeIfAbsent: a null result maps nothing and is the call's value; compute: the value parameter stays.
+                    ExitResult.Keep -> {
+                        w.comment("exit ${at(s.pos)}: mapping unchanged", indent)
+                        if (a.kind == ActionKind.COMPUTE_IF_ABSENT) "null" else a.entry.name
+                    }
+                    ExitResult.Remove -> {
+                        w.line("S.$ms := S.$ms[$k := null]", src, indent, "exit ${at(s.pos)}: remove")
+                        "null"
+                    }
+                    is ExitResult.Put -> {
+                        w.line("S.$ms := S.$ms[$k := ${expr(r.e)}]", src, indent, "exit ${at(s.pos)}: put")
+                        expr(r.e)
+                    }
+                }
+            outName?.let { w.line("$it := $value", src, indent) }
         }
     }
 
@@ -801,13 +1120,16 @@ private class Emitter(
                 when (step) {
                     is ProbeCall -> {
                         val op = ops.getValue(step.op.text)
-                        // A second out (exc, DESIGN-B.md 5.1) comes with the emitter of operation sections (B3).
-                        val out = step.outs.singleOrNull() ?: fail(step.outs[1].pos, "the emitter takes one out per probe call; exc outs come with DESIGN-B.md 8, B3")
-                        val result = op.result ?: fail(step.op.pos, "operation ${op.name} has no result to assign to ${out.text}")
+                        // The method's results in order: the sidecar result, then `exc` (DESIGN-B.md 5.1, instance modules).
+                        val types = listOfNotNull(op.result?.let { vtype(it.type) }, "Bool".takeIf { b && raises(op) })
+                        if (step.outs.size != types.size) {
+                            val want = listOfNotNull(op.result?.let { "the result" }, "exc".takeIf { types.size > (if (op.result != null) 1 else 0) })
+                            fail(step.pos, "operation ${op.name} returns ${want.joinToString(" and ").ifEmpty { "nothing" }}; the probe call names ${step.outs.size} out(s)")
+                        }
                         val byName = step.args.filter { it.name != null }.associateBy { it.name!!.text }
                         val args = listOf(step.args.first().value.text) + op.action.free.filter { it.sidecarName != null }.map { byName.getValue(it.sidecarName!!).value.text }
-                        w.line("var ${out.text}: ${vtype(result.type)}", indent = 2)
-                        w.line("${out.text} := ${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "probe call ${op.name}"), 2)
+                        step.outs.zip(types).forEach { (out, type) -> w.line("var ${out.text}: $type", indent = 2) }
+                        w.line("${step.outs.joinToString { it.text }} := ${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "probe call ${op.name}"), 2)
                     }
                     is ProbeAssert -> {
                         w.put("  assert ")
@@ -824,8 +1146,9 @@ private class Emitter(
 
     private fun prec(e: Expr): Int =
         when (e) {
+            is Elvis -> 0
             is Or -> 1
-            is And -> 2
+            is And -> PREC_AND
             is Cmp -> if (e.op == CmpOp.EQ || e.op == CmpOp.NE) PREC_EQ else PREC_CMP
             is Arith -> PREC_ARITH
             is Not -> PREC_NOT
@@ -839,7 +1162,7 @@ private class Emitter(
             is IntLit -> if (e.value < 0) "(${e.value})" else "${e.value}"
             is BoolLit -> "${e.value}"
             is NullLit -> if (e.type is KType.Abs) "NULL" else "null"
-            is Var -> e.local.name
+            is Var -> alias[e.local.name] ?: e.local.name
             is FieldRead -> "${operand(e.obj, PREC_ATOM)}.${e.field.name}"
             is Arith -> "${operand(e.a, PREC_ARITH)} ${e.op.symbol} ${operand(e.b, PREC_ARITH + 1)}"
             is Cmp -> "${operand(e.a, prec(e) + 1)} ${e.op.symbol} ${operand(e.b, prec(e) + 1)}"
@@ -849,7 +1172,8 @@ private class Emitter(
             // The template side condition is asserted before the statement; the token is its Long n.
             is TokenOf -> expr(e.n)
             is Carried -> "carried(S, ${expr(e.key)}, ${expr(e.token)})"
-            is Elvis -> error("?: at ${e.pos}: emitted from DESIGN-B.md 8, B3 on")
+            // `a ?: b` of the operation section (DESIGN-B.md 2.6), as mutants.py writes it: `a != null ? a : b`.
+            is Elvis -> "${operand(e.a, PREC_EQ + 1)} != null ? ${operand(e.a, 1)} : ${operand(e.b, 0)}"
         }
 
     private fun operand(
@@ -858,6 +1182,10 @@ private class Emitter(
     ): String = if (prec(e) < min) "(${expr(e)})" else expr(e)
 
     private companion object {
+        /** The name `exc` in a sidecar expression (DESIGN-B.md 5.1). */
+        val EXC = Regex("""(?<![.\w])exc(?!\w)""")
+
+        const val PREC_AND = 2
         const val PREC_EQ = 3
         const val PREC_CMP = 4
         const val PREC_ARITH = 5

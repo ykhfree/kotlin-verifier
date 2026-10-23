@@ -337,7 +337,7 @@ internal class ActionLowering(
         if (ctx.kind == ModuleKind.INSTANCE && op?.selector is Selector.Fun && fn != null) {
             // DESIGN-B.md 2.6: the section is lowered in source order; the action where its call is.
             result = sectionResult(fn)
-            opBody = section(fn)
+            opBody = keepRaises(section(fn), pending = false).first
             body = actionBody ?: emptyList()
             if (actionBody == null && problems.isEmpty()) unsupported("operation ${op.name.text}", "the operation section never reaches its action call", call, inAction = false)
         } else {
@@ -1252,6 +1252,7 @@ internal class ActionLowering(
         if (cls != null) {
             val r = temp("r", KType.RefT(cls.name, false), pos)
             out += Fresh(r, cls, t.shortName, pos)
+            if (section) freshSeen = true
             return Var(r, pos)
         }
         if (t.returns.isEmpty()) return if (valueUsed) unsupported("value of $model", "the trusted function declares no result", c) else null
@@ -1553,7 +1554,11 @@ internal class ActionLowering(
 
     /** A statement of the section: one that [relevant] does not hold stays in the ledger. */
     private fun sectionStatement(s: FirStatement) {
-        if (s !in relevant) return
+        if (s !in relevant) {
+            // The statement stays in the ledger, but it runs: a call in it may throw (DESIGN-B.md 9.4 question 5).
+            mayThrowIn(s)?.let { mayRaise(it) }
+            return
+        }
         when (s) {
             is FirProperty -> sectionVal(s)
             is FirReturnExpression -> sectionReturn(s)
@@ -1733,6 +1738,7 @@ internal class ActionLowering(
         ctx.constructedClass(sym)?.let { return unsupported("${it.name} constructor", "the operation section does not construct module objects; ${it.name} objects come from actions or fresh functions", c) }
         // Rule 5: an unmodeled call's value is a free value; an argument that runs a fresh, throwing or action call is lowered for that.
         for (arg in c.arguments) if (holdsEffect(arg)) expr(arg)
+        if (!modeledCall(c)) mayRaise(c)
         if (!valueUsed) return null
         val type = ktype(c.resolvedType, ctx.slotOf(c), c) ?: return null
         if (type is KType.RefT && !opaque(type)) return unsupported("module object from an unknown call", "a ${type.cls} that neither an action nor a fresh function made", c)
@@ -1765,6 +1771,8 @@ internal class ActionLowering(
             getOrPut { v -> Assign(tmp, v, v.pos) }
             return Var(tmp, at)
         }
+        // Kotlin evaluates the key argument first: a call in it runs before the value and the action.
+        keyMayRaise()
         if (kind == ActionKind.PUT || kind == ActionKind.PUT_IF_ABSENT) {
             val arg = call.arguments.getOrNull(1) ?: return unsupported("${found.kind.method} value", "the call has no value argument", call)
             actionValue = expr(arg, KType.RefT(map.valueClass, true)) ?: return null
@@ -1787,6 +1795,7 @@ internal class ActionLowering(
      * the statement that receives the value in each branch.
      */
     private fun getOrPut(sink: (Expr) -> Stmt) {
+        keyMayRaise()
         val v = temp("v", KType.RefT(map.valueClass, true), at)
         out += RacyGet(v, map, Var(key.local, at), contains = false, contract = map.setOnce != null && !ran, pos = at)
         val before = ran
@@ -1900,6 +1909,101 @@ internal class ActionLowering(
         return a
     }
 
+    // ---- DESIGN-B.md 9.4 question 5: a call that may throw between a fresh call and the action ----
+
+    /** True once the section has lowered a Fresh: only then can a later call orphan a created object. */
+    private var freshSeen = false
+
+    /** Each flag statement of [mayRaise], with the `if (flag) raise` after it. [keepRaises] drops the ones no Fresh precedes. */
+    private val mayThrow = IdentityHashMap<Nondet, If>()
+
+    /**
+     * A call at [e] that the model gives no meaning to, or a `!!` the section does not translate: it may throw. After
+     * a fresh call and before the action, that throw drops the created object, so the section raises here on a
+     * non-deterministic flag. [keepRaises] keeps the raise only on paths where a Fresh ran and the action did not.
+     */
+    private fun mayRaise(e: FirElement) {
+        if (!freshSeen) return
+        val pos = ctx.posOf(e)
+        val flag = temp("cond", KType.BoolT, pos)
+        val what = if (e is FirFunctionCall) "call ${describe(ctx.calleeOf(e))}" else "!!"
+        val n = Nondet(listOf(flag), "$what may throw", pos)
+        val raise = If(Var(flag, pos), listOf(Raise(pos)), emptyList(), pos)
+        mayThrow[n] = raise
+        out += n
+        out += raise
+    }
+
+    /** The action's key argument runs before the action: a call in it may throw. */
+    private fun keyMayRaise() {
+        call.arguments.firstOrNull()?.let(::mayThrowIn)?.let(::mayRaise)
+    }
+
+    /** The first call that may throw (not [modeledCall]) or `!!` in [e], in source order; null if none. */
+    private fun mayThrowIn(e: FirElement): FirElement? {
+        var found: FirElement? = null
+        e.accept(
+            object : FirVisitorVoid() {
+                override fun visitElement(element: FirElement) {
+                    if (found != null) return
+                    if (element is FirCheckNotNullCall || element is FirFunctionCall && !modeledCall(element)) {
+                        found = element
+                        return
+                    }
+                    element.acceptChildren(this)
+                }
+            },
+        )
+        return found
+    }
+
+    /**
+     * True for a call the model gives a meaning to (9.4 question 5: it is not "unmodeled"): the action, a scope
+     * function, a trusted function (a `throws` one has its own flag), a Long, Int or Boolean operator other than
+     * division and remainder, and a built-in model the sidecar uses (the slf4j no-effect model, racy reads).
+     */
+    private fun modeledCall(c: FirFunctionCall): Boolean {
+        if (c === call) return true
+        val sym = ctx.calleeOf(c) ?: return false
+        val id = sym.callableId
+        if (id?.classId == null && id?.packageName?.asString() == "kotlin" && id.callableName.asString() in SCOPE_FUNCTIONS) return true
+        if ((sym as? FirNamedFunctionSymbol)?.let { ctx.trusted[it] } != null) return true
+        if (id?.classId?.asString() in setOf("kotlin/Long", "kotlin/Int", "kotlin/Boolean")) return id?.callableName?.asString() !in DIVISIONS
+        return ctx.entriesOf(sym).any { it.model in ctx.uses }
+    }
+
+    /**
+     * Keeps a raise of [mayRaise] only where a Fresh ran on the path and the action did not run after it; drops the
+     * others with their flags. [pending] says that holds at the start of [stmts]. Returns the statements and whether
+     * it holds at their end, on a path that does not end in them.
+     */
+    private fun keepRaises(
+        stmts: List<Stmt>,
+        pending: Boolean,
+    ): Pair<List<Stmt>, Boolean> {
+        var p = pending
+        val kept = mutableListOf<Stmt>()
+        var dropped: Stmt? = null
+        for (s in stmts) {
+            if (s === dropped) continue
+            when {
+                s is Nondet && s in mayThrow -> if (p) kept += s else dropped = mayThrow[s]
+                s is If -> {
+                    val (then, pThen) = keepRaises(s.then, p)
+                    val (els, pEls) = keepRaises(s.els, p)
+                    kept += s.copy(then = then, els = els)
+                    p = pThen && !ends(then) || pEls && !ends(els)
+                }
+                else -> {
+                    if (s is Fresh) p = true
+                    if (s is RunAction) p = false
+                    kept += s
+                }
+            }
+        }
+        return kept to p
+    }
+
     /**
      * Moves the statements after an `if` whose one branch ends (Exit, Return or Raise on every path) into its other
      * branch (DESIGN-B.md 2.7 rule 2, the normalization of DESIGN-v0.md 2.4 rule 4), so that each path ends once.
@@ -1939,5 +2043,8 @@ internal class ActionLowering(
 
         /** The stdlib scope functions the section inlines (DESIGN-B.md 2.6 rule 2). */
         val SCOPE_FUNCTIONS = setOf("let", "also", "run", "apply")
+
+        /** Long and Int operators that throw on a zero divisor. */
+        val DIVISIONS = setOf("div", "rem", "mod", "floorDiv")
     }
 }

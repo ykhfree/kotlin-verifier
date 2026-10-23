@@ -151,9 +151,10 @@ for ((variant, dir) in listOf(
     verifyReqShield { dependsOn(verify) }
 }
 
-// `./gradlew discoverAspect`, `resolveAspect` and `lowerAspect`: run `kv discover`, `kv resolve` and `kv lower` on the
-// three req-shield Spring aspect modules (DESIGN-B.md 8, B0-B2). Each module also has its own tasks, e.g.
-// `discoverAspectCoreSpring`.
+// `./gradlew discoverAspect`, `resolveAspect`, `lowerAspect`, `emitAspect` and `verifyAspect`: run `kv discover`,
+// `kv resolve`, `kv lower`, `kv emit` and `kv verify` on the three req-shield Spring aspect modules (DESIGN-B.md 8,
+// B0-B3; verify needs Silicon). Each module also has its own tasks, e.g. `discoverAspectCoreSpring`. emit and verify
+// write build/kv/aspect.{core-spring,webflux,coroutine}.vpr.
 // The sidecars are ../specs/reqshield/aspect.{core-spring,webflux,coroutine}.kv.
 val discoverAspect by tasks.registering {
     group = "kv"
@@ -167,6 +168,14 @@ val lowerAspect by tasks.registering {
     group = "kv"
     description = "Prints the KVIR of the three Spring aspect modules and checks W1-W16."
 }
+val emitAspect by tasks.registering {
+    group = "kv"
+    description = "Writes the Viper programs of the three Spring aspect modules to build/kv/."
+}
+val verifyAspect by tasks.registering {
+    group = "kv"
+    description = "Verifies the three Spring aspect modules with Silicon and prints the reports."
+}
 
 for ((module, dir, spec) in listOf(
     Triple("CoreSpring", "core-spring", "core-spring"),
@@ -177,9 +186,14 @@ for ((module, dir, spec) in listOf(
     val discover = tasks.register<JavaExec>("discoverAspect$module") { kv("discover", "$reqShieldDir/$dir/src/main/kotlin", cp = aspectClasspath) }
     val resolve = tasks.register<JavaExec>("resolveAspect$module") { kv("resolve", "--root", reqShieldDir, sidecar, cp = aspectClasspath) }
     val lower = tasks.register<JavaExec>("lowerAspect$module") { kv("lower", "--root", reqShieldDir, sidecar, cp = aspectClasspath) }
+    val vpr = layout.buildDirectory.file("kv/aspect.$spec.vpr").get().asFile.path
+    val emit = tasks.register<JavaExec>("emitAspect$module") { kv("emit", "--root", reqShieldDir, "--out", vpr, sidecar, cp = aspectClasspath) }
+    val verify = tasks.register<JavaExec>("verifyAspect$module") { kv("verify", "--root", reqShieldDir, "--out", vpr, sidecar, cp = aspectClasspath) }
     discoverAspect { dependsOn(discover) }
     resolveAspect { dependsOn(resolve) }
     lowerAspect { dependsOn(lower) }
+    emitAspect { dependsOn(emit) }
+    verifyAspect { dependsOn(verify) }
 }
 
 // `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of the three

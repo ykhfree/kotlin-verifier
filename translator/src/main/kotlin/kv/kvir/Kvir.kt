@@ -132,8 +132,10 @@ val Operation.returnedValue: Expr?
 val Operation.canThrow: Boolean
     get() = (body.walk() + action.body.walk()).any { it is Raise }
 
-/** The map call of an action (DESIGN-B.md 2.3). Only [COMPUTE] and [COMPUTE_IF_ABSENT] have a lambda body. */
-enum class ActionKind { COMPUTE, COMPUTE_IF_ABSENT, PUT_IF_ABSENT, PUT, REMOVE }
+/** The map call of an action (DESIGN-B.md 2.3), with its method name. Only [COMPUTE] and [COMPUTE_IF_ABSENT] have a lambda body. */
+enum class ActionKind(
+    val method: String,
+) { COMPUTE("compute"), COMPUTE_IF_ABSENT("computeIfAbsent"), PUT_IF_ABSENT("putIfAbsent"), PUT("put"), REMOVE("remove") }
 
 data class Action(
     val id: String,
