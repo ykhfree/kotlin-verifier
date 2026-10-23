@@ -4,3 +4,6 @@ spike/keylocallock/mutants/
 spike/keylocallock/mutants.list
 spike/reqshield/mutants/
 spike/reqshield/mutants.list
+frontend-probe/.gradle/
+frontend-probe/.kotlin/
+frontend-probe/build/
