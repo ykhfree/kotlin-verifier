@@ -637,6 +637,20 @@ feature-developer가 순서대로 구현한다. 마일스톤은 수락 테스트
 | JB8 | key 식을 두 번 계산하는 코드 (`getTargetMethod(jp)` 두 번)는 자유 값 두 개다. 그런 fast path는 `P_same` 오경보가 된다 | B에서는 받아들인다 (v0 J6: 상수·순수 호출 전파 없음). `P_key`(B7)의 순수 신뢰 함수가 이것도 고친다 |
 | JB9 | 2.4절 계약과 4.2절 생성 바인딩에 critic 검토(CLAUDE.md rule 2)를 두는가 | 둘 다 되돌리기 비싼 규칙이다. 이 작업은 advisor를 쓰지 않았다 (지시). 메인 세션이 정한다 |
 
+### 9.3 결정 (2026-10-23)
+
+| ID | 결정 |
+|---|---|
+| UB1 | 사용자 결정: B를 구현하고 `P_once`를 증명한다. `P_once`만이 `getOrPut`처럼 조용한 중복 생성을 잡는다 (M3, M4: 측정) |
+| UB2 | 받아들인다. 2.4절 규칙은 가정이 아니라 유도다: CHM의 null 아닌 읽기 보장(신뢰)과, 모든 action이 증명하는 `P_stable`에서 나온다. `set-once`가 없는 map의 읽기는 v0대로 임의 값이므로 KeyLocalLock의 SB2, E4 검출은 그대로다 |
+| UB3 | 사용자 결정: `reviewed`를 검토한 텍스트의 지문에 묶는다. 전체 정책이며 v0의 메모 7개에도 적용한다. B6은 선택이 아니라 필수다. 자세한 규칙은 DESIGN-v0.md 8.3 "reviewed 지문" |
+| UB4, UB5 | 뒤로 미룬다: `P_key`(B7), `expressionMap`(B5). `keyGeneratorMap`은 범위 밖이다 |
+| UB6 | 받아들인다: test 소스의 `internal` 필드 쓰기는 감사하지 않는다. 보고서의 가정 목록에 싣는다 |
+| JB1-JB8 | 9.2절 의견대로 정한다. JB4: 메인 세션이 `spike/vpr_normalize.py`의 `LOCAL`에 `cur_`, `r_`, `v_`를 더했다 (기존 세 gate exit 0, aspect 목표 모델로 이름 바꾸기·합치기 확인) |
+| JB9 | critic을 두지 않는다. 두 대안 모두 측정으로 탈락했다 (ARB_R2 오경보, EFF_M3/M4 버그 놓침). 그래서 CLAUDE.md rule 2의 "분명한 승자 없음" 조건이 아니다. advisor 검토를 거쳤다 |
+| 구현 순서 | 두 번에 나눈다. 1차: B0, B1, B2 (KeyLocalLock 회귀 유지). 2차: B3, B4, B6 |
+| 메인 세션 확인 | `spike/aspect/target.vpr` Silicon 1.89 s, 변이 13개 판정이 `expected-verdicts.txt`와 같다. `15e24d5` 이전의 core `KeyLocalLock`은 인스턴스마다 `lockMap`과 `newSingleThreadExecutor`, `while (true)` 감시를 가졌다 (req-shield 기록) |
+
 ## 부록 A. 재현
 
 1. 목표 모델: `spike/silicon.sh spike/aspect/target.vpr` (`TIMES=1`이면 메서드별 시간).
