@@ -1480,8 +1480,10 @@ internal class ActionLowering(
         relevant = relevance(fn)
         section = true
         ran = false
-        val body = collect { fn.body?.statements.orEmpty().forEach(::sectionStatement) }
+        var body: List<Stmt> = collect { fn.body?.statements.orEmpty().forEach(::sectionStatement) }
         section = false
+        // A Unit function may end without a return: that path returns no value.
+        if (!ends(normalize(body))) body = body + Return(null, ctx.posOf(fn.body ?: fn))
         seeds.filter { it is FirFunctionCall && it !== call && ctx.index.id(it) !in translated }.forEach {
             unsupported("call ${sourceText(it)}", "a fresh or throwing call where the operation section does not translate it (DESIGN-B.md 2.6 rule 4)", it, inAction = false)
         }
@@ -1594,10 +1596,17 @@ internal class ActionLowering(
         expr(a.rValue, local.type)?.let { out += Assign(local, it, ctx.posOf(a)) }
     }
 
-    /** `return e` of the operation function: [e] in result position (DESIGN-B.md 2.6 rule 1). */
+    /**
+     * `return e` of the operation function: [e] in result position (DESIGN-B.md 2.6 rule 1). Without a sidecar
+     * result, the value is lowered only for the action or fresh and throwing calls it holds.
+     */
     private fun sectionReturn(r: FirReturnExpression) {
         mark(r)
         if (r.target.labeledElement !== found.inFunction) return run { unsupported("return", "a return out of a lambda of the operation section", r) }
+        if (op?.result == null && !holdsEffect(r.result)) {
+            out += Return(null, ctx.posOf(r))
+            return
+        }
         resultPos(r.result, ctx.posOf(r))
     }
 
@@ -1847,7 +1856,9 @@ internal class ActionLowering(
                 locals[it.symbol] = bound
             }
         } else {
+            // `this` in the lambda is bound to its receiver parameter (or, in older FIR, to the lambda itself).
             thisBindings[lam.symbol] = bound
+            lam.receiverParameter?.symbol?.let { thisBindings[it] = bound }
         }
         if ((name == "let" || name == "run") && valueUsed) return lambdaValue(lam)
         lam.body?.statements.orEmpty().forEach(::sectionStatement)
