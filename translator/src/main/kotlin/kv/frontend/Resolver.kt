@@ -58,6 +58,8 @@ data class UnsupportedOperation(
     val operation: String,
     val at: SPos,
     val reason: String,
+    /** The selected Kotlin function. */
+    val kotlinPos: Pos?,
 )
 
 data class Resolution(
@@ -111,8 +113,19 @@ class SidecarResolver(
     private val positions = Positions(file)
     private val outer = module.symbol.classId.outerClassId?.let(::classSymbol)
     private val pkg = file.packageDirective.packageFqName
-    private val classes = mutableMapOf<String, FirRegularClassSymbol>()
-    private val trusted = mutableMapOf<String, FirNamedFunctionSymbol>()
+    // The symbols behind the bindings, for the lowering. Valid only while the compiler session runs.
+    internal val classes = mutableMapOf<String, FirRegularClassSymbol>()
+    internal val trusted = mutableMapOf<String, FirNamedFunctionSymbol>()
+    internal val states = mutableMapOf<String, FirPropertySymbol>()
+
+    /** Sidecar class and field name to the Kotlin property. */
+    internal val fields = mutableMapOf<Pair<String, String>, FirPropertySymbol>()
+
+    /** Operation name to its compute call. */
+    internal val computeOf = mutableMapOf<String, FoundCompute>()
+
+    /** Operation name to the Kotlin declaration each `free` item names: a local, parameter, property or call. */
+    internal val freeOf = mutableMapOf<String, MutableList<Pair<FreeItem, Any>>>()
 
     private fun err(
         pos: SPos,
@@ -256,6 +269,7 @@ class SidecarResolver(
                 err(f.kname.pos, "missing-kotlin-field", "class ${sym.classId.asSingleFqName()} has no property '${f.kname.text}'")
             } else {
                 bind("field ${c.name.text}.${f.name.text}", f.name.pos, prop)
+                fields[c.name.text to f.name.text] = prop
                 fieldType(f, prop)
             }
         }
@@ -280,6 +294,7 @@ class SidecarResolver(
             return
         }
         bind("state ${st.name.text}", st.pos, prop)
+        states[st.name.text] = prop
         val t = prop.resolvedReturnType.lowerBoundIfFlexible()
         val ok =
             when (val kind = st.kind) {
@@ -327,11 +342,19 @@ class SidecarResolver(
                         fns.isEmpty() -> return err(target.pos, "unresolved", "no function '${target.text}'")
                         fns.size > 1 -> return err(target.pos, "ambiguous", "'${target.text}' names ${fns.size} overloads")
                     }
-                    bind("operation ${op.name.text}", op.pos, fns.single())
-                    val inFun = computes.filter { it.inFunction?.symbol == fns.single() }
+                    val fn = fns.single()
+                    bind("operation ${op.name.text}", op.pos, fn)
+                    val fnFile = runCatching { session.firProvider.getFirCallableContainerFile(fn) }.getOrNull()
+                    if (fnFile != file) {
+                        // Decision 6: v0 translates only operations whose function is in the module's file.
+                        val where = fnFile?.sourceFile?.name ?: "a library"
+                        unsupported += UnsupportedOperation(op.name.text, target.pos, "fun ${target.text} is declared in $where, outside the module file ${file.name}; v0 translates operations of the module file only", posOf(fn))
+                        return
+                    }
+                    val inFun = computes.filter { it.inFunction?.symbol == fn }
                     if (inFun.size != 1) {
                         // U2: v0 translates an operation with exactly one action; otherwise the operation is unsupported.
-                        unsupported += UnsupportedOperation(op.name.text, target.pos, "fun ${target.text} has ${inFun.size} compute calls ${inFun.map { at(it) }}; v0 translates an operation with exactly one")
+                        unsupported += UnsupportedOperation(op.name.text, target.pos, "fun ${target.text} has ${inFun.size} compute calls ${inFun.map { at(it) }}; v0 translates an operation with exactly one", posOf(fn))
                         return
                     }
                     inFun.single()
@@ -349,6 +372,7 @@ class SidecarResolver(
         claimed[found]?.let { return err(target.pos, "selector-overlap", "the compute call at ${at(found)} is already the action of operation $it") }
         claimed[found] = op.name.text
         actions[op.name.text] = found.site
+        computeOf[op.name.text] = found
         bindings += Binding("action ${op.name.text}", op.pos, "compute call", found.site.pos)
         op.free.forEach { free(op, it, found) }
     }
@@ -367,27 +391,40 @@ class SidecarResolver(
             is FreeSource.Local -> {
                 // The innermost visible declaration is the one the Kotlin code reads.
                 val local = visibleLocals(found).lastOrNull { it.name.asString() == name }
-                if (local == null) err(src.name.pos, "unresolved", "no local '$name' is visible at the compute call at ${at(found)}") else bind(what, item.pos, local.symbol)
+                if (local == null) err(src.name.pos, "unresolved", "no local '$name' is visible at the compute call at ${at(found)}") else freeBinding(op, item, local.symbol, what)
             }
             is FreeSource.Param -> {
                 val param = found.scopes.asReversed().flatMap { it.valueParameters }.firstOrNull { it.name.asString() == name }
-                if (param == null) err(src.name.pos, "unresolved", "no parameter '$name' encloses the compute call at ${at(found)}") else bind(what, item.pos, param.symbol)
+                if (param == null) err(src.name.pos, "unresolved", "no parameter '$name' encloses the compute call at ${at(found)}") else freeBinding(op, item, param.symbol, what)
             }
             is FreeSource.This -> {
                 val cls = found.inClass?.symbol
                 val prop = cls?.let { members(it, name, FirPropertySymbol::class).firstOrNull() }
-                if (prop == null) err(src.name.pos, "unresolved", "class ${cls?.classId?.asSingleFqName()} has no property '$name'") else bind(what, item.pos, prop)
+                if (prop == null) err(src.name.pos, "unresolved", "class ${cls?.classId?.asSingleFqName()} has no property '$name'") else freeBinding(op, item, prop, what)
             }
             is FreeSource.Call -> {
                 val fn = trusted[name] ?: return // the trusted function did not resolve; that error is reported
                 val calls = callsIn(found.lambda, fn)
                 when (calls.size) {
                     0 -> err(src.name.pos, "unresolved", "the action at ${at(found)} makes no call to $name")
-                    1 -> bind(what, item.pos, fn, positions.of(calls.single().source))
+                    1 -> {
+                        bind(what, item.pos, fn, positions.of(calls.single().source))
+                        freeOf.getOrPut(op.name.text) { mutableListOf() } += item to calls.single()
+                    }
                     else -> err(src.name.pos, "ambiguous", "the action at ${at(found)} calls $name ${calls.size} times")
                 }
             }
         }
+    }
+
+    private fun freeBinding(
+        op: OperationDecl,
+        item: FreeItem,
+        sym: FirBasedSymbol<*>,
+        what: String,
+    ) {
+        bind(what, item.pos, sym)
+        freeOf.getOrPut(op.name.text) { mutableListOf() } += item to sym
     }
 
     /** Local properties declared before [found]'s call in the blocks that enclose it, outermost first. */
