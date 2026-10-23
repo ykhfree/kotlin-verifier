@@ -130,6 +130,34 @@ class SectionTest {
     }
 
     @Test
+    fun `apply and run bind this to the receiver`() {
+        val apply = AspectFixture(op = op("        return create(jp).apply { shieldMap.putIfAbsent(target(jp), this) }"))
+        val m1 = apply.lowered()
+        assertSupportedOp(m1)
+        val r1 = apply.at("create(jp).apply").let { "r_${it.first}_${it.second}" }
+        assertEquals(r1, (m1.getOrCreate.action.value as kv.kvir.Var).local.name)
+        assertEquals("  return $r1", m1.sectionShape.last())
+        val run = AspectFixture(op = op("        return create(jp).run { shieldMap.putIfAbsent(target(jp), this) ?: this }"))
+        val m2 = run.lowered()
+        assertSupportedOp(m2)
+        val r2 = run.at("create(jp).run").let { "r_${it.first}_${it.second}" }
+        assertEquals("  return cur_${run.at("shieldMap.putIfAbsent").let { "${it.first}_${it.second}" }} ?: $r2", m2.sectionShape.last())
+    }
+
+    @Test
+    fun `an operation without a result whose function ends without return returns no value`() {
+        val f =
+            AspectFixture(
+                op = "    fun getOrCreate(jp: Any) {\n        shieldMap.putIfAbsent(target(jp), create(jp))\n    }",
+                operations = "operation getOrCreate = fun Aspect.getOrCreate {\n  free thrown = call create\n}",
+            )
+        val m = f.lowered()
+        assertSupportedOp(m)
+        assertEquals(null, m.getOrCreate.result)
+        assertEquals("  return", m.sectionShape.last())
+    }
+
+    @Test
     fun `also with a function reference is unsupported`() {
         val f = AspectFixture(op = op("        return create(jp).also(::keep).let { shieldMap.computeIfAbsent(target(jp)) { _ -> it } }"), members = "    private fun keep(s: Shield) {}")
         assertUnsupportedOp(f.lowered(), "also with a function value", f.at("create(jp).also"))
