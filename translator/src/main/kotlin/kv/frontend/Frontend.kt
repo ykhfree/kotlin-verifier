@@ -42,6 +42,8 @@ class FrontendSession(
     private val sidecar: Sidecar?,
     /** Number of source files the compiler gets: the module is lowered once the checker has seen them all. */
     private val sourceCount: Int,
+    /** The req-shield checkout, where the resolver finds the source of a library trusted fun (B6). */
+    private val reviewRoot: File? = null,
 ) {
     private val sites = Collections.synchronizedList(mutableListOf<ActionSite>())
     private val errors = Collections.synchronizedList(mutableListOf<SidecarError>())
@@ -85,7 +87,7 @@ class FrontendSession(
         // A map call is an action candidate only if the sidecar uses its model (DESIGN-B.md 6.1 note 2).
         val uses = sidecar.uses.map { it.model.text }.toSet()
         val found = actions.filter { it.kind == MapCall.COMPUTE || it.kind.model in uses }
-        val resolver = SidecarResolver(sidecar, file, firSession, found, moduleClass)
+        val resolver = SidecarResolver(sidecar, file, firSession, found, moduleClass, reviewRoot)
         val (res, errs) = resolver.resolve()
         resolution = res
         errors += errs
@@ -137,16 +139,18 @@ object Frontend {
     /**
      * Compiles [sources] against [classpath] and returns what the plugin found.
      * [classpath] must hold a Kotlin stdlib: the compiler does not add one.
-     * [kotlincArgs] are extra compiler flags, e.g. `-language-version 2.0`.
+     * [kotlincArgs] are extra compiler flags, e.g. `-language-version 2.0`. [reviewRoot] is where the source of a
+     * library trusted fun is found, to check its reviewed fingerprint (B6).
      */
     fun run(
         sources: List<File>,
         classpath: List<File>,
         kotlincArgs: List<String> = emptyList(),
         sidecar: Sidecar? = null,
+        reviewRoot: File? = null,
     ): FrontendResult {
         val id = UUID.randomUUID().toString()
-        val session = FrontendSession(sidecar, sources.size)
+        val session = FrontendSession(sidecar, sources.size, reviewRoot)
         sessions[id] = session
         val classesDir = Files.createTempDirectory("kv-classes").toFile()
         try {
@@ -191,7 +195,7 @@ object Frontend {
         val files = sidecar.sources.associateWith { kotlinFiles(File(root, it.path)) }
         val missing = files.filterValues { it.isEmpty() }.keys
         if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file or .kt files under ${File(root, it.path)}") }, null, null, null, sidecar)
-        val result = run(files.values.flatten().distinct(), classpath, kotlincArgs, sidecar)
+        val result = run(files.values.flatten().distinct(), classpath, kotlincArgs, sidecar, root)
         if (!result.compiled) return ResolveOutcome(emptyList(), result.messages, null, null, sidecar)
         val ok = result.sidecarErrors.isEmpty()
         return ResolveOutcome(result.sidecarErrors, null, result.resolution.takeIf { ok }, result.module.takeIf { ok }, sidecar)

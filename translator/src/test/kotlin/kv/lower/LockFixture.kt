@@ -88,8 +88,10 @@ data class LockFixture(
         |
         """.trimMargin()
 
+    /** The fixture sidecar; its reviewed clauses carry their fingerprints ([kv.rereviewed]). */
     val sidecar: String =
-        """
+        kv.rereviewed(
+            """
         |module fixture.Lock.Companion
         |source "Lock.kt"
         |type Key   = opaque
@@ -114,7 +116,8 @@ data class LockFixture(
         |$operations
         |hole MI_INV ""${'"'} true ""${'"'}
         |
-        """.trimMargin()
+        """.trimMargin(),
+        )
 
     /** 1-based line and column of the first [fragment] in the Kotlin source, after the first [after] if given. */
     fun at(
@@ -136,7 +139,8 @@ data class LockFixture(
         val parsed = parseSidecar(sidecarFile.path, sidecar)
         assertEquals(emptyList(), checkSidecar(parsed), "fixture sidecar")
         val sources = (mapOf("Lock.kt" to kotlin) + otherFiles).map { (name, text) -> File(dir, name).apply { writeText(text) } }
-        val result = Frontend.run(sources, listOf(Harness.stdlib) + ReqShield.classpath, emptyList(), parsed)
+        // The library trusted funs of the fixtures come from req-shield's support module: their sources are there (B6).
+        val result = Frontend.run(sources, listOf(Harness.stdlib) + ReqShield.classpath, emptyList(), parsed, ReqShield.dir)
         if (!result.compiled) fail("fixture did not compile:\n${result.messages}\n$kotlin")
         assertEquals(emptyList(), result.sidecarErrors, "fixture sidecar resolves")
         val m = result.module ?: fail("no module")

@@ -10,6 +10,6 @@ trusted fun ReqShieldAspect.createReqShield(org.aspectj.lang.ProceedingJoinPoint
   returns fresh Shield                  // every normal return is a new ReqShield
   throws                                // it may throw; then it has created no ReqShield
   effects none                          // it writes no module state (the tool checks the body too)
-  reviewed "DRAFT by implementing agent, pending ykhfree review: core-spring-webflux ReqShieldAspect.kt:129-163: the only return is ReqShield(reqShieldConfiguration) (162); every call that can throw (getTargetMethod 130, getCacheableAnnotation 131, require 133-136, the ReqShieldConfiguration constructor 138-160, which reads the lateinit scheduler) runs before it; the ReqShield constructor only stores the configuration; the body reads the annotation and the instance values lockSupport, asyncCache and scheduler, and calls no operation of this aspect"
+  reviewed "DRAFT by implementing agent, pending ykhfree review: core-spring-webflux ReqShieldAspect.kt:129-163: the only return is ReqShield(reqShieldConfiguration) (162); every call that can throw (getTargetMethod 130, getCacheableAnnotation 131, require 133-136, the ReqShieldConfiguration constructor 138-160, which reads the lateinit scheduler) runs before it; the ReqShield constructor only stores the configuration; the body reads the annotation and the instance values lockSupport, asyncCache and scheduler, and calls no operation of this aspect" sha256 "f68a84ef6eabe726"
 
 include "aspect.common.kv"

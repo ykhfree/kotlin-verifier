@@ -126,7 +126,8 @@ data class UseDecl(
 
 /**
  * `trusted fun KSIG`: [fn] is the Kotlin name, [params] the parameter types as written. [fresh] is the class of
- * `returns fresh NAME` and [throws] the `throws` clause (DESIGN-B.md 3.2).
+ * `returns fresh NAME` and [throws] the `throws` clause (DESIGN-B.md 3.2). [sha256] is the fingerprint the `reviewed`
+ * note records (B6): of the Kotlin declaration from `fun` to its end. [reviewPos] is the `reviewed` keyword.
  */
 data class TrustedDecl(
     val fn: Name,
@@ -140,6 +141,8 @@ data class TrustedDecl(
     override val pos: SPos,
     val fresh: Name? = null,
     val throws: Boolean = false,
+    val sha256: String? = null,
+    val reviewPos: SPos? = null,
 ) : Decl {
     val shortName: String get() = fn.text.substringAfterLast('.')
 
@@ -225,20 +228,38 @@ data class ResultItem(
     override val pos: SPos,
 ) : OpItem
 
+/**
+ * A clause a person reviews (U7, B6): [reviewed] is its note, [sha256] the fingerprint the note records, [reviewPos]
+ * the `reviewed` keyword, and [unit] the reviewed text: the sidecar text from the clause keyword through the end of
+ * its expression, without the `reviewed` line.
+ */
+sealed interface ReviewedItem : OpItem {
+    val reviewed: String?
+    val sha256: String?
+    val reviewPos: SPos?
+    val unit: String
+}
+
 data class IssueItem(
     val result: Name,
     val fields: List<Pair<Name, Vexpr>>,
-    val reviewed: String?,
+    override val reviewed: String?,
     override val pos: SPos,
-) : OpItem
+    override val sha256: String? = null,
+    override val reviewPos: SPos? = null,
+    override val unit: String = "",
+) : ReviewedItem
 
 data class AllowanceItem(
     val kind: Allowance,
     val id: Name,
     val expr: Vexpr,
-    val reviewed: String?,
+    override val reviewed: String?,
     override val pos: SPos,
-) : OpItem
+    override val sha256: String? = null,
+    override val reviewPos: SPos? = null,
+    override val unit: String = "",
+) : ReviewedItem
 
 data class EnsuresItem(
     val id: Name,

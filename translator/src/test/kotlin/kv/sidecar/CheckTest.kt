@@ -13,16 +13,21 @@ class CheckTest {
 
     private val specDir = File(System.getProperty("kv.specDir"), "reqshield")
 
-    /** Checks the coroutine spec after replacing [old] (once) with [new] in the common file. */
+    /**
+     * Checks the coroutine spec after replacing [old] (once) with [new] in the common file. With [rereview], an edited
+     * reviewed clause gets its new fingerprint, as if a person read it again, so that only the check under test reports.
+     */
     private fun check(
         old: String,
         new: String,
+        rereview: Boolean = true,
     ): List<SidecarError> {
         specDir.listFiles()!!.forEach { it.copyTo(File(dir, it.name), overwrite = true) }
         val common = File(dir, "keylocallock.common.kv")
         val text = common.readText()
         require(text.split(old).size == 2) { "'$old' must occur once" }
         common.writeText(text.replace(old, new))
+        if (rereview) kv.rereview(common)
         return checkSidecar(SidecarLoader.load(File(dir, "keylocallock.coroutine.kv")))
     }
 

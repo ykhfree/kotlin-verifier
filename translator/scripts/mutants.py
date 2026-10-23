@@ -10,7 +10,8 @@ Suites: `keylocallock` (default) has the three KeyLocalLock variants and the mut
 the three Spring aspect modules and the mutants of DESIGN-B.md 7.2 (spike/aspect/mutants.py, in Kotlin).
 For each unit (variant or module) and mutant (the unmutated original included), the script:
   1. copies the unit's sources into OUT/roots/<unit>-<mutant>/<same relative path>: KeyLock.kt and KeyLocalLock.kt of
-     a variant, the whole main source directory of an aspect module (its sidecar `source` is that directory),
+     a variant with the support module's main sources (the library trusted funs, B6), or the whole main source
+     directory of an aspect module (its sidecar `source` is that directory),
   2. applies the mutant's exact string edits to the unit's edited file; each edit must match exactly once (rule 1),
   3. runs `KV verify --root <copy> ... <specs>/<sidecar of the unit>` (rule 2: req-shield is not touched),
   4. compares the module verdict (from the exit code, DESIGN-v0.md 8.3 Q7) and, for FAILED, the FAILED action and
@@ -118,6 +119,10 @@ VARIANT_EDITS = {
         ],
     },
 }
+
+# The main sources of req-shield's support module: nowToEpochTime and rejectsNewEntry, the trusted funs of the
+# KeyLocalLock specs (B6: `kv` reads them to check the reviewed fingerprints).
+SUPPORT_DIR = "support/src/main/kotlin"
 
 # The Spring aspect modules (DESIGN-B.md 6.2): the main source directory, which the sidecar's `source` names, and the
 # aspect file in it.
@@ -228,7 +233,8 @@ class Suite:
 SUITES = {
     "keylocallock": Suite(
         VARIANT_DIRS, EDITS, VARIANT_EDITS, lambda v: "keylocallock.%s.kv" % v,
-        lambda v: [os.path.join(VARIANT_DIRS[v], n) for n in ("KeyLock.kt", "KeyLocalLock.kt")],
+        # The support sources hold the library trusted funs, whose reviewed fingerprints `kv` checks (B6).
+        lambda v: [os.path.join(VARIANT_DIRS[v], n) for n in ("KeyLock.kt", "KeyLocalLock.kt")] + [SUPPORT_DIR],
         lambda v: os.path.join(VARIANT_DIRS[v], "KeyLocalLock.kt")),
     "aspect": Suite(
         ASPECT_DIRS, ASPECT_EDITS, ASPECT_MODULE_EDITS, lambda m: "aspect.%s.kv" % m,

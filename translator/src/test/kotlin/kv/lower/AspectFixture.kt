@@ -10,6 +10,7 @@ import kv.kvir.printOperation
 import kv.sidecar.Sidecar
 import kv.sidecar.checkSidecar
 import kv.sidecar.parseSidecar
+import kv.sidecar.reviewFingerprint
 import kv.verify.Report
 import kv.verify.Silicon
 import java.io.File
@@ -72,6 +73,17 @@ data class AspectFixture(
         |
         """.trimMargin()
 
+    /**
+     * [trusted] with the fingerprint of [factory] from `fun` to its end in its `reviewed` note (B6), unless the note
+     * has one: fixtures review their factory as written.
+     */
+    private val stampedTrusted: String
+        get() {
+            if ("sha256" in trusted) return trusted
+            val sha = reviewFingerprint(factory.substring(factory.indexOf("fun ")))
+            return trusted.replace(Regex("""(\n\s*reviewed "[^"]*")"""), "$1 sha256 \"$sha\"")
+        }
+
     val sidecar: String =
         """
         |module fixture.Aspect
@@ -81,7 +93,7 @@ data class AspectFixture(
         |$setOnce
         |class Shield = Shield { }
         |$uses
-        |$trusted
+        |$stampedTrusted
         |$operations
         |$invariants
         |hole MI_INV ""${'"'} $hole ""${'"'}

@@ -267,6 +267,7 @@ class EmitterTest {
         const val GHOST = "ghost record tok(Token) {\n  gIssued: Bool set-once\n  gHeld:   Bool ends\n}\nwitness Info.token\n"
         const val REJECTS =
             "trusted fun com.linecorp.cse.reqshield.support.config.LocalLockLimit.rejectsNewEntry(kotlin.Long)\n" +
-                "  returns rej: Bool\n  ghost   limit: Int\n  ensures rej ==> limit != 0\n  effects none\n  reviewed \"test fixture\"\n"
+                // The fingerprint of LocalLockLimit.kt:86-101 at req-shield 2e792d2, as in keylocallock.common.kv (B6).
+                "  returns rej: Bool\n  ghost   limit: Int\n  ensures rej ==> limit != 0\n  effects none\n  reviewed \"test fixture\" sha256 \"c5bffa07e14e90b1\"\n"
     }
 }

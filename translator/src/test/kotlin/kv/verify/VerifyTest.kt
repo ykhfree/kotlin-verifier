@@ -47,7 +47,7 @@ class VerifyTest {
 
     @Test
     fun `3 - a false sidecar property is FAILED with its ID, sidecar position and the Kotlin action position`() {
-        val reviewed = "  reviewed \"ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed\"\n"
+        val reviewed = "  reviewed \"ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed\" sha256 \"1c0ae67dbfe9757d\"\n"
         ws.editSpec("keylocallock.common.kv", reviewed, reviewed + "  ensures P_false: !has(S, k)\n")
         val r = ws.verify("coroutine")
         val text = r.render()

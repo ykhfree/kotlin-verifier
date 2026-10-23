@@ -29,7 +29,8 @@ val variantDirs =
 
 /**
  * A temp copy of the KeyLocalLock specs under [dir]/specs. [root] is the req-shield checkout until a test edits a
- * Kotlin source: then the variant's sources are copied under [dir]/root, with the same relative paths, and edited
+ * Kotlin source: then the variant's sources and the support module's main sources (the library trusted funs, whose
+ * reviewed fingerprints the resolver checks) are copied under [dir]/root, with the same relative paths, and edited
  * there. The req-shield checkout and specs/ stay unchanged.
  */
 class Workspace(
@@ -46,6 +47,9 @@ class Workspace(
         new: String,
     ) = replaceOnce(File(specs, file), old, new)
 
+    /** Stamps the edited reviewed clauses of the copied spec [file] with their new fingerprints ([kv.rereviewed]). */
+    fun rereview(file: String) = kv.rereview(File(specs, file))
+
     /** Replaces [old] (which must occur exactly once) in the variant's KeyLocalLock.kt, in a copy of the sources. */
     fun editKotlin(
         variant: String,
@@ -53,12 +57,18 @@ class Workspace(
         new: String,
     ) {
         val rel = variantDirs.getValue(variant)
+        copySources(variant)
+        replaceOnce(File(root, "$rel/KeyLocalLock.kt"), old, new)
+    }
+
+    /** Copies the variant's sources and the support sources under [dir]/root once, and makes it the [root]. */
+    private fun copySources(variant: String) {
         val copy = File(dir, "root")
-        if (root != copy) {
-            for (name in listOf("KeyLock.kt", "KeyLocalLock.kt")) File(ReqShield.dir, "$rel/$name").copyTo(File(copy, "$rel/$name"))
-            root = copy
-        }
-        replaceOnce(File(copy, "$rel/KeyLocalLock.kt"), old, new)
+        if (root == copy) return
+        val rel = variantDirs.getValue(variant)
+        for (name in listOf("KeyLock.kt", "KeyLocalLock.kt")) File(ReqShield.dir, "$rel/$name").copyTo(File(copy, "$rel/$name"))
+        File(ReqShield.dir, SUPPORT).copyRecursively(File(copy, SUPPORT))
+        root = copy
     }
 
     /** 1-based line and column of [fragment] in the copied spec [file], within the first line that contains [line]. */
@@ -94,6 +104,17 @@ class Workspace(
         variant: String,
         budget: SiliconBudget = SiliconBudget(),
     ): Report = lower(variant).let { (m, s) -> verify(m, s, File(dir, "$variant.vpr"), Silicon.defaultHome(), budget) }
+
+    /** Replaces [old] (which must occur exactly once) in [rel] of the copied sources; copies the sources first. */
+    fun editSource(
+        variant: String,
+        rel: String,
+        old: String,
+        new: String,
+    ) {
+        copySources(variant)
+        replaceOnce(File(root, rel), old, new)
+    }
 
     private fun replaceOnce(
         f: File,
@@ -136,3 +157,6 @@ fun Emitted.colOf(
     line: Int,
     fragment: String,
 ): Int = text.lines()[line - 1].indexOf(fragment).also { check(it >= 0) { "no '$fragment' on line $line" } } + 1
+
+/** The support module's main sources in the req-shield checkout. */
+const val SUPPORT = "support/src/main/kotlin"

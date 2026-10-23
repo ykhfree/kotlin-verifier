@@ -2,6 +2,10 @@ package kv
 
 import kv.frontend.Frontend
 import kv.frontend.FrontendResult
+import kv.sidecar.ReviewedItem
+import kv.sidecar.SidecarException
+import kv.sidecar.parseSidecar
+import kv.sidecar.reviewFingerprint
 import java.io.File
 
 /** In-process compile harness: compiles Kotlin snippets with the kv plugin and returns what it found. */
@@ -31,6 +35,31 @@ object Harness {
         return result
     }
 }
+
+/**
+ * B6: sidecar [text] with every reviewed issue rule and allowance clause stamped with the fingerprint of its text as
+ * it is now, as if a person read the clause again; a note without one gets one. Trusted funs keep theirs. For
+ * fixtures and edits whose subject is not the fingerprint; a text that does not parse is returned unchanged.
+ */
+fun rereviewed(text: String): String {
+    val s =
+        try {
+            parseSidecar("fixture.kv", text)
+        } catch (e: SidecarException) {
+            return text
+        }
+    val lines = text.split("\n").toMutableList()
+    for (item in s.operations.flatMap { it.items }.filterIsInstance<ReviewedItem>()) {
+        val at = item.reviewPos ?: continue
+        val now = "sha256 \"${reviewFingerprint(item.unit)}\""
+        val n = at.line - 1
+        lines[n] = item.sha256?.let { lines[n].replace("sha256 \"$it\"", now) } ?: "${lines[n]} $now"
+    }
+    return lines.joinToString("\n")
+}
+
+/** [file] after [rereviewed]. */
+fun rereview(file: File) = file.writeText(rereviewed(file.readText()))
 
 /** req-shield inputs, passed in by Gradle (see build.gradle.kts). Read only. */
 object ReqShield {
