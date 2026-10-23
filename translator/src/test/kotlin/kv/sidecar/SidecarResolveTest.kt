@@ -36,6 +36,19 @@ class SidecarResolveTest {
         f.writeText(text.replace(old, new))
     }
 
+    /** Removes the `reviewed` note on the line right after the one that ends with [clause], whatever the note says. */
+    private fun dropReviewedAfter(
+        file: String,
+        clause: String,
+    ) {
+        val f = File(dir, file)
+        val text = f.readText()
+        val pattern = Regex(Regex.escape(clause) + "\n *reviewed \"[^\"]*\"\n")
+        val matches = pattern.findAll(text).count()
+        check(matches == 1) { "'$clause' followed by a reviewed note occurs $matches times in $file" }
+        f.writeText(text.replace(pattern, clause + "\n"))
+    }
+
     /** 1-based line and column of [fragment] in the copied spec [file], within the line that contains [line]. */
     private fun at(
         file: String,
@@ -212,7 +225,7 @@ class SidecarResolveTest {
     @Test
     fun `reports an allowance clause without a reviewed note`() {
         copySpecs()
-        edit("keylocallock.common.kv", "  ends_only_if P3a: qt == t && res\n  reviewed \"PENDING human review: copied from DESIGN-v0.md 4.4\"\n", "  ends_only_if P3a: qt == t && res\n")
+        dropReviewedAfter("keylocallock.common.kv", "  ends_only_if P3a: qt == t && res")
         val e = assertSingleError(resolve("core"), "unreviewed", "keylocallock.common.kv", at("keylocallock.common.kv", "ends_only_if P3a: qt == t", "ends_only_if"))
         assertTrue("ends_only_if P3a" in e.message, e.message)
     }
@@ -220,11 +233,7 @@ class SidecarResolveTest {
     @Test
     fun `reports an issue rule without a reviewed note`() {
         copySpecs()
-        edit(
-            "keylocallock.common.kv",
-            "gLease = now + timeout }\n  reviewed \"PENDING human review: copied from DESIGN-v0.md 4.4\"\n",
-            "gLease = now + timeout }\n",
-        )
+        dropReviewedAfter("keylocallock.common.kv", "gLease = now + timeout }")
         assertSingleError(resolve("coroutine"), "unreviewed", "keylocallock.common.kv", at("keylocallock.common.kv", "issue res {", "issue"))
     }
 
