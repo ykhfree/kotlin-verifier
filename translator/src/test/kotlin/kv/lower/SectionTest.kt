@@ -225,6 +225,9 @@ class SectionTest {
         assertSupportedOp(m)
         val stray = m.strayActions.single()
         assertEquals(ActionKind.REMOVE, stray.kind)
+        // DESIGN-B.md 5.4 rule 5: a stray action keeps every set-once line; its map carries the declaration.
+        assertEquals("P_stable", stray.map.setOnce)
+        assertTrue(stray.map in m.state)
         assertEquals("drop#${f.at("shieldMap.remove").first}", stray.id)
         assertEquals(emptyList(), stray.body)
     }
