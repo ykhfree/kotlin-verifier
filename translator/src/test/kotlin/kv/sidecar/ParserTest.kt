@@ -176,6 +176,44 @@ class ParserTest {
     }
 
     @Test
+    fun `parses the B declarations, a fresh throwing trusted function and a probe call with two outs`() {
+        val s =
+            parse(
+                """
+                module a.b.Aspect
+                type MethodKey = opaque java.lang.reflect.Method   // bound to a Kotlin class
+                type Key = opaque
+                set-once P_stable: m
+                trusted fun Aspect.create(org.aspectj.lang.ProceedingJoinPoint)
+                  returns fresh Shield
+                  throws
+                  effects none
+                  reviewed "read"
+                trusted fun Aspect.flag()
+                  returns fresh: Bool
+                  reviewed "a result named fresh"
+                probe(k1: MethodKey) {
+                  r1, e1 := getOrCreate(k1, thrown = false)
+                  r2 := other(k1)
+                }
+                """,
+            )
+        assertEquals(listOf("java.lang.reflect.Method", null), s.types.map { it.kclass?.text })
+        assertEquals(SPos("t.kv", 2, 25), s.types[0].kclass!!.pos)
+        val once = s.setOnce.single()
+        assertEquals(listOf("P_stable", "m"), listOf(once.id.text, once.map.text))
+        val (create, flag) = s.trusted
+        assertEquals("Shield", create.fresh!!.text)
+        assertTrue(create.throws && create.effectsNone && create.returns.isEmpty())
+        assertEquals(listOf("throw flag"), create.callValues)
+        assertNull(flag.fresh)
+        assertEquals(listOf("fresh"), flag.returns.map { it.name.text })
+        assertTrue(!flag.throws)
+        val calls = s.probes.single().steps.filterIsInstance<ProbeCall>()
+        assertEquals(listOf(listOf("r1", "e1"), listOf("r2")), calls.map { c -> c.outs.map { it.text } })
+    }
+
+    @Test
     fun `rejects a free-form requires in an operation`() {
         val e = syntaxError("operation op = fun C.op {\n  requires x > 0\n}")
         assertEquals(SPos("t.kv", 2, 3), e.pos)

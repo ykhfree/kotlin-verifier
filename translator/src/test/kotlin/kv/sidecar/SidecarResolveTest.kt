@@ -194,7 +194,7 @@ class SidecarResolveTest {
         copySpecs()
         edit("keylocallock.common.kv", "compute in KeyLocalLock.Companion", "compute in KeyLocalLock")
         val e = assertSingleError(resolve("coroutine"), "ambiguous-selector", "keylocallock.common.kv", at("keylocallock.common.kv", "compute in KeyLocalLock", "KeyLocalLock"))
-        assertTrue("2 compute calls [155:9, 209:9]" in e.message, e.message)
+        assertTrue("2 action calls [155:9, 209:9]" in e.message, e.message)
     }
 
     @Test
@@ -313,6 +313,6 @@ class SidecarResolveTest {
         assertEquals(emptyList(), outcome.errors)
         val u = outcome.resolution!!.unsupported.single()
         assertEquals("stop", u.operation)
-        assertTrue("0 compute calls" in u.reason, u.reason)
+        assertTrue("0 action calls" in u.reason, u.reason)
     }
 }

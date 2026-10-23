@@ -39,7 +39,7 @@ class LowerCliTest {
         File(dir, "keylocallock.common.kv").appendText("\noperation stop = fun KeyLocalLock.Companion.stopMonitoring {\n}\n")
         val (exit, out, err) = lower(File(dir, "keylocallock.coroutine.kv"))
         assertEquals(0, exit, err)
-        assertTrue(out.lines().any { it.trimStart().startsWith("U129_9 UNSUPPORTED operation stop") && "0 compute calls" in it }, out)
+        assertTrue(out.lines().any { it.trimStart().startsWith("U129_9 UNSUPPORTED operation stop") && "0 action calls" in it }, out)
         assertTrue(out.trimEnd().endsWith("module INCOMPLETE (unsupported parts above); W1-W14: 0 violation(s)"), out)
     }
 }

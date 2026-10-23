@@ -71,10 +71,21 @@ data class IncludeDecl(
     override val pos: SPos,
 ) : Decl
 
-/** `type NAME = opaque` when [template] is null, else `type NAME = template "..."`. */
+/**
+ * `type NAME = opaque [KCLASS]` when [template] is null, else `type NAME = template "..."`. [kclass] binds an opaque
+ * type to a Kotlin class (DESIGN-B.md 2.2), e.g. `java.lang.reflect.Method`; null for a String type (DESIGN-v0.md 2.13).
+ */
 data class TypeDecl(
     val name: Name,
     val template: String?,
+    override val pos: SPos,
+    val kclass: Name? = null,
+) : Decl
+
+/** `set-once ID : NAME` (DESIGN-B.md 2.4): every action keeps each mapped key's value of state map [map]. */
+data class SetOnceDecl(
+    val id: Name,
+    val map: Name,
     override val pos: SPos,
 ) : Decl
 
@@ -113,7 +124,10 @@ data class UseDecl(
     override val pos: SPos,
 ) : Decl
 
-/** `trusted fun KSIG`: [fn] is the Kotlin name, [params] the parameter types as written. */
+/**
+ * `trusted fun KSIG`: [fn] is the Kotlin name, [params] the parameter types as written. [fresh] is the class of
+ * `returns fresh NAME` and [throws] the `throws` clause (DESIGN-B.md 3.2).
+ */
 data class TrustedDecl(
     val fn: Name,
     val params: List<Name>,
@@ -124,8 +138,13 @@ data class TrustedDecl(
     val effectsNone: Boolean,
     val reviewed: String?,
     override val pos: SPos,
+    val fresh: Name? = null,
+    val throws: Boolean = false,
 ) : Decl {
     val shortName: String get() = fn.text.substringAfterLast('.')
+
+    /** The values a `free ... = call` item binds, in order: the named results, the ghost values, the throw flag. */
+    val callValues: List<String> get() = (returns + ghosts).map { it.name.text } + listOfNotNull("throw flag".takeIf { throws })
 }
 
 data class GhostFieldDecl(
@@ -264,8 +283,9 @@ sealed interface ProbeStep {
     val pos: SPos
 }
 
+/** `OUT {, OUT} := OP(ARGS)`: one out is the result; a second one is `exc` of an operation that can throw (DESIGN-B.md 5.1). */
 data class ProbeCall(
-    val out: Name,
+    val outs: List<Name>,
     val op: Name,
     val args: List<ProbeArg>,
     override val pos: SPos,
@@ -291,6 +311,7 @@ data class Sidecar(
     val modules get() = decls.filterIsInstance<ModuleDecl>()
     val sources get() = decls.filterIsInstance<SourceDecl>()
     val types get() = decls.filterIsInstance<TypeDecl>()
+    val setOnce get() = decls.filterIsInstance<SetOnceDecl>()
     val states get() = decls.filterIsInstance<StateDecl>()
     val classes get() = decls.filterIsInstance<ClassDecl>()
     val uses get() = decls.filterIsInstance<UseDecl>()

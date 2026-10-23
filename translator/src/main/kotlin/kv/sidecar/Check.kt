@@ -47,6 +47,9 @@ private class SidecarChecker(
             err(it.model.pos, "unknown-model", "unknown trusted model '${it.model.text}'; built-in models: ${TrustedModels.builtIn.sorted().joinToString()}")
         }
         witness()
+        setOnce()
+        keyClasses()
+        s.trusted.forEach(::fresh)
         // Decision 2 (2026-10-23): a trusted function contract counts only after a person reads the function body.
         s.trusted.filter { it.reviewed == null }.forEach {
             err(it.pos, "unreviewed", "trusted fun ${it.fn.text} needs a 'reviewed' note: its contract counts only after a person reads the body")
@@ -94,6 +97,7 @@ private class SidecarChecker(
         }
         s.operations.forEach { global(it.name, "operation") }
         s.properties.forEach { global(it.id, it.kind.name.lowercase()) }
+        s.setOnce.forEach { global(it.id, "set-once property") }
     }
 
     private fun type(
@@ -134,6 +138,37 @@ private class SidecarChecker(
         } else if (types[field.type.text]?.template == null) {
             err(w.field.pos, "witness-type", "witness field ${cls.name.text}.${field.name.text} must hold a template type such as Token?")
         }
+    }
+
+    /** DESIGN-B.md 2.4: `set-once ID: m` names a map state, once. */
+    private fun setOnce() {
+        val states = s.states.associateBy { it.name.text }
+        val seen = mutableMapOf<String, SPos>()
+        for (d in s.setOnce) {
+            val st = states[d.map.text]
+            when {
+                st == null -> err(d.map.pos, "unknown-name", "set-once ${d.id.text} names '${d.map.text}', which is not a sidecar state")
+                st.kind !is StateKind.MapOf -> err(d.map.pos, "set-once", "set-once ${d.id.text} names state ${d.map.text}, which is a Counter; set-once needs a Map state (DESIGN-B.md 2.4)")
+                else -> seen.put(d.map.text, d.pos)?.let { err(d.pos, "duplicate-decl", "a second set-once for map ${d.map.text}; the first is at $it") }
+            }
+        }
+    }
+
+    /** DESIGN-B.md 2.2: an opaque type binds only a Kotlin class the trusted model table knows as a key class. */
+    private fun keyClasses() {
+        for (t in s.types) {
+            val k = t.kclass ?: continue
+            if (k.text !in TrustedModels.keyClasses) {
+                err(k.pos, "unknown-key-class", "type ${t.name.text}: '${k.text}' is not a key class of the trusted model table; known: ${TrustedModels.keyClasses.keys.sorted().joinToString()}")
+            }
+        }
+    }
+
+    /** DESIGN-B.md 3.2: `returns fresh C` names a sidecar class, and a fresh function returns nothing else. */
+    private fun fresh(t: TrustedDecl) {
+        val cls = t.fresh ?: return
+        if (cls.text !in classes) err(cls.pos, "unknown-name", "trusted fun ${t.shortName} returns fresh '${cls.text}', which is not a sidecar class")
+        if (t.returns.isNotEmpty()) err(t.returns[0].name.pos, "fresh-returns", "trusted fun ${t.shortName} returns a fresh ${cls.text}; it cannot also return '${t.returns[0].name.text}'")
     }
 
     private fun operation(op: OperationDecl) {
@@ -182,7 +217,10 @@ private class SidecarChecker(
         issues.firstOrNull()?.let { issue(op, it, results.firstOrNull()) }
     }
 
-    /** `free a, b = call f`: f is a trusted function, and the names bind its results and ghost values in order. */
+    /**
+     * `free a, b = call f`: f is a trusted function, and the names bind its results, its ghost values and, if it
+     * `throws`, its throw flag (DESIGN-B.md 2.7 rule 1), in order.
+     */
     private fun call(
         item: FreeItem,
         source: FreeSource.Call,
@@ -193,7 +231,7 @@ private class SidecarChecker(
             candidates.size > 1 -> err(source.name.pos, "ambiguous", "${candidates.size} trusted functions are named '${source.name.text}'")
             else -> {
                 val t = candidates.single()
-                val values = (t.returns + t.ghosts).map { it.name.text }
+                val values = t.callValues
                 if (values.size != item.names.size) {
                     err(item.pos, "free-arity", "call ${t.shortName} gives ${values.size} value(s) $values; the free item names ${item.names.size}")
                 }
@@ -267,7 +305,9 @@ private class SidecarChecker(
         }
         p.params.forEach { local(it.name) }
         p.steps.filterIsInstance<ProbeCall>().forEach { call ->
-            local(call.out)
+            call.outs.forEach(::local)
+            // DESIGN-B.md 5.1: the result, then `exc` if the operation can throw (the emitter checks which).
+            if (call.outs.size > 2) err(call.outs[2].pos, "probe-outs", "a probe call names at most two outs: the result and exc")
             val op = operations[call.op.text]
             if (op == null) {
                 err(call.op.pos, "unknown-name", "no operation '${call.op.text}'")

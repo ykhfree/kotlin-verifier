@@ -92,7 +92,7 @@ private fun discover(
         err.println("kv: discover needs at least one .kt file")
         return 2
     }
-    val result = Frontend.run(options.files.flatMap(::kotlinFiles), options.classpath, options.kotlincArgs)
+    val result = Frontend.run(options.files.flatMap { if (it.isDirectory) Frontend.kotlinFiles(it) else listOf(it) }, options.classpath, options.kotlincArgs)
     if (!result.compiled) {
         err.print(result.messages)
         err.println("kv: compilation failed")
@@ -266,9 +266,6 @@ private fun hole(
         1
     }
 }
-
-/** [f] itself, or every .kt file under the directory [f], sorted by path. */
-private fun kotlinFiles(f: File): List<File> = if (f.isDirectory) f.walk().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList() else listOf(f)
 
 private fun format(site: ActionSite): String {
     val lambda = site.lambda?.let { "${it.line}:${it.col}" } ?: "none"

@@ -233,10 +233,21 @@ private class SidecarParser(
                 val n = name("a type name")
                 expect("=")
                 when (val k = name("'opaque' or 'template'").text) {
-                    "opaque" -> TypeDecl(n, null, pos)
+                    // DESIGN-B.md 5.1: a Kotlin class on the same line binds the opaque type to it.
+                    "opaque" -> {
+                        skipInlineWs()
+                        TypeDecl(n, null, pos, if (!eof() && isNameStart(text[i])) dotted("a Kotlin class name") else null)
+                    }
                     "template" -> TypeDecl(n, string(), pos)
                     else -> fail(i - k.length, "expected 'opaque' or 'template'")
                 }
+            }
+            "set" -> {
+                if (!at("-once")) fail(start, "unknown declaration 'set'")
+                i += "-once".length
+                val id = name("a property ID")
+                expect(":")
+                SetOnceDecl(id, name("a state name"), pos)
             }
             "state" -> {
                 val n = name("a state name")
@@ -347,9 +358,11 @@ private class SidecarParser(
         val ensures = mutableListOf<Vexpr>()
         var effectsNone = false
         var reviewed: String? = null
+        var fresh: Name? = null
+        var throws = false
         while (true) {
             val word = peekWord() ?: break
-            if (word !in setOf("returns", "ghost", "ensures", "effects", "reviewed")) break
+            if (word !in setOf("returns", "ghost", "ensures", "effects", "reviewed", "throws")) break
             val clauseStart = i
             val indent = indentOf(clauseStart)
             name()
@@ -362,9 +375,16 @@ private class SidecarParser(
             when (word) {
                 "returns", "ghost" -> {
                     val n = name("a result name")
+                    // DESIGN-B.md 5.1: `returns fresh NAME`; `returns fresh: TYPE` is a result named fresh.
+                    if (word == "returns" && n.text == "fresh" && !at(":") && peekWord() != null) {
+                        if (fresh != null) fail(clauseStart, "a second 'returns fresh'")
+                        fresh = name("a class name")
+                        continue
+                    }
                     expect(":")
                     (if (word == "returns") returns else ghosts) += Typed(n, name("a type"))
                 }
+                "throws" -> throws = true
                 "ensures" -> ensures += vexpr(indent)
                 "effects" -> {
                     keyword("none")
@@ -373,7 +393,7 @@ private class SidecarParser(
                 "reviewed" -> reviewed = string()
             }
         }
-        return TrustedDecl(fn, params, clock, returns, ghosts, ensures, effectsNone, reviewed, pos)
+        return TrustedDecl(fn, params, clock, returns, ghosts, ensures, effectsNone, reviewed, pos, fresh, throws)
     }
 
     private fun operation(pos: SPos): OperationDecl {
@@ -484,10 +504,12 @@ private class SidecarParser(
             if (first.text == "assert") {
                 steps += ProbeAssert(vexpr(stepIndent), first.pos)
             } else {
+                val outs = mutableListOf(first)
+                while (accept(",")) outs += name("a result name")
                 expect(":=")
                 val op = name("an operation name")
                 expect("(")
-                steps += ProbeCall(first, op, args(), first.pos)
+                steps += ProbeCall(outs, op, args(), first.pos)
             }
         }
         return ProbeDecl(params, requires, steps, pos)

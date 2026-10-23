@@ -51,7 +51,7 @@ class ResolveCliTest {
         assertEquals(1, exit)
         assertEquals("", out)
         val line = common.readLines().indexOfFirst { "compute in KeyLocalLock" in it } + 1
-        assertTrue("keylocallock.common.kv:$line:30: error[ambiguous-selector]: compute in KeyLocalLock matches 2 compute calls [173:9, 229:9]" in err, err)
+        assertTrue("keylocallock.common.kv:$line:30: error[ambiguous-selector]: compute in KeyLocalLock matches 2 action calls [173:9, 229:9]" in err, err)
     }
 
     @Test

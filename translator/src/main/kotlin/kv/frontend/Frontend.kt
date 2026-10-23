@@ -38,11 +38,16 @@ data class FrontendResult(
 
 /** Input and output of one compiler run. The plugin finds it by id, so it must run in this JVM. */
 class FrontendSession(
-    /** A sidecar that passed [kv.sidecar.checkSidecar]; null to only discover compute calls. */
+    /** A sidecar that passed [kv.sidecar.checkSidecar]; null to only discover map action calls. */
     private val sidecar: Sidecar?,
+    /** Number of source files the compiler gets: the module is lowered once the checker has seen them all. */
+    private val sourceCount: Int,
 ) {
     private val sites = Collections.synchronizedList(mutableListOf<ActionSite>())
     private val errors = Collections.synchronizedList(mutableListOf<SidecarError>())
+
+    /** Each analyzed source file with its map action calls, in checker order. */
+    private val files = mutableListOf<Pair<FirFile, List<FoundAction>>>()
 
     @Volatile
     private var resolution: Resolution? = null
@@ -50,17 +55,36 @@ class FrontendSession(
     @Volatile
     private var kvir: Module? = null
 
-    /** Called by the plugin once per source file, after full body resolution. */
+    /**
+     * Called by the plugin once per source file, after full body resolution. The sidecar is resolved and the module
+     * lowered when the last file arrives, so that the module audit can read every source file (DESIGN-B.md 2.1 rule 6).
+     */
     internal fun analyze(
         file: FirFile,
         firSession: FirSession,
     ) {
         val all = findActions(file)
         sites += all.map { it.site }
-        // B0: the lowering still takes compute calls only (DESIGN-v0.md 2.2).
-        val found = all.filter { it.kind == MapCall.COMPUTE }
-        val module = sidecar?.modules?.single() ?: return
-        val moduleClass = findClass(file, module.fqn.text) ?: return
+        if (sidecar == null) return
+        val seen =
+            synchronized(files) {
+                files += file to all
+                files.toList()
+            }
+        if (seen.size == sourceCount) lower(sidecar, seen, firSession)
+    }
+
+    private fun lower(
+        sidecar: Sidecar,
+        seen: List<Pair<FirFile, List<FoundAction>>>,
+        firSession: FirSession,
+    ) {
+        val module = sidecar.modules.single()
+        val (file, actions) = seen.firstOrNull { findClass(it.first, module.fqn.text) != null } ?: return
+        val moduleClass = findClass(file, module.fqn.text)!!
+        // A map call is an action candidate only if the sidecar uses its model (DESIGN-B.md 6.1 note 2).
+        val uses = sidecar.uses.map { it.model.text }.toSet()
+        val found = actions.filter { it.kind == MapCall.COMPUTE || it.kind.model in uses }
         val resolver = SidecarResolver(sidecar, file, firSession, found, moduleClass)
         val (res, errs) = resolver.resolve()
         resolution = res
@@ -79,7 +103,13 @@ class FrontendSession(
     ): FrontendResult {
         val module = sidecar?.modules?.single()
         if (module != null && compiled && resolution == null) {
-            errors += SidecarError(module.fqn.pos, "unresolved", "no source file declares module class ${module.fqn.text}")
+            val message =
+                if (files.size == sourceCount) {
+                    "no source file declares module class ${module.fqn.text}"
+                } else {
+                    "the kv checker saw ${files.size} of $sourceCount source files, so it did not lower module ${module.fqn.text}"
+                }
+            errors += SidecarError(module.fqn.pos, "unresolved", message)
         }
         return FrontendResult(compiled, messages, sites.toList(), resolution, errors.toList(), kvir.takeIf { errors.isEmpty() })
     }
@@ -116,7 +146,7 @@ object Frontend {
         sidecar: Sidecar? = null,
     ): FrontendResult {
         val id = UUID.randomUUID().toString()
-        val session = FrontendSession(sidecar)
+        val session = FrontendSession(sidecar, sources.size)
         sessions[id] = session
         val classesDir = Files.createTempDirectory("kv-classes").toFile()
         try {
@@ -157,13 +187,23 @@ object Frontend {
             }
         val errors = checkSidecar(sidecar)
         if (errors.isNotEmpty()) return ResolveOutcome(errors, null, null, null, sidecar)
-        val missing = sidecar.sources.filter { !File(root, it.path).isFile }
-        if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file ${File(root, it.path)}") }, null, null, null, sidecar)
-        val result = run(sidecar.sources.map { File(root, it.path) }, classpath, kotlincArgs, sidecar)
+        // DESIGN-B.md 5.1: a `source` directory means every .kt file under it.
+        val files = sidecar.sources.associateWith { kotlinFiles(File(root, it.path)) }
+        val missing = files.filterValues { it.isEmpty() }.keys
+        if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file or .kt files under ${File(root, it.path)}") }, null, null, null, sidecar)
+        val result = run(files.values.flatten().distinct(), classpath, kotlincArgs, sidecar)
         if (!result.compiled) return ResolveOutcome(emptyList(), result.messages, null, null, sidecar)
         val ok = result.sidecarErrors.isEmpty()
         return ResolveOutcome(result.sidecarErrors, null, result.resolution.takeIf { ok }, result.module.takeIf { ok }, sidecar)
     }
+
+    /** [f] itself if it is a file, or every .kt file under the directory [f], sorted by path; empty if neither. */
+    fun kotlinFiles(f: File): List<File> =
+        when {
+            f.isFile -> listOf(f)
+            f.isDirectory -> f.walk().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList()
+            else -> emptyList()
+        }
 
     /**
      * The jar or directory that holds this plugin's service file, for `-Xplugin`.

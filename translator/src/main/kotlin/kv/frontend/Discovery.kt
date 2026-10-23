@@ -32,22 +32,24 @@ import org.jetbrains.kotlin.name.Name
 
 /**
  * A `ConcurrentHashMap` call that can be one atomic action of a module (DESIGN-v0.md 2.2, DESIGN-B.md 2.3, 2.5):
- * [method] is the name of the Java member or, for [SET] and [GET_OR_PUT], of the Kotlin stdlib extension.
+ * [method] is the name of the Java member or, for [SET] and [GET_OR_PUT], of the Kotlin stdlib extension; [model] is
+ * the trusted model the sidecar must `use` for the call to be an action.
  */
 enum class MapCall(
     val method: String,
+    val model: String,
 ) {
-    COMPUTE("compute"),
-    COMPUTE_IF_ABSENT("computeIfAbsent"),
-    PUT_IF_ABSENT("putIfAbsent"),
-    PUT("put"),
+    COMPUTE("compute", "jdk.ConcurrentHashMap.compute"),
+    COMPUTE_IF_ABSENT("computeIfAbsent", "jdk.ConcurrentHashMap.computeIfAbsent"),
+    PUT_IF_ABSENT("putIfAbsent", "jdk.ConcurrentHashMap.putIfAbsent"),
+    PUT("put", "jdk.ConcurrentHashMap.put"),
 
     /** `m[k] = v`: the stdlib extension `kotlin.collections.set` on a ConcurrentHashMap. Its body is `put(k, v)`. */
-    SET("set"),
-    REMOVE("remove"),
+    SET("set", "jdk.ConcurrentHashMap.put"),
+    REMOVE("remove", "jdk.ConcurrentHashMap.remove"),
 
     /** The stdlib extension `getOrPut` with a `ConcurrentMap` receiver (not the `MutableMap` overload). */
-    GET_OR_PUT("getOrPut"),
+    GET_OR_PUT("getOrPut", "kotlin.collections.getOrPut"),
 }
 
 /** A [MapCall] in a source file: one candidate action (DESIGN-v0.md 2.2, DESIGN-B.md 5.3 rule 1). */
