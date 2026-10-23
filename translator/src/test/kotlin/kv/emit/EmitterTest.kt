@@ -19,7 +19,7 @@ class EmitterTest {
     @TempDir
     lateinit var dir: File
 
-    private fun emit(variant: String) = lowerReqShield(variant).let { (m, s) -> emitViper(m, s) }
+    private fun emit(variant: String) = lowerReqShield(variant).let { (m, s) -> emitBound(m, s) }
 
     /** The Sidecar source of the position (line, column of [fragment] on [line]). */
     private fun Emitted.sidecarAt(
@@ -105,7 +105,7 @@ class EmitterTest {
 
     // ---- construct fixtures ----
 
-    private fun emit(f: LockFixture): Emitted = emitViper(f.lower(dir), parseSidecar(File(dir, "Lock.kv").path, f.sidecar))
+    private fun emit(f: LockFixture): Emitted = emitBound(f.lower(dir), parseSidecar(File(dir, "Lock.kv").path, f.sidecar))
 
     private fun LockFixture.line(fragment: String) = at(fragment).first
 
@@ -173,7 +173,97 @@ class EmitterTest {
         assertTrue("ghost record" in err.message, err.message)
     }
 
+    // ---- ghost parts (M6) ----
+
+    @Test
+    fun `an allowance clause maps to its sidecar clause, and its condition column by column`() {
+        val e = emit("coroutine")
+        val ws = Workspace(dir)
+        val tryLock = e.methods.single { it.name == "tryLock" }.range
+        val line = (tryLock.line..tryLock.endLine).first { "ensures forall qt: Int :: { tok(qt).gHeld }" in e.text.lines()[it - 1] }
+        val (whole, wholePos) = e.sidecarAt(line, "forall")
+        assertEquals("ends_only_if P3a", whole.id)
+        assertEquals(ws.at("keylocallock.common.kv", "ends_only_if P3a: now > old(tok(qt).gLease)", "ends_only_if"), wholePos.line to wholePos.col)
+        val (cond, condPos) = e.sidecarAt(line + 2, "old(tok(qt).gLease)")
+        assertEquals("ends_only_if P3a", cond.id)
+        assertEquals(ws.at("keylocallock.common.kv", "ends_only_if P3a: now > old(tok(qt).gLease)", "old(tok(qt).gLease)"), condPos.line to condPos.col)
+    }
+
+    @Test
+    fun `the set-once assert maps to the sidecar issue rule`() {
+        val e = emit("coroutine")
+        val line = e.lineOf("assert !tok(res).gIssued")
+        val (src, pos) = e.sidecarAt(line, "!tok")
+        assertEquals("issue tryLock: set-once gIssued", src.id)
+        assertEquals(Workspace(dir).at("keylocallock.common.kv", "issue res {", "issue"), pos.line to pos.col)
+        assertEquals("tryLock", e.methodAt(line)?.name)
+    }
+
+    @Test
+    fun `an operation without allowance clauses gets the false defaults, and a stray action gets the default contract`() {
+        val f = LockFixture("if (e != null) result.set(e.token)\ne", members = "    fun drop(k: String) {\n        lockMap.compute(k) { _, _ -> null }\n    }", operations = ISSUING)
+        val e = emit(f)
+        val ends = "ensures forall qt: Int :: { tok(qt).gHeld }\n    old(tok(qt).gIssued) && old(tok(qt).gBacked) && old(tok(qt).gHeld) && !tok(qt).gHeld ==>\n      (false)"
+        val run = e.text.substringAfter("method run(").substringBefore("\n{\n")
+        assertTrue(ends in run, run)
+        assertTrue("ensures res != NULL && !tok(res).gBacked ==> (false)" in run, run)
+        val endsLine = e.lineOf("ensures forall qt: Int :: { tok(qt).gHeld }")
+        assertEquals(Source.Generated("ends_only_if default false"), e.sourceAt(endsLine, e.colOf(endsLine, "forall"))?.source)
+
+        val strayLine = f.at("lockMap.compute(k)").first
+        val stray = e.methods.single { it.kind == MethodKind.STRAY }
+        assertEquals("stray_drop_$strayLine", stray.name)
+        assertEquals("stray action drop#$strayLine", stray.label)
+        val text = e.text.substringAfter("method ${stray.name}(").substringBefore("\n}\n")
+        assertTrue(text.startsWith("S: Ref, k: Key)\n  requires MI(S)\n"), text)
+        assertTrue(ends in text && "ensures HIST" in text, text)
+        assertFalse("gBacked ==>" in text, "a stray action issues nothing, so it has no unbacked_only_if:\n$text")
+        val body = text.substringAfter("\n{\n").lines().map { it.substringBefore("  //").trim() }.filter { it.isNotEmpty() && !it.startsWith("//") }
+        assertEquals(
+            listOf(
+                "var entry__$strayLine: Ref := has(S, k) ? S.m[k] : null",
+                "var pre_tok: Int := entry__$strayLine != null ? entry__$strayLine.token : NULL",
+                "S.m := S.m[k := null]",
+                "if (pre_tok != NULL && !carried(S, k, pre_tok)) {",
+                "tok(pre_tok).gHeld := false",
+                "}",
+            ),
+            body,
+        )
+    }
+
+    @Test
+    fun `HIST and the issue assignments follow the ghost field declaration order`() {
+        val ghost = "ghost record tok(Token) {\n  gKey: Key frozen\n  gHeld: Bool ends\n  gIssued: Bool set-once\n}\nwitness Info.token\n"
+        val op = "operation run = fun Lock.run {\n  free now = param now\n  free timeout = this.timeout\n  result res\n  issue res { gKey = k }\n  reviewed \"fixture\"\n}"
+        val e = emit(LockFixture("if (e != null) result.set(e.token)\ne", operations = ghost + op))
+        assertTrue(
+            "define HIST (\n  forall qt: Int :: { tok(qt).gIssued } old(tok(qt).gIssued) ==>\n    tok(qt).gKey == old(tok(qt).gKey) && (!old(tok(qt).gHeld) ==> !tok(qt).gHeld) && tok(qt).gIssued\n)" in e.text,
+            e.text,
+        )
+        val issue = e.text.substringAfter("if (res != NULL) {\n").substringBefore("  }").lines().map { it.substringBefore("  //").trim() }.filter { it.isNotEmpty() }
+        assertEquals(listOf("assert !tok(res).gIssued", "tok(res).gKey := k", "tok(res).gHeld := true", "tok(res).gIssued := true"), issue)
+        // Without a field set from carried(S, k, res) there is no backed field, so ends_only_if has no backed conjunct.
+        assertTrue("old(tok(qt).gIssued) && old(tok(qt).gHeld) && !tok(qt).gHeld ==>" in e.text, e.text)
+    }
+
+    @Test
+    fun `unbacked_only_if without a backed field is a sidecar error`() {
+        val ghost = "ghost record tok(Token) {\n  gIssued: Bool set-once\n  gKey: Key frozen\n  gHeld: Bool ends\n}\nwitness Info.token\n"
+        val op = "operation run = fun Lock.run {\n  free now = param now\n  free timeout = this.timeout\n  result res\n  issue res { gKey = k }\n  reviewed \"fixture\"\n" +
+            "  unbacked_only_if P3b: false\n  reviewed \"fixture\"\n}"
+        val f = LockFixture("if (e != null) result.set(e.token)\ne", operations = ghost + op)
+        val err = assertFailsWith<SidecarException> { emit(f) }.errors.single()
+        assertEquals("emit", err.code)
+        assertTrue("unbacked_only_if P3b" in err.message, err.message)
+    }
+
     private companion object {
+        const val ISSUING =
+            "ghost record tok(Token) {\n  gIssued: Bool set-once\n  gKey: Key frozen\n  gBacked: Bool frozen\n  gHeld: Bool ends\n}\nwitness Info.token\n" +
+                "operation run = fun Lock.run {\n  free now = param now\n  free timeout = this.timeout\n  result res\n" +
+                "  issue res { gKey = k; gBacked = carried(S, k, res) }\n  reviewed \"fixture\"\n}"
+
         const val GHOST = "ghost record tok(Token) {\n  gIssued: Bool set-once\n  gHeld:   Bool ends\n}\nwitness Info.token\n"
         const val REJECTS =
             "trusted fun com.linecorp.cse.reqshield.support.config.LocalLockLimit.rejectsNewEntry(kotlin.Long)\n" +

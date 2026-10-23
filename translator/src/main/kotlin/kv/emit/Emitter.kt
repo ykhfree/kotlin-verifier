@@ -4,11 +4,13 @@ import kv.kvir.Action
 import kv.kvir.And
 import kv.kvir.Arith
 import kv.kvir.Assign
+import kv.kvir.AssertFresh
 import kv.kvir.BoolLit
 import kv.kvir.Carried
 import kv.kvir.Cmp
 import kv.kvir.CmpOp
 import kv.kvir.CounterVar
+import kv.kvir.EndIfNotCarried
 import kv.kvir.Exit
 import kv.kvir.ExitResult
 import kv.kvir.Expr
@@ -18,6 +20,7 @@ import kv.kvir.FieldWrite
 import kv.kvir.FreeValue
 import kv.kvir.If
 import kv.kvir.IntLit
+import kv.kvir.Issue
 import kv.kvir.KType
 import kv.kvir.Let
 import kv.kvir.MapVar
@@ -38,7 +41,10 @@ import kv.kvir.Unsupported
 import kv.kvir.Var
 import kv.kvir.exprs
 import kv.kvir.walk
+import kv.sidecar.Allowance
+import kv.sidecar.AllowanceItem
 import kv.sidecar.EnsuresItem
+import kv.sidecar.IssueItem
 import kv.sidecar.OperationDecl
 import kv.sidecar.ProbeAssert
 import kv.sidecar.ProbeCall
@@ -132,15 +138,31 @@ private class Emitter(
     private val issued =
         ghost.fields.filter { it.kind == kv.kvir.GhostKind.SET_ONCE }.singleOrNull()?.name?.text
             ?: fail(ghost.pos, "v0 needs exactly one set-once field in the ghost record: the issued flag")
+    private val held =
+        ghost.fields.filter { it.kind == kv.kvir.GhostKind.ENDS }.singleOrNull()?.name?.text
+            ?: fail(ghost.pos, "v0 needs exactly one ends field in the ghost record: the held flag")
     private val map: MapVar = m.state.filterIsInstance<MapVar>().singleOrNull() ?: fail(anchor, "v0 emits a module with exactly one state map")
     private val cls: ObjClass =
         m.classes.singleOrNull { it.name == map.valueClass }?.takeIf { m.classes.size == 1 }
             ?: fail(anchor, "v0 emits a module with exactly one class, the value class of state ${map.name}")
     private val witnessDecl = s.witnesses.singleOrNull() ?: fail(anchor, "v0 emits a module with a 'witness' field (DESIGN-v0.md 3.5, END)")
     private val witness = cls.fields.find { it.name == witnessDecl.field.text } ?: fail(witnessDecl.pos, "witness field ${witnessDecl.field.text} is not a field of ${cls.name}")
+    private val witnessSource = Source.Sidecar(witnessDecl.pos, "witness ${witnessDecl.cls.text}.${witnessDecl.field.text}")
     private val hole = splitHole(s.holes.single())
     private val invariants = s.properties.filter { it.kind == PropertyKind.INVARIANT }
     private val keyType get() = vtype(map.key)
+
+    /**
+     * The backed field: the frozen ghost field an issue rule sets to `carried(S, k, result)` (sidecar `gBacked`).
+     * The allowance clauses of 5.2 name it. Null if no issue rule sets one.
+     */
+    private val backed: String? =
+        m.operations.flatMap { op -> op.action.commit.filterIsInstance<Issue>().flatMap { it.fields.filterValues(::isCarriedResult).keys } }.distinct().let {
+            if (it.size > 1) fail(ghost.pos, "issue rules set different backed fields $it to carried(S, k, result); v0 needs one")
+            it.singleOrNull()
+        }
+
+    private fun isCarriedResult(e: Expr) = e is Carried && e.key is Var && e.token is Var
 
     fun run(): Emitted {
         header()
@@ -151,6 +173,7 @@ private class Emitter(
         m.operations.filter { it.action.status == Status.Supported }.forEach { op ->
             action(op.action, op, s.operations.single { it.name.text == op.name })
         }
+        m.strayActions.filter { it.status == Status.Supported }.forEach(::stray)
         s.properties.filter { it.kind == PropertyKind.LEMMA }.forEach(::lemma)
         s.probes.forEach(::probe)
         return Emitted(w.text, w.ranges.toList(), methods.toList(), warnings.toList())
@@ -268,6 +291,26 @@ private class Emitter(
         w.put("\n")
         w.line("define MI(S) (${(listOf("MI_PERMS(S)", "MI_OWN(S)") + invariants.map { "${it.id.text}(S)" } + "MI_INV(S)").joinToString(" && ")})", Source.Generated("MI"))
         w.put("\n")
+        hist()
+    }
+
+    /** HIST (DESIGN-v0.md 5.3 item 4): from the ghost field kinds, in declaration order. */
+    private fun hist() {
+        w.comment("---- Tool-generated from the ghost field kinds, in declaration order: append-only history ----")
+        w.line("define HIST (", Source.Generated("HIST"))
+        w.line("forall qt: ${stype(ghost.index.text)} :: { $g(qt).$issued } old($g(qt).$issued) ==>", indent = 2)
+        val parts =
+            ghost.fields.map { f ->
+                val x = "$g(qt).${f.name.text}"
+                when (f.kind) {
+                    kv.kvir.GhostKind.SET_ONCE -> x
+                    kv.kvir.GhostKind.FROZEN -> "$x == old($x)"
+                    kv.kvir.GhostKind.ENDS -> "(!old($x) ==> !$x)"
+                }
+            }
+        w.line(parts.joinToString(" && "), indent = 4)
+        w.line(")")
+        w.put("\n")
     }
 
     /** Writes [e]'s text as it is in the sidecar, mapped so that a column inside it maps back. */
@@ -332,6 +375,7 @@ private class Emitter(
             w.line("method ${op.name}($params)$returns")
             requires(a)
             ensuresInvariant()
+            allowances(decl, op)
             decl.items.filterIsInstance<EnsuresItem>().forEach { e ->
                 w.put("  ensures ")
                 sidecarExpr(e.expr, e.id.text)
@@ -403,6 +447,75 @@ private class Emitter(
         w.line("ensures MI_OWN(S)", Source.Generated("MI_OWN"), 2)
         invariants.forEach { p -> w.line("ensures ${p.id.text}(S)", Source.Sidecar(p.expr.pos, p.id.text), 2) }
         hole.forEachIndexed { i, c -> w.line("ensures MI_INV_${i + 1}(S)", Source.Sidecar(c.expr.pos, "MI_INV_${i + 1}", c.name), 2) }
+        w.line("ensures HIST", Source.Generated("HIST"), 2)
+    }
+
+    /**
+     * The allowance clauses of DESIGN-v0.md 3.5 R2, compiled as in 5.2: `ends_only_if` for every action and
+     * `unbacked_only_if` for an operation that issues. A clause the sidecar does not write is `false`.
+     */
+    private fun allowances(
+        decl: OperationDecl?,
+        op: Operation?,
+    ) {
+        val items = decl?.items?.filterIsInstance<AllowanceItem>().orEmpty()
+        val ends = items.filter { it.kind == Allowance.ENDS_ONLY_IF }
+        val endsHead = "forall qt: ${stype(ghost.index.text)} :: { $g(qt).$held }\n    " +
+            (listOf(issued) + listOfNotNull(backed) + held).joinToString(" && ") { "old($g(qt).$it)" } + " && !$g(qt).$held ==>\n      ("
+        if (ends.isEmpty()) {
+            w.comment("ends_only_if (default false): this action may end no acquisition.", 2)
+            w.line("ensures ${endsHead}false)", Source.Generated("ends_only_if default false"), 2)
+        }
+        ends.forEach { allowance(it, endsHead) }
+        val issues = op?.action?.commit?.any { it is Issue } == true
+        val unbacked = items.filter { it.kind == Allowance.UNBACKED_ONLY_IF }
+        if (!issues) {
+            unbacked.firstOrNull()?.let { fail(it.pos, "unbacked_only_if ${it.id.text}: operation ${op?.name} has no issue rule") }
+            return
+        }
+        if (backed == null) {
+            unbacked.firstOrNull()?.let { fail(it.pos, "unbacked_only_if ${it.id.text} needs a frozen ghost field that the issue rule sets to carried(S, k, ${op!!.result!!.local.name})") }
+            return
+        }
+        val r = op!!.result!!.local.name
+        val unbackedHead = "$r != NULL && !$g($r).$backed ==> ("
+        if (unbacked.isEmpty()) {
+            w.comment("unbacked_only_if (default false): this operation issues no unbacked token.", 2)
+            w.line("ensures ${unbackedHead}false)", Source.Generated("unbacked_only_if default false"), 2)
+        }
+        unbacked.forEach { allowance(it, unbackedHead) }
+    }
+
+    /** One sidecar allowance clause: the whole ensures maps to the clause; its condition maps column by column. */
+    private fun allowance(
+        item: AllowanceItem,
+        head: String,
+    ) {
+        w.comment("${item.kind.keyword} ${item.id.text} (sidecar, reviewed)", 2)
+        w.put("  ensures ")
+        w.mapped(Source.Sidecar(item.pos, "${item.kind.keyword} ${item.id.text}")) {
+            w.put(head)
+            sidecarExpr(item.expr, "${item.kind.keyword} ${item.id.text}")
+            w.put(")")
+        }
+        w.put("\n")
+    }
+
+    /** A compute call that no sidecar operation names: a method with the default contract (DESIGN-v0.md 3.5 R2). */
+    private fun stray(a: Action) {
+        val name = "stray_" + a.id.replace(Regex("""\W"""), "_")
+        w.comment("Stray action ${a.id}: ${map.kotlin}.compute ${at(a.pos)}; no sidecar operation names it, so it has the default contract.")
+        w.comment("  ${origin(a.key)}")
+        a.free.forEach { w.comment("  ${origin(it)}, unnamed: arbitrary") }
+        method(name, MethodKind.STRAY, "stray action ${a.id}", a.pos) {
+            w.line("method $name(S: Ref, ${a.key.local.name}: ${vtype(a.key.local.type)})")
+            w.line("requires MI(S)", Source.Generated("MI"), 2)
+            ensuresInvariant()
+            allowances(null, null)
+            w.line("{")
+            Body(a).run(null)
+            w.put("}")
+        }
     }
 
     /** The body of one action method: the template of DESIGN-v0.md 5.2 around the lowered statements. */
@@ -416,6 +529,9 @@ private class Emitter(
             val e = a.entry.name
             declare(e)
             w.line("var $e: Ref := has(S, ${a.key.local.name}) ? S.${map.name}[${a.key.local.name}] : null", Source.Kotlin(a.entry.pos), 2, "entry ${at(a.entry.pos)}")
+            if (a.commit.any { it is EndIfNotCarried }) {
+                w.line("var pre_tok: ${vtype(witness.type)} := $e != null ? $e.${witness.name} : NULL", witnessSource, 2, "ghost snapshot for END")
+            }
             op?.cells?.forEach { c ->
                 declare(c.local.name)
                 w.line("var ${c.local.name}: ${vtype(c.local.type)} := ${expr(c.init)}", Source.Kotlin(c.pos), 2, "cell ${at(c.pos)}")
@@ -426,6 +542,37 @@ private class Emitter(
             }
             stmts(a.body, 2)
             op?.result?.let { r -> w.line("${r.local.name} := ${expr(r.e)}", Source.Kotlin(r.pos), 2, "result ${at(r.pos)}") }
+            commit(op)
+        }
+
+        /** The commit point (DESIGN-v0.md 5.2): END, then the set-once check and ISSUE. */
+        private fun commit(op: Operation?) {
+            if (a.commit.isEmpty()) return
+            w.comment("---- commit point: effect-bound ghost rules ----", 2)
+            a.commit.filterIsInstance<EndIfNotCarried>().forEach {
+                w.comment("END (sidecar: witness ${witnessDecl.cls.text}.${it.witness.name}): the pre-state token of the key is no longer carried.", 2)
+                w.line("if (pre_tok != NULL && !carried(S, ${a.key.local.name}, pre_tok)) {", witnessSource, 2)
+                w.line("$g(pre_tok).$held := false", witnessSource, 4)
+                w.line("}", indent = 2)
+            }
+            val issue = a.commit.filterIsInstance<Issue>().singleOrNull() ?: return
+            val item = s.operations.single { it.name.text == op!!.name }.items.filterIsInstance<IssueItem>().single()
+            val src = Source.Sidecar(item.pos, "issue ${op!!.name}")
+            val t = expr(issue.token)
+            w.comment("ISSUE (sidecar: operation ${op.name} issues its non-null result).", 2)
+            w.line("if ($t != NULL) {", src, 2)
+            a.commit.filterIsInstance<AssertFresh>().forEach {
+                w.line("assert !$g(${expr(it.token)}).$issued", Source.Sidecar(item.pos, "issue ${op.name}: set-once $issued"), 4, "set-once $issued: a new acquisition gets a fresh token")
+            }
+            ghost.fields.forEach { f ->
+                val value =
+                    when (f.kind) {
+                        kv.kvir.GhostKind.SET_ONCE, kv.kvir.GhostKind.ENDS -> "true"
+                        kv.kvir.GhostKind.FROZEN -> expr(issue.fields.getValue(f.name.text))
+                    }
+                w.line("$g($t).${f.name.text} := $value", src, 4)
+            }
+            w.line("}", indent = 2)
         }
 
         private fun declare(name: String) {

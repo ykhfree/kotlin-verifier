@@ -5,6 +5,7 @@ import kv.frontend.Frontend
 import kv.frontend.ResolveOutcome
 import kv.kvir.Module
 import kv.kvir.checkWellFormed
+import kv.lower.bindGhosts
 import kv.sidecar.Sidecar
 import java.io.File
 import kotlin.test.assertEquals
@@ -81,7 +82,7 @@ class Workspace(
     /** The lowered module and its sidecar; the sidecar must resolve and the module pass W1-W14. */
     fun lower(variant: String): Pair<Module, Sidecar> = lowerChecked(resolve(variant))
 
-    fun emit(variant: String): Emitted = lower(variant).let { (m, s) -> emitViper(m, s) }
+    fun emit(variant: String): Emitted = lower(variant).let { (m, s) -> emitBound(m, s) }
 
     private fun replaceOnce(
         f: File,
@@ -92,6 +93,16 @@ class Workspace(
         check(text.split(old).size == 2) { "'$old' occurs ${text.split(old).size - 1} times in ${f.name}" }
         f.writeText(text.replace(old, new))
     }
+}
+
+/** Binds the ghost rules, checks W1-W14 on the bound module, and emits it. */
+fun emitBound(
+    m: Module,
+    s: Sidecar,
+): Emitted {
+    val bound = bindGhosts(m, s)
+    assertEquals(emptyList(), checkWellFormed(bound), "W1-W14 after the ghost binder")
+    return emitViper(bound, s)
 }
 
 /** Lowers the unchanged specs of [variant] against the req-shield checkout. */
