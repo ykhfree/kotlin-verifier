@@ -622,6 +622,16 @@ model jdk.System.currentTimeMillis
 model slf4j.Logger
   match   org.slf4j.Logger.{trace, debug, info, warn, error, isTraceEnabled}
   role    no effect on modeled state; arguments must be pure
+
+model reactor.Mono.fromCallable         // used by the core-reactor variant (8.3 "reactor 변형")
+  match   reactor.core.publisher.Mono.fromCallable(java.util.concurrent.Callable)
+  role    operation body: the whole body of a `fun` operation is this one call (expression body or a single
+          return), and its lambda holds the action; anything else is UNSUPPORTED
+  runs    each run of the lambda is one call of the operation: at most once per subscription (first request),
+          and once per direct block() or call()
+  result  the lambda's last expression (a cell get or a constant); null -> empty Mono (NULL)
+  source  "reactor-core 3.7.19 Mono.java:512-513: 'If the Callable resolves to {@code null}, the resulting
+          Mono completes empty.'" and MonoCallable.java:48, 129, 137 (full quote in TrustedModels.kt)
 ```
 
 ### 4.4 coroutine `KeyLocalLock`의 전체 sidecar
@@ -1107,8 +1117,13 @@ L3 연결 자리 (v0에서는 구현하지 않음):
 | v0 질문 2, 3 | M9는 `kv verify`에서 항상 두 번째 Silicon으로 동시에 돈다 (INFO, 판정 무관). 분기: 번역된 `if`의 then 팔과 비어 있지 않은 else 팔, 결과를 읽는 CAS/tryAcquire의 성공·실패. 결과를 읽지 않는 연산(189:17)과 빈 else는 뺀다 |
 | v0 질문 4, 5 | `call` 출처의 자유 값에는 타입 표기를 쓸 수 없다 (trusted fun의 `returns`/`ghost`가 정한다). `kv hole`은 hole을 담은 파일(`keylocallock.common.kv`)을 직접 받는다 |
 | reactor 변형 (적용 A) | 사용자 결정: 다른 모듈에 적용한다, A(core-reactor `KeyLocalLock`) 다음 B(Spring Aspect `computeIfAbsent`). A는 같은 sidecar 공통부(`keylocallock.common.kv`)를 쓰고, 변형 파일 `keylocallock.reactor.kv`는 module, source, state 줄과 `use reactor.Mono.fromCallable`만 다르다 |
-| `reactor.Mono.fromCallable` 신뢰 모델 | 람다가 연산 몸체다. 구독마다 람다가 한 번 실행되고, 실행 하나가 연산 호출 하나다 (구독이 없으면 호출도 없다). 람다의 마지막 식이 연산 결과이고, `null`은 빈 Mono(= `NULL`)다. Mono는 그 밖의 효과를 더하지 않는다. 연산 결과 규칙은 "함수 끝의 `return` 하나, 또는 이 모델 아래에서 람다의 마지막 식 하나; 둘 다 셀 `get`이나 상수만 읽는다"가 된다 |
+| `reactor.Mono.fromCallable` 신뢰 모델 | 람다가 연산 몸체다. 람다는 구독마다 최대 한 번(첫 request에서), 그리고 `block()`/`call()`마다 한 번 실행된다. 실행 하나가 연산 호출 하나다 (구독이 없으면 호출도 없다). 람다의 마지막 식이 연산 결과이고, `null`은 빈 Mono(= `NULL`)다. Mono는 그 밖의 효과를 더하지 않는다. 연산 결과 규칙은 "함수 끝의 `return` 하나, 또는 이 모델 아래에서 람다의 마지막 식 하나; 둘 다 셀 `get`이나 상수만 읽는다"가 된다 |
 | reactor gate | `mutants.py`의 `REACTOR_variant`(메인 세션 작성): `CORE_variant`의 새 entry 편집에 순서 차이 3곳을 더한다. 만료 해제 뒤 토큰 지우기(177, 179), `expiresAt` 뒤 `token`(186, 187), sweep은 CAS 블록 뒤에 토큰을 지운다(113, 115). Silicon 3.93 s로 검증된다. 생성한 reactor 모델은 정규화하면 이것과 같아야 한다 |
+| reactor 검증 (메인 세션) | 테스트 272개, 세 gate exit 0 (reactor는 첫 emit부터 `REACTOR_variant`와 같았다), `mutantsReqShield` 33회 불일치 0 (123 s). reactor의 변이 판정과 실패 의무는 coroutine과 모두 같다. 손 점검: `unLock`의 `fromCallable` 뒤에 `.map { it }` → `unLock` UNSUPPORTED (243:11), 모듈 INCOMPLETE, 종료 코드 3 |
+| reactor 질문 1 | 메인 세션 brief의 전제가 틀렸다: coroutine 225, core 244의 `log.debug`는 compute 뒤 `if (!released.get())` 안, 즉 action 밖이다. action 안의 log는 reactor 239가 처음이다. 기존 `slf4j.Logger` 모델이 처리했고, fixture 2개(순수 인자 허용, 효과 있는 인자 거부)를 더했다 |
+| reactor 질문 2 | 모양 검사는 모든 `fun` 연산에 적용한다: compute를 감싼 람다는 "본문 전체인 `fromCallable` 하나"만 허용한다. 전에는 `forEach { compute }` 같은 코드를 받아 함수 호출 한 번이 action을 여러 번 돌릴 수 있었다 (1.1의 "연산당 action 1개"와 어긋남). `synchronized(lock) { compute }` 같은 안전한 감싸기도 v0에서는 UNSUPPORTED다 |
+| reactor 질문 3 | 출처 인용을 받아들인다: Maven Central의 3.7.19 sources jar(게시된 .sha1과 같음; 전송 무결성만 확인), 캐시 binary의 javap(같은 CAS 뒤 `call()`, null이면 `onComplete`), 캐시의 3.6.7·3.8.0 sources(같은 Javadoc 문장)로 교차 확인했다 |
+| reactor 질문 5, 6 | `REACTOR_variant` 주석의 위치를 113:53, 115:49로 고친다 (주석이라 gate와 무관). ledger의 `fromCallable` 틀은 `not-modeled fun tryLock`으로 둔다. 셀 규칙 2.5의 2를 넓힌다: 셀을 선언한 함수나 람다(`fromCallable` 아래에서는 함수 자리)는 그 셀을 읽어도 된다 |
 
 ## 부록 A. 실험 재현
 

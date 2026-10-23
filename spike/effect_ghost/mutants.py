@@ -206,9 +206,9 @@ MUTANTS = {
          "        lockInfo__97.permits := lockInfo__97.permits + 1 // Semaphore.release() @106:49\n"
          "      }\n",
          "      if (cond_104_49) {\n"
-         "        lockInfo__97.permits := lockInfo__97.permits + 1 // Semaphore.release() @113:49\n"
+         "        lockInfo__97.permits := lockInfo__97.permits + 1 // Semaphore.release() @113:53\n"
          "      }\n"
-         "      lockInfo__97.token := NULL                       // @115:45\n"),
+         "      lockInfo__97.token := NULL                       // @115:49\n"),
     ]),
     # Design (b) with the unmodified code: CAS-bound END must verify too.
     "CASB_original": ("pass", CAS_BOUND),
