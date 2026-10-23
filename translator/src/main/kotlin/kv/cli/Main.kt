@@ -8,6 +8,7 @@ import kv.frontend.ResolveOutcome
 import kv.kvir.checkWellFormed
 import kv.kvir.incomplete
 import kv.kvir.printModule
+import kv.lower.bindGhosts
 import kv.sidecar.SidecarException
 import java.io.File
 import java.io.PrintStream
@@ -129,7 +130,7 @@ private fun lower(
     return if (violations.isEmpty()) 0 else 1
 }
 
-/** Lowers and checks W1-W14, then emits Viper; null after reporting an error, with the exit code. */
+/** Lowers, binds the ghost rules, checks W1-W14 and emits Viper; null after reporting an error, with the exit code. */
 private fun emitted(
     command: String,
     options: Options,
@@ -137,13 +138,15 @@ private fun emitted(
 ): Pair<Emitted?, Int> {
     val (outcome, code) = resolved(command, options, err)
     val module = outcome?.module ?: return null to code
-    val violations = checkWellFormed(module)
-    if (violations.isNotEmpty()) {
-        violations.forEach { err.println("kv: $it") }
-        return null to 1
-    }
+    val sidecar = outcome.sidecar!!
     return try {
-        emitViper(module, outcome.sidecar!!) to 0
+        val bound = bindGhosts(module, sidecar)
+        val violations = checkWellFormed(bound)
+        if (violations.isNotEmpty()) {
+            violations.forEach { err.println("kv: $it") }
+            return null to 1
+        }
+        emitViper(bound, sidecar) to 0
     } catch (e: SidecarException) {
         e.errors.forEach { err.println(it) }
         null to 1

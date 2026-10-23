@@ -48,6 +48,8 @@ tasks.test {
     systemProperty("kv.reqShieldClasspath", reqShieldClasspath.asPath)
     systemProperty("kv.reqShieldKotlincArgs", reqShieldKotlincArgs)
     systemProperty("kv.specDir", rootProject.layout.projectDirectory.dir("../specs").asFile.absolutePath)
+    // The M5 gate (vpr_normalize.py) and the hand-written target models.
+    systemProperty("kv.spikeDir", rootProject.layout.projectDirectory.dir("../spike").asFile.absolutePath)
 }
 
 // `./gradlew discoverReqShield`, `resolveReqShield`, `lowerReqShield` and `emitReqShield`: run `kv discover`,
