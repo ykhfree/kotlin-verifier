@@ -241,7 +241,8 @@ VERDICTS = {0: "PROVEN", 1: "FAILED", 3: "INCOMPLETE", 4: "ERROR"}
 
 ROW = re.compile(r"^  (?:action (\S+)|(stray action \S+))\s+\S+\s+(PROVEN|FAILED|UNSUPPORTED|ERROR)$")
 OTHERS = re.compile(r"^  ((?:init|lemma \S+|probe) (?:PROVEN|FAILED|UNSUPPORTED|ERROR)(?: · |$))+")
-FINDING = re.compile(r"^      (?P<msg>[^:]+): (?:sidecar (?P<id>.+?) [\w./-]+\.kv:\d+:\d+|(?P<other>generated .+|kotlin .+|no source range .+))")
+# A generated obligation is named by what the tool generated (e.g. MI_OWN), without Silicon's reason in parentheses.
+FINDING = re.compile(r"^      (?P<msg>[^:]+): (?:sidecar (?P<id>.+?) [\w./-]+\.kv:\d+:\d+|generated (?P<gen>[^()]+?)(?: \(.*\))?$|(?P<other>kotlin .+|no source range .+))")
 
 
 class ScriptError(Exception):
@@ -291,7 +292,7 @@ def parse_report(text):
                 if rows[current][0] == "UNSUPPORTED":
                     continue
                 raise ScriptError("cannot read the finding line: %r" % line)
-            rows[current][1].add(f.group("id") or f.group("other"))
+            rows[current][1].add(f.group("id") or f.group("gen") or f.group("other"))
             continue
         if not line.startswith("      "):
             current = None

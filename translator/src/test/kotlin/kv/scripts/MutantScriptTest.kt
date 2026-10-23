@@ -53,6 +53,7 @@ class MutantScriptTest {
         expected: String,
         responses: Map<String, Response>,
         reqShield: File = ReqShield.dir,
+        suite: String = "keylocallock",
     ): Pair<Int, String> {
         val data = File(dir, "responses").apply { mkdirs() }
         for ((root, r) in responses) {
@@ -78,7 +79,7 @@ class MutantScriptTest {
         val table = File(dir, "expected.txt").apply { writeText(expected) }
         val p =
             ProcessBuilder(
-                "python3", "-I", script.path, "--kv", kv.path, "--req-shield", reqShield.path, "--classpath", "unused",
+                "python3", "-I", script.path, "--suite", suite, "--kv", kv.path, "--req-shield", reqShield.path, "--classpath", "unused",
                 "--kotlinc", "unused", "--specs", dir.path, "--expected", table.path, "--out", File(dir, "out").path, "--only", only,
             ).redirectErrorStream(true).start()
         val out = p.inputStream.bufferedReader().readText()
@@ -135,6 +136,28 @@ class MutantScriptTest {
         val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to notCompiled, "core-SB1" to sb1Failed, "reactor-SB1" to sb1Failed))
         assertEquals(2, exit, out)
         assertTrue("does not compile (rule 3)" in out, out)
+    }
+
+    @Test
+    fun `the aspect suite copies the module sources, edits the aspect file, and names a generated obligation without Silicon's reason`() {
+        fun aspectReport(
+            verdict: String,
+            findings: List<String>,
+        ) = (
+            listOf("a.ReqShieldAspect (aspect.x.kv)    module: $verdict (Silicon 2.20 s)", "  action getOrCreate  ReqShieldAspect.kt:112:9   $verdict") +
+                findings.map { "      $it" } + listOf("        meaning: a map value is not an object this module created, or two keys share one object", "  init PROVEN · probe PROVEN", "Spec to review: none", "")
+        ).joinToString("\n")
+        val m5 = Response(1, aspectReport("FAILED", listOf("Postcondition of getOrCreate might not hold: generated MI_OWN (incomplete quantifiers)")))
+        val rows = listOf("core-spring", "webflux", "coroutine").joinToString("") { "$it  M5  FAILED  getOrCreate  MI_OWN\n" }
+        val (exit, out) = run("M5", rows, listOf("core-spring", "webflux", "coroutine").associate { "$it-M5" to m5 }, suite = "aspect")
+        assertEquals(0, exit, out)
+        assertTrue("3 run(s), 0 mismatch(es)" in out, out)
+        val module = "core-spring/src/main/kotlin/com/linecorp/cse/reqshield/spring"
+        val aspect = File(dir, "out/roots/core-spring-M5/$module/aspect/ReqShieldAspect.kt").readText()
+        assertTrue("            sharedReqShield\n" in aspect && "private val sharedReqShield: ReqShield<T>" in aspect, aspect)
+        // The whole main source directory is copied: the sidecar's `source` names it.
+        assertTrue(File(dir, "out/roots/core-spring-M5/$module/cache/ReqShieldCache.kt").isFile)
+        assertTrue("private val sharedReqShield" !in File(ReqShield.dir, "$module/aspect/ReqShieldAspect.kt").readText(), "req-shield is not touched")
     }
 
     @Test

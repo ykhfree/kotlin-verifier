@@ -220,3 +220,27 @@ val mutantsReqShield by tasks.registering(Exec::class) {
         },
     )
 }
+
+// `./gradlew mutantsAspect`: B4 (DESIGN-B.md 7.2 and 8). The same script with `--suite aspect`: the Kotlin mutants
+// M1-M7, R1 and R2 on temp copies of the three Spring aspect modules, checked against
+// scripts/aspect-mutants-expected.txt. Needs python3 and Silicon. Options: -PmutantJobs=N, -PmutantOnly=M1,M2.
+val mutantsAspect by tasks.registering(Exec::class) {
+    group = "kv"
+    description = "Runs the B4 Kotlin mutant script on the three Spring aspect modules."
+    dependsOn(tasks.installDist)
+    executable = "python3"
+    val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
+    val out = layout.buildDirectory.dir("kv/aspect-mutants").get().asFile.path
+    val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
+    val jobs = providers.gradleProperty("mutantJobs").getOrElse("3")
+    val only = providers.gradleProperty("mutantOnly").orNull
+    argumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                "-I", "scripts/mutants.py", "--suite", "aspect", "--kv", kv, "--req-shield", reqShieldDir, "--classpath", aspectClasspath.asPath,
+                "--kotlinc", reqShieldKotlincArgs, "--specs", specs, "--expected", "scripts/aspect-mutants-expected.txt", "--out", out,
+                "--jobs", jobs,
+            ) + (only?.let { listOf("--only", it) } ?: emptyList())
+        },
+    )
+}
