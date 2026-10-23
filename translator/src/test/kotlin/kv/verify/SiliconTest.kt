@@ -6,6 +6,7 @@ import kv.emit.lineOf
 import kv.emit.colOf
 import kv.emit.lowerReqShield
 import kv.lower.LockFixture
+import kv.lower.LockFixture.Companion.MINIMAL_GHOST
 import kv.sidecar.parseSidecar
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -130,6 +131,36 @@ class SiliconTest {
         assertEquals(64, f.at!!.line)
         assertEquals(listOf(Verdict.PROVEN), r.rows.filter { it.label != "tryLock" }.map { it.verdict }.distinct())
         assertTrue("sidecar P1a_entry keylocallock.common.kv:64:" in r.render(), r.render())
+    }
+
+    @Test
+    fun `a FAILED obligation shows Silicon's reason when Silicon gives one (Q1)`() {
+        val (m, s) = lowerReqShield("coroutine")
+        val emitted = emitBound(m, s)
+        val p1a = emitted.lineOf("ensures res != NULL && tok(res).gBacked ==> has(S, k)")
+        val owner = emitted.lineOf("ensures old(has(S, k)) && old(S.m[k].token) == t ==> res")
+        val errors =
+            listOf(
+                SiliconError("Postcondition of tryLock might not hold.", p1a, 11, p1a, 40, "(incomplete quantifiers)"),
+                SiliconError("Postcondition of unLock might not hold.", owner, 11, owner, 40, null),
+            )
+        val text = buildReport(m, s, emitted, SiliconOutcome.Failed(errors), 1.0).render()
+        val lines = text.lines()
+        assertTrue(lines.any { "sidecar P1a_entry keylocallock.common.kv:64:" in it && it.endsWith(" (incomplete quantifiers)") }, text)
+        assertTrue(lines.any { "sidecar progress_owner keylocallock.common.kv:" in it && !it.endsWith(")") }, text)
+    }
+
+    @Test
+    fun `the racy reads line lists each read without the free value that holds it (Q5)`() {
+        val f = LockFixture("if (sawEntry && e != null) e.expiresAt = now\ne", before = "        val sawEntry = lockMap.containsKey(key)", operations = MINIMAL_GHOST + LockFixture.DEFAULT_OPERATION)
+        val m = f.lower(dir)
+        val s = parseSidecar(File(dir, "Lock.kv").path, f.sidecar)
+        val text = buildReport(kv.lower.bindGhosts(m, s), s, emitBound(m, s), SiliconOutcome.Verified, 1.0).render()
+        val (line, col) = f.at("lockMap.containsKey(key)")
+        assertTrue("Racy reads (modeled as arbitrary values): lockMap.containsKey(key) $line:$col\n" in text, text)
+        assertTrue(" -> " !in text, text)
+        // The free value keeps its origin kind in the free value list.
+        assertTrue("sawEntry__$line <- sawEntry $line:9 (racy read, unnamed)" in text, text)
     }
 
     @Test

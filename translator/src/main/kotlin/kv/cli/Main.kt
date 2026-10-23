@@ -34,14 +34,18 @@ private const val USAGE = """usage:
             [--assert-timeout MS] [--wall-seconds N] SIDECAR.kv
       As emit, then runs Silicon once and prints the report (DESIGN-v0.md 5.8). VIPER_HOME or --viper-home names a
       Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
-      --wall-seconds (default 300). Exit 0 if the module is PROVEN, 1 otherwise.
+      --wall-seconds (default 300). Exit 0 PROVEN, 1 FAILED, 2 usage error, 3 INCOMPLETE, 4 ERROR (a compile
+      error, a sidecar error, a W1-W14 violation, a missing Silicon or an abnormal Silicon run).
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
     exitProcess(runCli(args.toList(), System.out, System.err))
 }
 
-/** Runs one `kv` command. Returns the exit code: 0 success, 1 failure, 2 usage error. */
+/**
+ * Runs one `kv` command. Returns the exit code: 0 success, 1 failure, 2 usage error. `kv verify` returns the
+ * module verdict instead (DESIGN-v0.md 8.3, Q7): see [verdictExit].
+ */
 fun runCli(
     args: List<String>,
     out: PrintStream,
@@ -185,13 +189,23 @@ private fun emit(
     return 0
 }
 
+/** `kv verify` exit codes (DESIGN-v0.md 8.3, Q7), so that CI and the M8 script need not read the report. */
+private fun verdictExit(verdict: ModuleVerdict): Int =
+    when (verdict) {
+        ModuleVerdict.PROVEN -> 0
+        ModuleVerdict.FAILED -> 1
+        ModuleVerdict.INCOMPLETE -> 3
+        ModuleVerdict.ERROR -> 4
+    }
+
 private fun verify(
     options: Options,
     out: PrintStream,
     err: PrintStream,
 ): Int {
     val (outcome, code) = resolved("verify", options, err)
-    val module = outcome?.module ?: return code
+    // A compile error or a sidecar error is ERROR; only a usage error keeps its own code.
+    val module = outcome?.module ?: return if (code == 2) 2 else verdictExit(ModuleVerdict.ERROR)
     val vpr = options.out ?: File.createTempFile("kv-", ".vpr")
     val budget = SiliconBudget(options.assertTimeoutMs ?: 20_000, options.assertTimeoutMs ?: 20_000, options.wallSeconds ?: 300)
     val report =
@@ -199,11 +213,11 @@ private fun verify(
             verify(module, outcome.sidecar!!, vpr, options.viperHome ?: Silicon.defaultHome(), budget)
         } catch (e: SiliconMissing) {
             err.println("kv: ${e.message}")
-            return 1
+            return verdictExit(ModuleVerdict.ERROR)
         }
     out.print(report.render())
     out.println("Viper program: ${vpr.path}")
-    return if (report.verdict == ModuleVerdict.PROVEN) 0 else 1
+    return verdictExit(report.verdict)
 }
 
 private fun format(site: ComputeSite): String {
