@@ -547,7 +547,8 @@ decl        := "module" FQN
              | "hole" "MI_INV" TRIPLE_STRING                    // inductive conjuncts, LLM-written
              | "probe" "(" PARAMS ")" [ "requires" VEXPR ] "{" { NAME ":=" NAME "(" ARGS ")" | "assert" VEXPR } "}"
 tclause     := "returns" NAME ":" TYPE | "ghost" NAME ":" TYPE | "ensures" VEXPR | "effects" "none" | "reviewed" STRING
-opitem      := "free" NAME { "," NAME } "=" ( "local" KNAME | "param" KNAME | "this." KNAME | "call" NAME )
+opitem      := "free" NAME [ ":" NAME ] { "," NAME } "=" ( "local" KNAME | "param" KNAME | "this." KNAME | "call" NAME )
+                                                                // ": NAME" = a `type` name (Key, Token)
              | "result" NAME
              | "issue" NAME "{" NAME "=" VEXPR { ";" NAME "=" VEXPR } "}"
              | "ends_only_if" ID ":" VEXPR                      // reserved name qt = the ending token
@@ -563,6 +564,7 @@ VEXPR       := Viper expression text; continuation lines are indented deeper tha
 1. 연산에 자유 형식 `requires`를 쓸 수 없다. 전제 조건은 환경을 좁히는 검사되지 않은 가정이기 때문이다. 전제는 신뢰 모델 계약(`rej ==> limit != 0`)과 타입 사실(non-null `String` 파라미터 → `t != NULL`)에서만 온다.
 2. `probe`의 `requires`는 시나리오만 좁히고 모델은 좁히지 않으므로 허용한다.
 3. 짧은 Kotlin 이름(KNAME)은 모듈 객체, 바깥 클래스, 패키지 순서로 찾는다. 다른 패키지의 함수는 FQN을 쓴다.
+4. Kotlin 타입이 `String` 또는 `String?`인 자유 값은 추상 타입을 적어야 한다 (`free t: Token = param token`). 다른 타입의 자유 값에는 적을 수 없다. 이 표기는 2.13의 추론에 고정점으로 들어간다. 코드의 추론과 다르면 sidecar 오류다. 이유: 코드가 그 값을 sidecar 필드와 비교하지 않으면 추론이 타입을 정하지 못한다. "AI가 토큰 비교를 지운" 코드(SB1, SB2)가 바로 그 경우이고, 도구는 그 코드를 FAILED로 보고해야 한다.
 
 ### 4.3 신뢰 모델 표 (도구 내장 항목)
 
@@ -698,7 +700,7 @@ operation tryLock = fun KeyLocalLock.tryLock {
 }
 
 operation unLock = fun KeyLocalLock.unLock {
-  free t = param token
+  free t: Token = param token
   result res
   ensures P1: res ==> old(has(S, k)) && old(S.m[k].token) == t && old(tok(t).gIssued) &&
       old(tok(t).gKey) == k && old(tok(t).gBacked) && old(tok(t).gHeld) && !tok(t).gHeld && !has(S, k)
@@ -920,6 +922,7 @@ KVIR 문장의 출력:
 | 이름 있는 자유 값 | sidecar 이름 |
 | 이름 없는 자유 값 | `<name>__<line>` (예: `sawMatch__205`) |
 | macro의 묶인 변수 | `qk`, `qt`, `qr` (sidecar 이름으로 쓸 수 없음) |
+| stray action 메서드 | `stray_<둘러싼 함수>_<compute 줄>` |
 
 이유: FIR에서 지역 이름은 한 함수 안에서 반복된다 (tryLock의 `val token` 두 개). Viper는 지역 변수와 필드의 이름 충돌을 거부한다 (unLock 파라미터 `token`과 필드 `token`).
 
@@ -967,7 +970,7 @@ Assumptions (not checked by Silicon):
   Long unbounded: KeyLocalLock.kt:80:52, 172:42, 188:54
   Free values: k <- completeKey 149:9, now <- nowToEpochTime 150:19, timeout <- lockTimeoutMillis, rej/limit <- rejectsNewEntry 181:21 (trusted contract) ...
   Trusted models: jdk.ConcurrentHashMap.compute, ... ; project: nowToEpochTime, rejectsNewEntry (reviewed ...)
-Racy reads (modeled as arbitrary values): lockMap.keys 96:33 -> sweep k
+Racy reads (modeled as arbitrary values): lockMap.keys 96:33
 Not modeled (no module-state access): ensureMonitorStarted 82:9 (launch, while, try, delay), stopMonitoring 128:9, cancel 230:5, ...
 Unsupported: none
 ```
@@ -1088,6 +1091,14 @@ L3 연결 자리 (v0에서는 구현하지 않음):
 | M5와 M6 | 한 작업으로 합친다. `target.vpr`은 커밋 블록과 권한 절을 가지므로, ghost binder 없이는 M5 수락 테스트 1·2가 성립하지 않는다 |
 | M5 gate | `python3 -I spike/vpr_normalize.py spike/effect_ghost/target.vpr <생성한 coroutine 모델>`이 0으로 끝난다. core는 `mutants.py`의 `CORE_variant.vpr`과 비교한다. 정규화는 주석 제거, 토큰 비교, 메서드별 위치 접미사 지역 이름의 첫 등장 순 이름 바꾸기뿐이다. 문장 순서는 정규화하지 않는다 |
 | Silicon 시간 | 8.3의 예산(`--assertTimeout 20000 --checkTimeout 20000`, 벽시계 300 s)이 M5 수락 테스트 1의 "메서드당 60 s"를 대신한다 |
+| M5/M6 검증 | 메인 세션이 직접 확인했다: 테스트 199개, 두 gate exit 0, Silicon PROVEN. Kotlin 원본 변이 점검: SB3, SB4, SB6, E4는 6절의 의무로 FAILED, SB5, SB5b는 PROVEN. SB1, SB2는 FAILED가 아니라 ERROR였다: `unLock`의 `token`을 코드가 sidecar 필드와 비교하지 않으면 추상 타입이 정해지지 않고(UNSUPPORTED), 그 경로에서 W14가 깨진다(도구 결함). 4.2 제한 4와 다음 작업의 수정으로 다룬다 |
+| M5/M6 Q1 | `--logLevel ERROR`와 `--reportReasonUnknown`을 받아들인다. 죽인 실행과 `canceled`/`timeout`/`resource` 이유만 ERROR다. 시간 초과가 `(incomplete quantifiers)`로 나오면 FAILED가 될 수 있다. 이것은 거짓 PROVEN이 아니라 거짓 경보 쪽이다. 보고서는 FAILED 의무 옆에 Silicon의 이유 문구를 싣는다. 두 실제 모델은 20 s 예산에서 PROVEN이므로 이 경우가 나오지 않았다 |
+| M5/M6 Q2, Q6 | 받아들인다: backed 필드는 issue 규칙이 `carried(S, k, <result>)`로 정하는 frozen 필드다. issue 값의 산술은 v0에서 `+`, `-`뿐이다 |
+| M5/M6 Q3, Q4 | stray 메서드 이름은 5.5 표에 적었다. hole 분할: 최상위에 `||`, `==>`, `<==>`, `?:`, 괄호 없는 `forall`/`exists`/`let`이 있으면 나누지 않는다. 조각의 이름은 바로 앞 주석 줄이고, 없으면 가장 가까운 앞 조각의 이름이다 |
+| M5/M6 Q5 | 보고서의 "경쟁 읽기 → 자유 값" 연결은 v0에서 뺀다 (5.8 예시를 고쳤다). KVIR에 출처 사슬을 더하는 것은 보고서 한 줄을 위한 기계 장치다 |
+| M5/M6 Q7 | `kv verify` 종료 코드: 0 PROVEN, 1 FAILED, 2 사용법 오류, 3 INCOMPLETE, 4 ERROR (컴파일 오류, sidecar 오류, W 위반, Silicon 비정상 포함). CI와 M8 스크립트가 보고서 문구를 읽지 않아도 된다 |
+| M7 편집 면 | LLM은 sidecar의 `hole MI_INV """..."""` 문자열만 고친다. 검사기는 고치기 전후의 sidecar를 비교한다: hole 문자열 밖은 바이트 단위로 같아야 하고, 안에는 금지어가 없어야 한다 (spike `e3_harness.py`의 규칙). `.vpr`의 marker 사이를 고치는 방식은 쓰지 않는다: emitter가 hole을 조각으로 나누므로 LLM이 나눈 형태를 써야 하고, sidecar가 원본이라는 원칙과도 어긋난다 |
+| 다음 작업 순서 | SB1/SB2 수정 → Q3/Q5/Q7 코드 → M8(두 변형) → M7 → M9. M8이 v0 완료 조건이고, sidecar의 hole은 이미 채워져 있으므로 M8은 M7에 기대지 않는다 |
 
 ## 부록 A. 실험 재현
 
