@@ -55,9 +55,9 @@ fun bindGhosts(
                 if (item == null || result == null || op.action.status != Status.Supported) {
                     emptyList()
                 } else {
-                    val token = Var(result.local, result.pos)
-                    val scope = (listOf(op.action.key) + op.action.free.filter { it.sidecarName != null }).associate { it.local.name to it.local } + (result.local.name to result.local)
-                    val fields = item.fields.associate { (name, value) -> name.text to IssueValue(value, scope, op.action.key.local, result.local, result.pos).parse() }
+                    val token = Var(result, result.pos)
+                    val scope = (listOf(op.action.key) + op.action.free.filter { it.sidecarName != null }).associate { it.local.name to it.local } + (result.name to result)
+                    val fields = item.fields.associate { (name, value) -> name.text to IssueValue(value, scope, op.action.key.local, result, result.pos).parse() }
                     listOf(AssertFresh(token, result.pos), Issue(token, fields, result.pos))
                 }
             op.copy(action = bind(op.action, issue))

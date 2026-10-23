@@ -28,17 +28,21 @@ private class KvirPrinter(
         out.append('\n')
     }
 
-    private fun at(p: Pos): String = "@${p.line}:${p.col}" + (p.fake?.let { " fake=$it" } ?: "")
+    /** `@line:col`; a position outside the module file names its file (DESIGN-B.md 2.1 rule 6: several audited files). */
+    private fun at(p: Pos): String {
+        val file = if (m.file != null && p.file != m.file) "${p.file.substringAfterLast('/')}:" else ""
+        return "@$file${p.line}:${p.col}" + (p.fake?.let { " fake=$it" } ?: "")
+    }
 
     fun print(): String {
-        line(0, "module ${m.id}")
+        line(0, "module ${m.id}${if (m.kind == ModuleKind.INSTANCE) " (instance: S is one object of the class)" else ""}")
         line(0, "files ${allPositions().map { it.file.substringAfterLast('/') }.distinct().sorted().joinToString()}")
         line(0, "types")
-        m.types.forEach { line(1, "${it.name} = ${it.template?.let { t -> "template \"$t\"" } ?: "opaque"}") }
+        m.types.forEach { line(1, "${it.name} = ${it.template?.let { t -> "template \"$t\"" } ?: "opaque"}${it.kclass?.let { k -> " ${k.replace('/', '.')}" } ?: ""}") }
         line(0, "state")
         m.state.forEach {
             when (it) {
-                is MapVar -> line(1, "${it.name}: Map<${it.key.name}, ${it.valueClass}> = ${it.kotlin}", it.pos)
+                is MapVar -> line(1, "${it.name}: Map<${it.key.name}, ${it.valueClass}> = ${it.kotlin}${it.setOnce?.let { id -> " (set-once $id)" } ?: ""}", it.pos)
                 is CounterVar -> line(1, "${it.name}: Counter = ${it.kotlin}, initial ${it.initial}", it.pos)
             }
         }
@@ -76,7 +80,7 @@ private class KvirPrinter(
 
     fun printOperation(op: Operation): String {
         operation(op)
-        val ids = (op.action.body.walk().flatMap { s -> s.exprs().flatMap { it.walk() }.filterIsInstance<Arith>().mapNotNull { it.assumption } + listOfNotNull((s as? ModelOp)?.assumption) }).toSet()
+        val ids = ((op.body.walk() + op.action.body.walk()).flatMap { s -> s.exprs().flatMap { it.walk() }.filterIsInstance<Arith>().mapNotNull { it.assumption } + listOfNotNull((s as? ModelOp)?.assumption) }).toSet()
         val used = m.diagnostics.filter { it.id in ids }
         if (used.isNotEmpty()) line(0, "assumptions")
         used.forEach { line(1, "${it.id} ${it.kind} ${it.message}", it.pos) }
@@ -89,21 +93,50 @@ private class KvirPrinter(
         m.state.map { it.pos } + m.classes.map { it.pos } + m.operations.map { it.pos } + m.strayActions.map { it.pos } +
             m.ledger.map { it.pos } + m.diagnostics.map { it.pos }
 
+    /**
+     * An object module's operation (`run action; return e`) prints as in DESIGN-v0.md 1.3: the result line holds `e`.
+     * An instance module's operation prints its section (DESIGN-B.md 2.6) under `body`, before the action.
+     */
     private fun operation(op: Operation) {
         line(0, "operation ${op.name} = ${op.kotlin}", op.pos)
         op.cells.forEach { line(1, "cell   ${decl(it.local)} := ${expr(it.init)}", it.pos) }
-        op.result?.let { line(1, "result ${decl(it.local)} := ${expr(it.e)}", it.pos) }
+        val returned = op.returnedValue
+        val result = op.result
+        if (m.kind == ModuleKind.OBJECT) {
+            if (result != null && returned != null) line(1, "result ${decl(result)} := ${expr(returned)}", returned.pos)
+        } else {
+            result?.let { line(1, "result ${decl(it)}") }
+            if (op.canThrow) line(1, "throws")
+            line(1, "body")
+            running = op.action
+            op.body.forEach { stmt(2, it) }
+            running = null
+        }
         action(1, "action", op.action)
     }
+
+    /** The action a RunAction in the section being printed runs. */
+    private var running: Action? = null
+
+    private fun method(k: ActionKind): String =
+        when (k) {
+            ActionKind.COMPUTE -> "compute"
+            ActionKind.COMPUTE_IF_ABSENT -> "computeIfAbsent"
+            ActionKind.PUT_IF_ABSENT -> "putIfAbsent"
+            ActionKind.PUT -> "put"
+            ActionKind.REMOVE -> "remove"
+        }
 
     private fun action(
         indent: Int,
         label: String,
         a: Action,
     ) {
-        line(indent, "$label ${a.id} = ${a.map.kotlin}.compute", a.pos)
+        line(indent, "$label ${a.id} = ${a.map.kotlin}.${method(a.kind)}", a.pos)
         line(indent + 1, "key   ${decl(a.key.local)} <- ${a.key.kotlin} (${origin(a.key.origin)})", a.key.local.pos)
         line(indent + 1, "entry ${decl(a.entry)}", a.entry.pos)
+        a.value?.let { line(indent + 1, "value ${expr(it)}", it.pos) }
+        a.out?.let { line(indent + 1, "out   ${decl(it)}", it.pos) }
         a.free.forEach { line(indent + 1, "free  ${freeValue(it)}", it.local.pos) }
         val status = a.status
         if (status is Status.Unsupported) {
@@ -130,6 +163,7 @@ private class KvirPrinter(
             is ClockRead -> "clock ${at(o.pos)}"
             is NondetCall -> "nondet ${o.model} ${at(o.pos)}"
             is RacyRead -> "racy read ${at(o.pos)}"
+            is Computed -> "computed ${at(o.pos)}"
         }
 
     private fun stmt(
@@ -177,6 +211,14 @@ private class KvirPrinter(
                     s.pos,
                 )
             is Unsupported -> line(indent, "unsupported ${s.what}: ${s.reason}", s.pos)
+            is RunAction -> line(indent, "run action ${running?.id ?: "?"}", s.pos)
+            is Fresh -> line(indent, "fresh ${decl(s.v)} := ${s.fn}", s.pos)
+            is RacyGet -> {
+                val call = if (s.contains) "containsKey" else "get"
+                line(indent, "racy ${decl(s.v)} := ${s.map.kotlin}.$call(${expr(s.key)})${if (s.contract) " [set-once contract]" else ""}", s.pos)
+            }
+            is Return -> line(indent, "return${s.e?.let { " ${expr(it)}" } ?: ""}", s.pos)
+            is Raise -> line(indent, "raise", s.pos)
         }
     }
 
@@ -218,12 +260,13 @@ private class KvirPrinter(
             is Or -> "${operand(e.a)} || ${operand(e.b)}"
             is TokenOf -> "tokenOf(${expr(e.n)})"
             is Carried -> "carried(S, ${expr(e.key)}, ${expr(e.token)})"
+            is Elvis -> "${operand(e.a)} ?: ${operand(e.b)}"
         }
 
     /** Operators inside operators get parentheses, so the printed text has one reading. */
     private fun operand(e: Expr): String =
         when (e) {
-            is Arith, is Cmp, is And, is Or, is Not -> "(${expr(e)})"
+            is Arith, is Cmp, is And, is Or, is Not, is Elvis -> "(${expr(e)})"
             else -> expr(e)
         }
 

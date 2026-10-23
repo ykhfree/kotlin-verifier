@@ -1,6 +1,7 @@
 package kv.lower
 
 import kv.frontend.FoundAction
+import kv.frontend.MapCall
 import kv.kvir.CounterVar
 import kv.kvir.Disposition
 import kv.kvir.DispositionKind
@@ -38,16 +39,17 @@ private data class Construct(
 private enum class Region { KEY_ARG, ACTION, HELPER, OUTSIDE }
 
 /**
- * The module audit (DESIGN-v0.md 2.14): every FIR node of the module file that no action translated gets one ledger
- * entry. A node takes the disposition of the innermost construct around it: a module-state access (racy read, or
- * unsupported for a write or any other use), the source of a free value, a cell, a declaration the module structure
- * comes from, or else the enclosing member (not modeled). Nodes of actions and inlined helpers are left to the
- * lowering, so W14 finds a node the lowering skipped.
+ * The module audit (DESIGN-v0.md 2.14, DESIGN-B.md 2.1 rule 6 and 3.3): every FIR node of the audited files that no
+ * action or operation section translated gets one ledger entry. A node takes the disposition of the innermost
+ * construct around it: a module-state access (racy read, or unsupported for a write or any other use), a value-class
+ * constructor outside its fresh function (unsupported), the source of a free value, a cell, a declaration the module
+ * structure comes from, the body of a trusted function, or else the enclosing member (not modeled). Nodes of actions
+ * and inlined helpers are left to the lowering, so W14 finds a node the lowering skipped.
  */
 internal class Audit(
     private val ctx: ModuleContext,
     lowered: List<Pair<FoundAction, Lowered>>,
-    /** compute calls that are not actions (their receiver is not a state map), with the reason. */
+    /** Map calls that are not actions (their receiver is not a state map), with the reason. */
     private val notActions: Map<FirFunctionCall, String>,
 ) {
     private val index = ctx.index
@@ -58,6 +60,17 @@ internal class Audit(
     private val cells: Set<FirBasedSymbol<*>> = lowered.flatMap { it.second.cellSymbols }.toSet()
     private val reach = mutableMapOf<FirNamedFunctionSymbol, String?>()
 
+    /** Nodes an operation section translated (DESIGN-B.md 2.6), and the default-value lambdas of getOrPut actions, which belong to the section. */
+    private val translated: Set<Int> = lowered.flatMap { it.second.action.translated }.toSet()
+    private val sectionRoots: Set<FirElement> = lowered.mapNotNull { (found, _) -> found.lambda?.takeIf { found.kind == MapCall.GET_OR_PUT } }.toSet()
+
+    /** The trusted functions whose bodies are in the audited files (DESIGN-B.md 3.3 rule 5), by symbol. */
+    private val trustedFns = ctx.trusted.keys
+
+    /** The classes `returns fresh` functions make: their constructors may run only in those functions (3.3 rule 4). */
+    private val valueClasses = ctx.freshFunctions.values.toSet()
+    private val freshFns = ctx.trusted.filterValues { it.fresh != null }.keys
+
     init {
         for ((found, l) in lowered) {
             val arg = found.call.argumentList.arguments.first()
@@ -67,7 +80,10 @@ internal class Audit(
 
     fun run(): List<Disposition> =
         index.nodes.mapIndexedNotNull { id, node ->
-            if (region(node) in setOf(Region.ACTION, Region.HELPER)) return@mapIndexedNotNull null
+            // A section node is translated (DESIGN-B.md 2.6); a key-argument node stays in the ledger, so that W14
+            // still catches a lowering that marks one.
+            val region = region(node)
+            if (region == Region.ACTION || region == Region.HELPER || region == Region.OUTSIDE && id in translated) return@mapIndexedNotNull null
             val c = construct(node)
             Disposition(id, c.kind, c.what, c.pos)
         }
@@ -78,6 +94,7 @@ internal class Audit(
         while (x != null) {
             when {
                 x in keyArgs -> return Region.KEY_ARG
+                x in sectionRoots -> return Region.OUTSIDE
                 x in actionCalls -> return Region.ACTION
                 x in helpers -> return Region.HELPER
             }
@@ -89,10 +106,26 @@ internal class Audit(
     private fun construct(node: FirElement): Construct {
         var x: FirElement? = node
         while (x != null) {
-            (keyArgs[x] ?: access(x) ?: source(x) ?: cell(x) ?: structure(x) ?: member(x))?.let { return it }
+            (keyArgs[x] ?: access(x) ?: valueConstructor(x) ?: source(x) ?: cell(x) ?: structure(x) ?: trustedBody(x) ?: member(x))?.let { return it }
             x = index.parent(x)
         }
-        return Construct(DispositionKind.NOT_MODELED, "file ${index.file.name}", ctx.posOf(node))
+        return Construct(DispositionKind.NOT_MODELED, "file ${index.fileOf(node).name}", ctx.posOf(node))
+    }
+
+    /** DESIGN-B.md 3.3 rule 4: a constructor of a class a fresh function makes, outside such a function's body. */
+    private fun valueConstructor(x: FirElement): Construct? {
+        if (x !is FirFunctionCall) return null
+        val cls = ctx.constructedClass(ctx.calleeOf(x))?.takeIf { it.name in valueClasses } ?: return null
+        val inFresh = generateSequence(index.parent(x)) { index.parent(it) }.any { it is FirNamedFunction && it.symbol in freshFns }
+        if (inFresh) return null
+        return unsupported("a ${cls.name} constructor outside the body of a `returns fresh ${cls.name}` trusted function: P_once cannot count it (DESIGN-B.md 3.3 rule 4)", x)
+    }
+
+    /** DESIGN-B.md 3.3 rule 5: the body of a trusted function, which a person reviewed and the tool does not translate. */
+    private fun trustedBody(x: FirElement): Construct? {
+        val f = x as? FirNamedFunction ?: return null
+        if (f.symbol !in trustedFns) return null
+        return Construct(DispositionKind.TRUSTED, "fun ${f.name} (trusted fun ${ctx.trusted.getValue(f.symbol).shortName})", ctx.posOf(f))
     }
 
     private fun unsupported(
@@ -116,7 +149,10 @@ internal class Audit(
             return null
         }
         if (x !is FirQualifiedAccessExpression) return null
-        (x as? FirFunctionCall)?.let { notActions[it] }?.let { return unsupported(it, x) }
+        // DESIGN-B.md 5.3 rule 2: a map call on another map is not modeled; its lambda is audited like the rest.
+        (x as? FirFunctionCall)?.let { notActions[it] }?.let { return Construct(DispositionKind.NOT_MODELED, "$it: ${sourceText(x)}", ctx.posOf(x)) }
+        // DESIGN-B.md 2.1: the state of another instance of an instance module is another module's state.
+        if (x is FirPropertyAccessExpression && ctx.foreignState(x)) return unsupported("state of another ${ctx.moduleClass.name} instance", x)
         val sym = ctx.calleeOf(x)
         val parent = index.parent(x)
         // The target of an assignment: the assignment decides.

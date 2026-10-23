@@ -1,6 +1,20 @@
 package kv.lower
 
 import kv.frontend.FoundAction
+import kv.frontend.MapCall
+import kv.kvir.ActionKind
+import kv.kvir.Computed
+import kv.kvir.Elvis
+import kv.kvir.Fresh
+import kv.kvir.ModuleKind
+import kv.kvir.NullLit
+import kv.kvir.RacyGet
+import kv.kvir.Raise
+import kv.kvir.Return
+import kv.kvir.RunAction
+import kv.kvir.walk
+import org.jetbrains.kotlin.contracts.description.EventOccurrencesRange
+import java.util.Collections
 import kv.kvir.Action
 import kv.kvir.ActionKey
 import kv.kvir.And
@@ -33,7 +47,6 @@ import kv.kvir.Nondet
 import kv.kvir.NondetCall
 import kv.kvir.Not
 import kv.kvir.ObjClass
-import kv.kvir.OpResult
 import kv.kvir.Or
 import kv.kvir.Pos
 import kv.kvir.RacyRead
@@ -116,7 +129,10 @@ import java.util.IdentityHashMap
 internal class Lowered(
     val action: Action,
     val cells: List<Cell>,
-    val result: OpResult?,
+    /** The sidecar result, with its type; null without one or after an unsupported construct. */
+    val result: Local?,
+    /** The operation section (DESIGN-B.md 2.6); `run action; return` for an object module or a stray action. */
+    val body: List<Stmt>,
     /** Declarations whose values the action reads as free values (its key variable included). */
     val freeSources: Set<FirBasedSymbol<*>>,
     /** Cells of the operation. */
@@ -131,11 +147,11 @@ private enum class Exits { NONE, ALL, SPLIT, MIXED }
 private val OPERATOR_SYMBOLS = mapOf("times" to "*", "div" to "/", "rem" to "%", "inc" to "++", "dec" to "--", "unaryMinus" to "unary -", "shl" to "shl", "shr" to "shr", "ushr" to "ushr", "and" to "and", "or" to "or", "xor" to "xor")
 
 /**
- * Lowers one `ConcurrentHashMap.compute` call to a KVIR action (DESIGN-v0.md 2.2-2.11). [op] is the sidecar
- * operation that selects it; null for a stray action. Every construct v0 does not model becomes an Unsupported
- * statement with its Kotlin position, and lowering goes on to the end of the action to collect all of them (1.5).
- * An unsupported action is never emitted (W12), so its body keeps only the Unsupported statements, in the order
- * lowering found them.
+ * Lowers one map action call to a KVIR action (DESIGN-v0.md 2.2-2.11, DESIGN-B.md 2.3, 2.5, 2.7, 5.3) and, for a
+ * `fun` operation of an instance module, the operation section around it (DESIGN-B.md 2.6). [op] is the sidecar
+ * operation that selects it; null for a stray action. Every construct the model does not cover becomes an
+ * Unsupported statement with its Kotlin position, and lowering goes on to collect all of them (1.5). An unsupported
+ * action is never emitted (W12), so its body keeps only the Unsupported statements, in the order lowering found them.
  */
 internal class ActionLowering(
     private val ctx: ModuleContext,
@@ -160,6 +176,30 @@ internal class ActionLowering(
     private var out = mutableListOf<Stmt>()
     private val at = ctx.posOf(call)
 
+    /** The action kind; `m[k] = v` is a put, and getOrPut runs a putIfAbsent action (DESIGN-B.md 2.3, 2.5). */
+    private val kind =
+        when (found.kind) {
+            MapCall.COMPUTE -> ActionKind.COMPUTE
+            MapCall.COMPUTE_IF_ABSENT -> ActionKind.COMPUTE_IF_ABSENT
+            MapCall.PUT_IF_ABSENT, MapCall.GET_OR_PUT -> ActionKind.PUT_IF_ABSENT
+            MapCall.PUT, MapCall.SET -> ActionKind.PUT
+            MapCall.REMOVE -> ActionKind.REMOVE
+        }
+
+    /** True while the operation section is lowered (DESIGN-B.md 2.6), false inside the action. */
+    private var section = false
+
+    /** True if the action ran earlier on the path being lowered (DESIGN-B.md 2.4 rule 3, W16). */
+    private var ran = false
+
+    /** What the section found at the action call: the action body, the value and the out local. */
+    private var actionBody: List<Stmt>? = null
+    private var actionValue: Expr? = null
+    private var actionOut: Local? = null
+
+    /** The statements of the operation function the section lowers (DESIGN-B.md 2.6); see [relevance]. */
+    private var relevant: Set<FirElement> = emptySet()
+
     /** Sidecar names of this operation's free values, by the Kotlin declaration or call they name. */
     private val named: List<Pair<kv.sidecar.FreeItem, Any>> = op?.let { ctx.resolver.freeOf[it.name.text] }.orEmpty()
 
@@ -169,9 +209,12 @@ internal class ActionLowering(
         e?.let { ctx.index.id(it) }?.let { translated += it }
     }
 
+    /** Marks [e] and the nodes below it, except those of the action's key argument, which the ledger holds (W14). */
     private fun markAll(e: FirElement?) {
-        e?.let { translated += ctx.index.subtree(it) }
+        e?.let { translated += ctx.index.subtree(it) - keyArgNodes }
     }
+
+    private val keyArgNodes: Set<Int> by lazy { call.arguments.firstOrNull()?.let { ctx.index.subtree(it).toSet() }.orEmpty() }
 
     /**
      * Reports [e] as an unsupported construct (DESIGN-v0.md 1.5) and marks its nodes as handled by the action, unless
@@ -246,7 +289,9 @@ internal class ActionLowering(
                     else -> KType.IntT
                 }
             "kotlin/String" -> abstraction(slot, nullable, e, inAction)
-            else -> ctx.classOfType(low)?.let { KType.RefT(it.name, nullable) } ?: unsupported("value of type ${low.classId?.asFqNameString() ?: low}", "the type is not part of the model", e, inAction)
+            else ->
+                ctx.absOfType(low) ?: ctx.classOfType(low)?.let { KType.RefT(it.name, nullable) }
+                    ?: unsupported("value of type ${low.classId?.asFqNameString() ?: low}", "the type is not part of the model", e, inAction)
         }
     }
 
@@ -268,11 +313,14 @@ internal class ActionLowering(
 
     // ---- the action ----
 
+    private lateinit var key: FreeValue
+    private lateinit var entry: Local
+
     fun run(): Lowered {
         mark(call)
-        markAll(call.dispatchReceiver)
+        markAll(found.receiver)
         val keyArg = call.arguments[0]
-        val key = keyValue(keyArg)
+        key = keyValue(keyArg)
         names += "k"
         val local = found.scopes.find { it is FirNamedFunction && it.visibility == Visibilities.Local }
         if (local != null) {
@@ -280,31 +328,36 @@ internal class ActionLowering(
             // Reported at the call without marking it: its key argument belongs to the ledger.
             unsupported("compute in local function ${(local as FirNamedFunction).name}", "v0 does not translate a compute call inside a local function", call, inAction = false)
         }
-        var entry = Local("entry__${at.line}", KType.RefT(map.valueClass, true), at)
-        val body =
-            if (lambda == null) {
-                unsupported("remapping function", "compute's second argument is not a lambda literal; v0 reads the action from a lambda (DESIGN-v0.md 2.2)", call.arguments[1])
-                emptyList()
-            } else {
-                mark(call.arguments[1])
-                mark(lambda)
-                ctx.index.parent(lambda)?.let(::mark)
-                mark(lambda.body)
-                val (keyParam, entryParam) = lambda.valueParameters
-                mark(keyParam)
-                mark(entryParam)
-                locals[keyParam.symbol] = key.local
-                entry = declare(entryParam.symbol, entryParam.name.asString().takeUnless { it.startsWith("<") } ?: "entry", KType.RefT(map.valueClass, true), ctx.posOf(entryParam))
-                seq(lambda.body?.statements.orEmpty(), resultLast = true)
-            }
-        val result = operationResult(operationScope())
+        // compute names the entry after its lambda parameter; the other kinds have a current value cur_<line>_<col> (DESIGN-B.md 5.4).
+        entry = if (kind == ActionKind.COMPUTE) Local("entry__${at.line}", KType.RefT(map.valueClass, true), at) else temp("cur", KType.RefT(map.valueClass, true), at)
+        val fn = found.inFunction
+        val result: Local?
+        val opBody: List<Stmt>
+        val body: List<Stmt>
+        if (ctx.kind == ModuleKind.INSTANCE && op?.selector is Selector.Fun && fn != null) {
+            // DESIGN-B.md 2.6: the section is lowered in source order; the action where its call is.
+            result = sectionResult(fn)
+            opBody = section(fn)
+            body = actionBody ?: emptyList()
+            if (actionBody == null && problems.isEmpty()) unsupported("operation ${op.name.text}", "the operation section never reaches its action call", call, inAction = false)
+        } else {
+            body = actionBody()
+            actionValue = actionValueOutside()
+            val r = operationResult(operationScope())
+            result = r?.first
+            opBody = listOf(RunAction(at), Return(r?.second, r?.second?.pos ?: at))
+        }
         namedFreeValues()
         if (problems.isNotEmpty()) {
             markAll(lambda)
+            // The lambda's conversion nodes, if the lowering never reached the action.
+            call.arguments.getOrNull(1)?.let(::mark)
+            lambda?.let { ctx.index.parent(it)?.let(::mark) }
             helpers.forEach(::markAll)
         }
         val diagnostics = problems.map { Diagnostic("U${it.pos.line}_${it.pos.col}", DiagnosticKind.UNSUPPORTED, "UNSUPPORTED ${it.what} in action $id at ${where(it.pos)}: ${it.reason}", it.pos) }
         val freeValues = free.values.sortedBy { fv -> named.indexOfFirst { (item, _) -> fv.sidecarName in item.names.map { it.text } }.let { if (it < 0) Int.MAX_VALUE else it } }
+        val ok = problems.isEmpty()
         val action =
             Action(
                 id = id,
@@ -313,13 +366,76 @@ internal class ActionLowering(
                 key = key,
                 entry = entry,
                 free = freeValues,
-                body = if (problems.isEmpty()) body else problems.toList(),
+                // A throwing call leaves an `if (flag) raise` that more statements follow; they move into its else.
+                body = if (!ok) problems.toList() else if (body.walk().any { it is Raise }) normalize(body) else body,
                 commit = emptyList(),
-                status = if (problems.isEmpty()) Status.Supported else Status.Unsupported(diagnostics),
+                status = if (ok) Status.Supported else Status.Unsupported(diagnostics),
                 translated = translated,
+                kind = kind,
+                value = actionValue.takeIf { ok },
+                out = actionOut.takeIf { ok },
             )
-        return Lowered(action, cells.values.toList(), result, freeSources, cells.keys, helpers)
+        // After an unsupported construct the section is not emitted (W12): it keeps the plain shape.
+        val section = if (ok) normalize(opBody) else listOf(RunAction(at), Return(null, at))
+        return Lowered(action, cells.values.toList(), result.takeIf { ok }, section, freeSources, cells.keys, helpers)
     }
+
+    /**
+     * The action body (DESIGN-v0.md 2.4, DESIGN-B.md 5.3 rule 3): compute's and computeIfAbsent's lambda in result
+     * position; nothing for the other kinds, whose effect the kind and value give.
+     */
+    private fun actionBody(): List<Stmt> {
+        if (kind != ActionKind.COMPUTE && kind != ActionKind.COMPUTE_IF_ABSENT) return emptyList()
+        if (lambda == null) {
+            unsupported("remapping function", "${found.kind.method}'s second argument is not a lambda literal; the action is read from a lambda (DESIGN-v0.md 2.2)", call.arguments[1])
+            return emptyList()
+        }
+        mark(call.arguments[1])
+        mark(lambda)
+        ctx.index.parent(lambda)?.let(::mark)
+        mark(lambda.body)
+        val keyParam = lambda.valueParameters.first()
+        mark(keyParam)
+        locals[keyParam.symbol] = key.local
+        if (kind == ActionKind.COMPUTE) {
+            val entryParam = lambda.valueParameters[1]
+            mark(entryParam)
+            entry = declare(entryParam.symbol, entryParam.name.asString().takeUnless { it.startsWith("<") } ?: "entry", KType.RefT(map.valueClass, true), ctx.posOf(entryParam))
+        }
+        val saved = section
+        section = false
+        return seq(lambda.body?.statements.orEmpty(), resultLast = true).also { section = saved }
+    }
+
+    /**
+     * The value of a putIfAbsent or put outside an operation section (object modules, stray actions): computed
+     * before the action, so a free value (DESIGN-v0.md 2.12) of a class with no modeled field (DESIGN-B.md 7.2, M5).
+     */
+    private fun actionValueOutside(): Expr? {
+        if (kind != ActionKind.PUT && kind != ActionKind.PUT_IF_ABSENT) return null
+        val arg = call.arguments.getOrNull(1) ?: return unsupported("${found.kind.method} value", "the call has no value argument", call)
+        markAll(arg)
+        val read = unwrap(arg) as? FirPropertyAccessExpression
+        val sym = read?.let { ctx.calleeOf(it) }
+        if (read != null && sym != null && (sym is FirValueParameterSymbol || sym is FirPropertySymbol && (sym.isLocal || instanceVal(read, sym)))) return read(read)
+        val type = ktype(arg.resolvedType, null, arg) ?: return null
+        if (!opaque(type)) return unsupported("${found.kind.method} value", "a value of a class with modeled fields that the action does not create", arg)
+        return computed(arg, type)
+    }
+
+    /** A value an unmodeled computation makes outside every action (DESIGN-B.md 2.6 rule 5): an unnamed free value. */
+    private fun computed(
+        e: FirExpression,
+        type: KType,
+    ): Expr {
+        val pos = ctx.posOf(e)
+        val name = (unwrap(e) as? FirQualifiedAccessExpression)?.let { ctx.calleeOf(it) }?.callableId?.callableName?.asString()?.takeUnless { it.startsWith("<") } ?: "value"
+        val fv = free.getOrPut(e) { FreeValue(Local(fresh("${name}__${pos.line}_${pos.col}"), type, pos), Computed(pos), null, sourceText(e)) }
+        return Var(fv.local, pos)
+    }
+
+    /** True for a class type whose class has no modeled field: nothing can reach into its objects (DESIGN-B.md 7.2, M5). */
+    private fun opaque(t: KType): Boolean = t is KType.RefT && ctx.classes.find { it.name == t.cls }?.fields?.isEmpty() == true
 
     /** compute's key argument: the free value `k` (DESIGN-v0.md 2.12, ActionKey). */
     private fun keyValue(keyArg: FirExpression): FreeValue {
@@ -401,6 +517,7 @@ internal class ActionLowering(
     private fun hasExit(s: Stmt): Boolean = s is Exit || s is If && (s.then.any(::hasExit) || s.els.any(::hasExit))
 
     private fun statement(s: FirStatement) {
+        if (section) return sectionStatement(s)
         when (s) {
             is FirProperty -> localVal(s)
             is FirVariableAssignment -> assignment(s)
@@ -434,6 +551,15 @@ internal class ActionLowering(
                 mark(s)
                 out += seq(s.statements, resultLast = true)
             }
+            // DESIGN-B.md 7.2 R1: `a ?: b` as the lambda's result: a if it is not null, else b.
+            s is FirElvisExpression -> {
+                mark(s)
+                val pos = exitAt ?: ctx.posOf(s)
+                val a = expr(s.lhs) ?: return
+                val then = collect { exit(s.lhs, pos, a, nonNull = true) }
+                val els = collect { result(s.rhs, exitAt) }
+                out += If(Cmp(CmpOp.NE, a, NullLit(nullable(a.type) ?: a.type, a.pos), ctx.posOf(s)), then, els, ctx.posOf(s))
+            }
             s is FirExpression -> exit(s, exitAt ?: ctx.posOf(s))
             else -> statement(s)
         }
@@ -454,24 +580,34 @@ internal class ActionLowering(
         }
     }
 
-    /** `Exit` for the value [e] (DESIGN-v0.md 2.4 rule 1): null removes, the value parameter keeps, an object puts. */
+    /**
+     * `Exit` for the value [e] (DESIGN-v0.md 2.4 rule 1): null removes, the value parameter keeps, an object puts.
+     * In computeIfAbsent (DESIGN-B.md 5.3 rule 3) null keeps the key unmapped and the function's value must not be
+     * null. [lowered] is [e]'s value if it is already lowered; [nonNull] says a branch condition shows it is not null.
+     */
     private fun exit(
         e: FirExpression,
         pos: Pos,
+        lowered: Expr? = null,
+        nonNull: Boolean = false,
     ) {
         val value = stripSmartCasts(e) ?: return
-        val entryParam = lambda?.valueParameters?.getOrNull(1)?.symbol
+        val entryParam = lambda?.valueParameters?.getOrNull(1)?.symbol?.takeIf { kind == ActionKind.COMPUTE }
         when {
             value is FirLiteralExpression && value.kind == ConstantValueKind.Null -> {
                 mark(value)
-                out += Exit(ExitResult.Remove, pos)
+                out += Exit(if (kind == ActionKind.COMPUTE_IF_ABSENT) ExitResult.Keep else ExitResult.Remove, pos)
             }
             value is FirPropertyAccessExpression && ctx.calleeOf(value) == entryParam -> {
                 mark(value)
                 out += Exit(ExitResult.Keep, pos)
             }
             else -> {
-                val v = expr(e, KType.RefT(map.valueClass, true)) ?: return
+                val v = lowered ?: expr(e, KType.RefT(map.valueClass, true)) ?: return
+                if (kind == ActionKind.COMPUTE_IF_ABSENT && !nonNull && (v.type as? KType.RefT)?.nullable != false) {
+                    unsupported("nullable result of computeIfAbsent's function", "computeIfAbsent maps only a non-null result; a value that may be null is not modeled (DESIGN-B.md 2.3)", e)
+                    return
+                }
                 out += Exit(ExitResult.Put(v), pos)
             }
         }
@@ -581,7 +717,7 @@ internal class ActionLowering(
                 mark(e)
                 literal(e, expected)
             }
-            is FirFunctionCall -> call(e, valueUsed = true)
+            is FirFunctionCall -> if (section) sectionCall(e, valueUsed = true) else call(e, valueUsed = true)
             is FirPropertyAccessExpression -> read(e)
             is FirComparisonExpression -> {
                 mark(e)
@@ -597,12 +733,14 @@ internal class ActionLowering(
             is FirBooleanOperatorExpression -> logic(e)
             is FirStringConcatenationCall -> template(e)
             is FirSafeCallExpression -> unsupported("safe call ?.", "not translated inside an action in v0", e)
-            is FirElvisExpression -> unsupported("elvis ?:", "not translated inside an action in v0", e)
-            is FirCheckNotNullCall -> unsupported("!!", "not translated inside an action in v0", e)
+            is FirElvisExpression -> if (section) sectionElvis(e) else unsupported("elvis ?:", "not translated inside an action in v0", e)
+            is FirCheckNotNullCall -> if (section) sectionNotNull(e) else unsupported("!!", "not translated inside an action in v0", e)
+            is FirThisReceiverExpression -> thisValue(e)
             is FirTypeOperatorCall -> unsupported("${e.operation.operator} check", "is/as are not translated inside an action in v0", e)
             is FirAnonymousFunctionExpression -> unsupported("nested lambda", "lambdas inside an action are not translated in v0", e)
             is FirWhenExpression -> unsupported("if/when used as a value", "v0 translates an if or when as a statement or as the lambda result", e)
             is FirTryExpression -> unsupported("try expression", "exception paths inside an action are not modeled in v0", e)
+            is FirThrowExpression -> unsupported("throw", "exceptions are modeled for throws calls and !! only (DESIGN-B.md 2.7)", e)
             else -> unsupported(e::class.simpleName ?: "expression", "this FIR node is not translated in v0", e)
         }
     }
@@ -629,6 +767,10 @@ internal class ActionLowering(
         locals[sym]?.let { return Var(it, pos) }
         // A local of the action whose declaration was unsupported: that is reported already.
         if (sym != null && ctx.declarationOf(sym)?.let(::insideAction) == true) return null
+        if (section && sym is FirPropertySymbol && sym.isLocal) {
+            // A local of the operation function that the section did not lower (DESIGN-B.md 2.6).
+            return unsupported("read of ${sym.name}", "the operation section did not translate the declaration of ${sym.name}", e)
+        }
         val field = ctx.fieldOf(sym)
         return when {
             sym is FirValueParameterSymbol || sym is FirPropertySymbol && sym.isLocal -> captured(sym, e)
@@ -653,13 +795,17 @@ internal class ActionLowering(
         return false
     }
 
-    /** True if [e] reads an immutable property of the instance whose method holds the action, through `this`. */
+    /**
+     * True if [e] reads a property of the instance whose method holds the action, through `this`: an immutable one
+     * of an object module's outer class, or any one of an instance module's class (DESIGN-B.md 2.1 rule 4).
+     */
     private fun instanceVal(
         e: FirPropertyAccessExpression,
         sym: FirPropertySymbol,
     ): Boolean {
         val receiver = e.dispatchReceiver as? FirThisReceiverExpression ?: return false
         val bound = receiver.calleeReference.boundSymbol as? FirClassSymbol<*> ?: return false
+        if (ctx.kind == ModuleKind.INSTANCE) return bound == ctx.moduleClass.symbol && ctx.stateOf(sym) == null
         return sym.isVal && bound.classKind == ClassKind.CLASS && bound != ctx.moduleClass.symbol
     }
 
@@ -684,7 +830,8 @@ internal class ActionLowering(
     ): Expr? {
         free[sym]?.let { return Var(it.local, ctx.posOf(e)) }
         val type = ktype((sym as FirCallableSymbol<*>).resolvedReturnType, sym, e) ?: return null
-        if (type is KType.RefT) return unsupported("module object from outside the action", "the action reads a ${type.cls} it did not get from compute or create (DESIGN-v0.md 2.12 rule 5)", e)
+        // DESIGN-B.md 7.2 (M5): an object of a class with no modeled field is a free value; nothing reaches into it.
+        if (type is KType.RefT && !opaque(type)) return unsupported("module object from outside the action", "the action reads a ${type.cls} it did not get from compute or create (DESIGN-v0.md 2.12 rule 5)", e)
         val name = nameOf(sym)
         val member = sym is FirPropertySymbol && !sym.isLocal
         // A local or parameter is placed at its declaration; a property of the instance at its first read.
@@ -835,6 +982,10 @@ internal class ActionLowering(
         local: (KType) -> Local,
     ): Expr? {
         mark(c)
+        // DESIGN-B.md 3.3 rule 4: objects of a class a fresh function makes come only from that function.
+        if (cls.name in ctx.freshFunctions.values) {
+            return unsupported("${cls.name} constructor", "${cls.name} objects come only from a `returns fresh ${cls.name}` trusted function, so that P_once counts each one (DESIGN-B.md 3.3 rule 4)", c)
+        }
         val values = linkedMapOf<String, Expr>()
         var ok = true
         // Arguments in source order: Kotlin evaluates them so. An argument for no sidecar field is evaluated for its effects.
@@ -1042,6 +1193,7 @@ internal class ActionLowering(
         val pos = ctx.posOf(c)
         val model = describe(ctx.calleeOf(c))
         markAll(c.dispatchReceiver)
+        if (t.fresh != null || t.throws) return freshOrThrowing(c, t, valueUsed)
         c.arguments.forEach { expr(it) ?: return null }
         if (t.clock) {
             val n = temp(t.shortName, KType.IntT, pos)
@@ -1066,6 +1218,58 @@ internal class ActionLowering(
         out += Nondet(outs, model, pos)
         if (t.returns.isEmpty()) return if (valueUsed) unsupported("value of $model", "the trusted function declares no result", c) else null
         return Var(outs.first(), pos)
+    }
+
+    /**
+     * A call of a trusted `returns fresh` or `throws` function (DESIGN-B.md 3.2, 2.7), in an action or in the
+     * operation section. Its values (named results, ghost values, then the throw flag) are a Nondet: the names a
+     * sidecar `free ... = call` binds to the operation's first call, or new locals. A throw flag raises: `if (flag)
+     * raise`, and the statements after it move into the else branch. A fresh function then yields a new object.
+     * An argument of a model type is lowered; any other one must be pure, since the function's effects are reviewed.
+     */
+    private fun freshOrThrowing(
+        c: FirFunctionCall,
+        t: TrustedDecl,
+        valueUsed: Boolean,
+    ): Expr? {
+        val pos = ctx.posOf(c)
+        val model = describe(ctx.calleeOf(c))
+        if (!t.effectsNone) return unsupported("call to $model", "a trusted function without 'effects none' may change state the model does not see", c)
+        for (arg in c.arguments) {
+            if (isModelType(arg.resolvedType)) expr(arg) ?: return null else pureArgument(arg)
+        }
+        val bound = named.find { (item, target) -> item.source is FreeSource.Call && target === c }?.first?.names?.map { it.text }
+        val types = (t.returns + t.ghosts).map { v -> v.name.text to sidecarType(v.type.text) } + listOfNotNull(("cond" to KType.BoolT).takeIf { t.throws })
+        val outs =
+            types.mapIndexed { i, (name, type) ->
+                if (bound == null) return@mapIndexed temp(name, type, pos)
+                names += bound[i]
+                Local(bound[i], type, pos).also { free[bound[i]] = FreeValue(it, NondetCall(model, pos), bound[i], "$model(...)") }
+            }
+        if (outs.isNotEmpty()) out += Nondet(outs, model, pos)
+        if (t.throws) out += If(Var(outs.last(), pos), listOf(Raise(pos)), emptyList(), pos)
+        val cls = t.fresh?.let { f -> ctx.classes.find { it.name == f.text } }
+        if (cls != null) {
+            val r = temp("r", KType.RefT(cls.name, false), pos)
+            out += Fresh(r, cls, t.shortName, pos)
+            return Var(r, pos)
+        }
+        if (t.returns.isEmpty()) return if (valueUsed) unsupported("value of $model", "the trusted function declares no result", c) else null
+        return Var(outs.first(), pos)
+    }
+
+    /** The KVIR type of a sidecar type name in a trusted function's results. */
+    private fun sidecarType(n: String): KType =
+        when (n) {
+            "Bool" -> KType.BoolT
+            "Int" -> KType.IntT
+            else -> KType.Abs(n, false)
+        }
+
+    /** True if values of Kotlin type [t] are in the model: Long, Int, Boolean, String, a key class or a sidecar class. */
+    private fun isModelType(t: ConeKotlinType): Boolean {
+        val low = t.lowerBoundIfFlexible()
+        return low.classId?.asString() in setOf("kotlin/Long", "kotlin/Int", "kotlin/Boolean", "kotlin/String") || ctx.absOfType(low) != null || ctx.classOfType(low) != null
     }
 
     /** Inlines a helper of the module file (DESIGN-v0.md 2.3): its parameters become locals, its result the value. */
@@ -1184,7 +1388,7 @@ internal class ActionLowering(
      * The operation result (W10): the one final `return` of a cell `get` or a constant in [scope], which is the
      * operation function or its Mono.fromCallable lambda (whose last expression is a return; DESIGN-v0.md 8.3).
      */
-    private fun operationResult(scope: FirFunction?): OpResult? {
+    private fun operationResult(scope: FirFunction?): Pair<Local, Expr>? {
         val item = op?.result ?: return null
         val fn = found.inFunction
 
@@ -1221,11 +1425,27 @@ internal class ActionLowering(
                 e is FirLiteralExpression -> ctx.literal(e, ktype(e.resolvedType, null, e, inAction = false) ?: return null, pos) ?: return fail("constant ${e.value}", e)
                 else -> return fail("the result reads only cells and constants (W10); ${sourceText(e)} is neither", e)
             }
-        return OpResult(Local(item.name.text, v.type, pos), v, pos)
+        return Local(item.name.text, v.type, pos) to v
     }
 
-    /** Named free values the action does not read are parameters too (DESIGN-v0.md 2.12 rule 3). */
+    /**
+     * Named free values the action does not read are parameters too (DESIGN-v0.md 2.12 rule 3). So are the names of
+     * a `free ... = call F` item when the operation makes no call to F: an INFO says that the code does not use them
+     * (DESIGN-B.md 5.3 rule 6), so that a mutant that drops the call is FAILED, not ERROR.
+     */
     private fun namedFreeValues() {
+        for (item in op?.free.orEmpty()) {
+            val src = item.source as? FreeSource.Call ?: continue
+            if (named.any { it.first === item }) continue
+            val t = ctx.trusted.values.find { it.shortName == src.name.text } ?: continue
+            val pos = ctx.trusted.entries.find { it.value === t }?.key?.let { ctx.declarationOf(it) }?.let { ctx.posOf(it) } ?: at
+            val types = (t.returns + t.ghosts).map { sidecarType(it.type.text) } + listOfNotNull(KType.BoolT.takeIf { t.throws })
+            item.names.zip(types).forEach { (n, type) ->
+                names += n.text
+                free[n.text] = FreeValue(Local(n.text, type, pos), NondetCall(t.fn.text, pos), n.text, "${t.fn.text}(...)")
+            }
+            ctx.diagnostics += Diagnostic("I${at.line}_${at.col}", DiagnosticKind.INFO, "free ${item.names.joinToString { it.text }} = call ${t.shortName}: operation ${op!!.name.text} makes no call to ${t.shortName}, so the code does not use these parameters (DESIGN-B.md 5.3 rule 6)", at)
+        }
         for ((item, target) in named) {
             val sym = target as? FirBasedSymbol<*> ?: continue
             if (sym in free || sym in locals) continue
@@ -1242,6 +1462,458 @@ internal class ActionLowering(
         }
     }
 
+    // ---- the operation section (DESIGN-B.md 2.6) ----
+
+    /** The sidecar result of an instance module's operation: its name, and the function's return type made nullable. */
+    private fun sectionResult(fn: FirNamedFunction): Local? {
+        val item = op?.result ?: return null
+        val t = ktype(fn.returnTypeRef.coneType, fn.symbol, fn, inAction = false) ?: return null
+        return Local(item.name.text, nullable(t) ?: t, ctx.posOf(fn))
+    }
+
+    /**
+     * The section of [fn]: its [relevance] statements in source order, with the action lowered at its call. A fresh
+     * or throwing call the lowering did not reach (in a lambda the section does not inline, or in the receiver of an
+     * unknown call) is unsupported: P_once would not count it (DESIGN-B.md 4.2).
+     */
+    private fun section(fn: FirNamedFunction): List<Stmt> {
+        relevant = relevance(fn)
+        section = true
+        ran = false
+        val body = collect { fn.body?.statements.orEmpty().forEach(::sectionStatement) }
+        section = false
+        seeds.filter { it is FirFunctionCall && it !== call && ctx.index.id(it) !in translated }.forEach {
+            unsupported("call ${sourceText(it)}", "a fresh or throwing call where the operation section does not translate it (DESIGN-B.md 2.6 rule 4)", it, inAction = false)
+        }
+        return body
+    }
+
+    /** The returns, the action call and the fresh or throwing calls of the operation function; see [relevance]. */
+    private val seeds: MutableSet<FirElement> = Collections.newSetFromMap(IdentityHashMap())
+
+    /**
+     * DESIGN-B.md 2.6: the statements of [fn] the section translates. A statement counts if it holds a return of
+     * [fn], the action call or a call of a `returns fresh` or `throws` trusted function (not counting the action's
+     * own lambda), or if it declares a local that a counted statement reads (the action's lambda and key argument
+     * read free values, DESIGN-v0.md 2.12, so their reads do not count). Everything else stays in the ledger.
+     */
+    private fun relevance(fn: FirNamedFunction): Set<FirElement> {
+        val skip = setOfNotNull(lambda.takeIf { kind == ActionKind.COMPUTE || kind == ActionKind.COMPUTE_IF_ABSENT }, call.arguments.firstOrNull())
+        val statements = mutableListOf<FirStatement>()
+        fn.body?.accept(
+            object : FirVisitorVoid() {
+                override fun visitElement(element: FirElement) {
+                    if (element in skip) return
+                    if (element is FirBlock) statements += element.statements
+                    val seed =
+                        element === call ||
+                            element is FirReturnExpression && element.target.labeledElement === fn ||
+                            element is FirFunctionCall && (ctx.calleeOf(element) as? FirNamedFunctionSymbol)?.let { ctx.trusted[it] }?.let { it.fresh != null || it.throws } == true
+                    if (seed) seeds += element
+                    element.acceptChildren(this)
+                }
+            },
+        )
+        fun holdsSeed(s: FirElement): Boolean {
+            var found = false
+            s.accept(
+                object : FirVisitorVoid() {
+                    override fun visitElement(element: FirElement) {
+                        if (found || element in skip) return
+                        if (element in seeds) found = true else element.acceptChildren(this)
+                    }
+                },
+            )
+            return found
+        }
+        val holding = statements.filter(::holdsSeed).toSet()
+        val needed = mutableSetOf<FirBasedSymbol<*>>()
+        val relevant = Collections.newSetFromMap(IdentityHashMap<FirElement, Boolean>()).apply { addAll(holding) }
+        while (true) {
+            val before = relevant.size
+            for (s in statements.filter { it in relevant }) {
+                s.accept(
+                    object : FirVisitorVoid() {
+                        override fun visitElement(element: FirElement) {
+                            if (element in skip) return
+                            // A nested statement counts on its own.
+                            if (element !== s && element in statements && element !in relevant) return
+                            if (element is FirPropertyAccessExpression) ctx.calleeOf(element)?.takeIf { (it as? FirPropertySymbol)?.isLocal == true }?.let { needed += it }
+                            element.acceptChildren(this)
+                        }
+                    },
+                )
+            }
+            statements.filter { it is FirProperty && it.symbol in needed }.forEach { relevant += it }
+            if (relevant.size == before) return relevant
+        }
+    }
+
+    /** A statement of the section: one that [relevant] does not hold stays in the ledger. */
+    private fun sectionStatement(s: FirStatement) {
+        if (s !in relevant) return
+        when (s) {
+            is FirProperty -> sectionVal(s)
+            is FirReturnExpression -> sectionReturn(s)
+            is FirWhenExpression -> sectionWhen(s, null)
+            is FirBlock -> {
+                mark(s)
+                s.statements.forEach(::sectionStatement)
+            }
+            is FirVariableAssignment -> sectionAssign(s)
+            is FirWhileLoop, is FirDoWhileLoop -> unsupported("loop", "a loop that reaches the result or the action is not modeled (DESIGN-B.md 2.6 rule 4)", s)
+            is FirTryExpression -> unsupported("try expression", "a try that reaches the result or the action is not modeled (DESIGN-B.md 2.6 rule 4)", s)
+            is FirThrowExpression -> unsupported("throw", "the section models exceptions of throws calls and !! only (DESIGN-B.md 2.7)", s)
+            is FirFunctionCall -> sectionCall(s, valueUsed = false)
+            is FirExpression -> expr(s)
+            else -> unsupported(s::class.simpleName ?: "statement", "this FIR node is not translated in an operation section", s)
+        }
+    }
+
+    /** A local `val` or `var` of the section. An object value keeps its local: the val is a second name for it. */
+    private fun sectionVal(p: FirProperty) {
+        // The action key's local stays a free source (DESIGN-v0.md 2.12): reads of it are the key k.
+        if (locals[p.symbol] === key.local) return
+        mark(p)
+        val init = p.initializer ?: return run { unsupported("local ${p.name} without initializer", "the section translates a local declared with its value", p) }
+        val type = ktype(ctx.typeOf(p), p.symbol, p) ?: return
+        val v = expr(init, type) ?: return
+        if (!p.isVar && v is Var && v.type is KType.RefT) {
+            locals[p.symbol] = v.local
+            return
+        }
+        val pos = ctx.posOf(p)
+        out += Let(declare(p.symbol, p.name.asString(), type, pos), v, p.isVar, pos)
+    }
+
+    private fun sectionAssign(a: FirVariableAssignment) {
+        mark(a)
+        val lhs = a.lValue as? FirQualifiedAccessExpression
+        lhs?.let(::mark)
+        val local = lhs?.let { ctx.calleeOf(it) }?.let { locals[it] } ?: return run { unsupported("assignment", "the section assigns only its own local vars", a) }
+        expr(a.rValue, local.type)?.let { out += Assign(local, it, ctx.posOf(a)) }
+    }
+
+    /** `return e` of the operation function: [e] in result position (DESIGN-B.md 2.6 rule 1). */
+    private fun sectionReturn(r: FirReturnExpression) {
+        mark(r)
+        if (r.target.labeledElement !== found.inFunction) return run { unsupported("return", "a return out of a lambda of the operation section", r) }
+        resultPos(r.result, ctx.posOf(r))
+    }
+
+    /** The section's Return of [v]; an operation without a sidecar result returns no value. */
+    private fun ret(
+        v: Expr,
+        pos: Pos,
+    ): Stmt = Return(v.takeIf { op?.result != null }, pos)
+
+    /** The type a returned value has: the sidecar result's. */
+    private val resultType: KType? get() = found.inFunction?.let { ktype(it.returnTypeRef.coneType, it.symbol, it, inAction = false) }?.let { nullable(it) ?: it }
+
+    /**
+     * [e0] as the operation's result. `a ?: b` returns a if it is not null, else b; it stays one `?:` value if b has no
+     * effect. `e!!` raises on null. getOrPut returns its read value or the putIfAbsent result. An if or when returns in
+     * each branch. Other values are lowered, then returned.
+     */
+    private fun resultPos(
+        e0: FirExpression,
+        retPos: Pos,
+    ) {
+        val e = stripSmartCasts(e0) ?: return
+        val pos = ctx.posOf(e)
+        when {
+            e is FirElvisExpression -> {
+                mark(e)
+                val a = expr(e.lhs) ?: return
+                val before = ran
+                val els = collect { resultPos(e.rhs, retPos) }
+                val pure = (els.singleOrNull() as? Return)?.e
+                if (pure != null) {
+                    out += ret(Elvis(a, pure, pos), retPos)
+                } else {
+                    out += If(Cmp(CmpOp.NE, a, NullLit(nullable(a.type) ?: a.type, pos), pos), listOf(ret(a, retPos)), els, pos)
+                }
+                ran = ran || before
+            }
+            e is FirCheckNotNullCall -> {
+                mark(e)
+                val a = expr(e.arguments.single()) ?: return
+                out += If(Cmp(CmpOp.EQ, a, NullLit(nullable(a.type) ?: a.type, pos), pos), listOf(Raise(pos)), listOf(ret(a, retPos)), pos)
+            }
+            e === call && found.kind == MapCall.GET_OR_PUT -> {
+                mark(e)
+                getOrPut { v -> ret(v, retPos) }
+            }
+            e is FirWhenExpression -> sectionWhen(e, retPos)
+            else -> {
+                val v = expr(e, resultType) ?: return
+                out += ret(v, retPos)
+            }
+        }
+    }
+
+    /** An if or when of the section; with [retPos], each branch returns its value. */
+    private fun sectionWhen(
+        w: FirWhenExpression,
+        retPos: Pos?,
+    ) {
+        mark(w)
+        if (w.subjectVariable != null) return run { unsupported("when with subject", "the section translates `if` and `when` without subject", w) }
+        out += sectionChain(w, 0, retPos)
+    }
+
+    private fun sectionChain(
+        w: FirWhenExpression,
+        i: Int,
+        retPos: Pos?,
+    ): List<Stmt> =
+        collect {
+            val b = w.branches.getOrNull(i) ?: return@collect
+            mark(b.result)
+            fun branch(): List<Stmt> {
+                val before = ran
+                val body =
+                    collect {
+                        val stmts = b.result.statements
+                        if (retPos == null) {
+                            stmts.forEach(::sectionStatement)
+                        } else {
+                            stmts.dropLast(1).forEach(::sectionStatement)
+                            stmts.lastOrNull()?.let { last -> if (last is FirExpression) resultPos(last, retPos) else sectionStatement(last) }
+                        }
+                    }
+                return body.also { ran = before }
+            }
+            if (b.condition is FirElseIfTrueCondition) {
+                mark(b.condition)
+                val before = ran
+                out += branch()
+                ran = ran || before
+                return@collect
+            }
+            if (b.hasGuard) return@collect run { unsupported("when guard", "guards are not translated", b.condition) }
+            val c = expr(b.condition) ?: return@collect
+            val before = ran
+            val then = branch()
+            val ranThen = ran
+            ran = before
+            val els = sectionChain(w, i + 1, retPos)
+            ran = ran || ranThen
+            out += If(c, then, els, if (i == 0) ctx.posOf(w) else ctx.posOf(b.condition))
+        }
+
+    /**
+     * A call of the section (DESIGN-B.md 2.6): the action, a racy read of a state map (2.4), let/also/run/apply with
+     * an exactly-once lambda, a trusted function, a Kotlin operator. Any other call's value is a free value (rule 5).
+     */
+    private fun sectionCall(
+        c: FirFunctionCall,
+        valueUsed: Boolean,
+    ): Expr? {
+        mark(c)
+        if (c === call) return runAction(valueUsed)
+        val sym = ctx.calleeOf(c) ?: return unsupported("unresolved call", "the call does not resolve", c)
+        (ctx.stateRead(c.dispatchReceiver) as? MapVar)?.let { return racyGet(c, it) }
+        val id = sym.callableId
+        if (id?.classId == null && id?.packageName?.asString() == "kotlin" && id.callableName.asString() in SCOPE_FUNCTIONS && c.extensionReceiver != null) {
+            return scopeCall(c, id.callableName.asString(), valueUsed)
+        }
+        (sym as? FirNamedFunctionSymbol)?.let { f -> ctx.trusted[f]?.let { return trustedCall(c, it, valueUsed) } }
+        val owner = id?.classId?.asString()
+        if (owner in setOf("kotlin/Long", "kotlin/Int", "kotlin/Boolean")) return call(c, valueUsed)
+        ctx.constructedClass(sym)?.let { return unsupported("${it.name} constructor", "the operation section does not construct module objects; ${it.name} objects come from actions or fresh functions", c) }
+        // Rule 5: an unmodeled call's value is a free value; an argument that runs a fresh, throwing or action call is lowered for that.
+        for (arg in c.arguments) if (holdsEffect(arg)) expr(arg)
+        if (!valueUsed) return null
+        val type = ktype(c.resolvedType, ctx.slotOf(c), c) ?: return null
+        if (type is KType.RefT && !opaque(type)) return unsupported("module object from an unknown call", "a ${type.cls} that neither an action nor a fresh function made", c)
+        return computed(c, type)
+    }
+
+    /** True if [e] holds the action call or a call of a `returns fresh` or `throws` trusted function. */
+    private fun holdsEffect(e: FirElement): Boolean {
+        var found = false
+        e.accept(
+            object : FirVisitorVoid() {
+                override fun visitElement(element: FirElement) {
+                    if (found) return
+                    found = element === call || element is FirFunctionCall && (ctx.calleeOf(element) as? FirNamedFunctionSymbol)?.let { ctx.trusted[it] }?.let { it.fresh != null || it.throws } == true
+                    element.acceptChildren(this)
+                }
+            },
+        )
+        return found
+    }
+
+    /**
+     * The action at its call (DESIGN-B.md 5.2 RunAction). Kotlin evaluates the arguments first, so the value of
+     * putIfAbsent, put and `m[k] = v` is section code. The out local holds the call's result if it is used.
+     */
+    private fun runAction(valueUsed: Boolean): Expr? {
+        if (found.kind == MapCall.GET_OR_PUT) {
+            val tmp = temp("value", KType.RefT(map.valueClass, true), at)
+            out += Let(tmp, NullLit(tmp.type, at), true, at)
+            getOrPut { v -> Assign(tmp, v, v.pos) }
+            return Var(tmp, at)
+        }
+        if (kind == ActionKind.PUT || kind == ActionKind.PUT_IF_ABSENT) {
+            val arg = call.arguments.getOrNull(1) ?: return unsupported("${found.kind.method} value", "the call has no value argument", call)
+            actionValue = expr(arg, KType.RefT(map.valueClass, true)) ?: return null
+        }
+        actionBody = actionBody()
+        actionOut =
+            when {
+                !valueUsed || found.kind == MapCall.SET -> null
+                kind == ActionKind.COMPUTE || kind == ActionKind.COMPUTE_IF_ABSENT -> temp("out", KType.RefT(map.valueClass, true), at)
+                else -> entry
+            }
+        out += RunAction(at)
+        ran = true
+        return actionOut?.let { Var(it, at) }
+    }
+
+    /**
+     * getOrPut on a ConcurrentMap (DESIGN-B.md 2.5): a racy read v; if v is not null, the value is v; else the default
+     * function runs in the section, and the putIfAbsent action maps its value d; the value is `cur ?: d`. [sink] makes
+     * the statement that receives the value in each branch.
+     */
+    private fun getOrPut(sink: (Expr) -> Stmt) {
+        val v = temp("v", KType.RefT(map.valueClass, true), at)
+        out += RacyGet(v, map, Var(key.local, at), contains = false, contract = map.setOnce != null && !ran, pos = at)
+        val before = ran
+        val els =
+            collect {
+                val lam = lambda ?: return@collect run { unsupported("getOrPut default", "the default value is not a lambda literal", call.arguments[1]) }
+                mark(call.arguments[1])
+                mark(lam)
+                mark(lam.body)
+                val d = lambdaValue(lam) ?: return@collect
+                actionValue = d
+                actionBody = emptyList()
+                actionOut = entry
+                out += RunAction(at)
+                ran = true
+                out += sink(Elvis(Var(entry, at), d, at))
+            }
+        out += If(Cmp(CmpOp.NE, Var(v, at), NullLit(v.type, at), at), listOf(sink(Var(v, at))), els, at)
+        ran = ran || before
+    }
+
+    /** The value of an inline lambda of the section: its statements, then its last expression. */
+    private fun lambdaValue(lam: FirAnonymousFunction): Expr? {
+        val stmts = lam.body?.statements.orEmpty()
+        stmts.dropLast(1).forEach(::sectionStatement)
+        val last = stmts.lastOrNull() ?: return unsupported("empty lambda", "the lambda has no value", lam)
+        val value = if (last is FirReturnExpression && last.target.labeledElement === lam) last.also(::mark).result else last as? FirExpression
+        return value?.let { expr(it) } ?: unsupported("lambda value", "the lambda does not end with a value", last)
+    }
+
+    /** A read of a state map in the section (DESIGN-B.md 2.4): get or containsKey, with the set-once contract before the action. */
+    private fun racyGet(
+        c: FirFunctionCall,
+        m: MapVar,
+    ): Expr? {
+        markAll(c.dispatchReceiver)
+        val pos = ctx.posOf(c)
+        val entry = ctx.entriesOf(c).firstOrNull { it.role == Role.RACY_READ && (it.name == "get" || it.name == "containsKey") }
+            ?: return unsupported("${m.kotlin}.${ctx.calleeOf(c)?.callableId?.callableName}", "the operation section reads a state map only with get and containsKey (DESIGN-B.md 2.4)", c)
+        if (!useCheck(entry, c)) return null
+        val keyArg = c.arguments.singleOrNull() ?: return unsupported("racy read", "the read takes one key", c)
+        val k = expr(keyArg, m.key) ?: return null
+        val contains = entry.name == "containsKey"
+        val v = temp("v", if (contains) KType.BoolT else KType.RefT(m.valueClass, true), pos)
+        out += RacyGet(v, m, k, contains, contract = m.setOnce != null && !ran, pos = pos)
+        return Var(v, pos)
+    }
+
+    /** `x.let { }`, `x.also { }`, `x.run { }`, `x.apply { }` with an exactly-once lambda: inlined (DESIGN-B.md 2.6 rule 2). */
+    private fun scopeCall(
+        c: FirFunctionCall,
+        name: String,
+        valueUsed: Boolean,
+    ): Expr? {
+        val arg = c.arguments.singleOrNull() as? FirAnonymousFunctionExpression ?: return unsupported("$name with a function value", "the section inlines a lambda literal only", c)
+        val lam = arg.anonymousFunction
+        if (lam.invocationKind != EventOccurrencesRange.EXACTLY_ONCE) return unsupported("$name lambda", "the compiler does not prove that the lambda runs exactly once", lam)
+        mark(arg)
+        mark(lam)
+        mark(lam.body)
+        val pos = ctx.posOf(c)
+        val rv = expr(c.extensionReceiver!!) ?: return null
+        val bound = (rv as? Var)?.local ?: temp("it", rv.type, pos).also { out += Let(it, rv, false, pos) }
+        if (name == "let" || name == "also") {
+            lam.valueParameters.firstOrNull()?.let {
+                mark(it)
+                locals[it.symbol] = bound
+            }
+        } else {
+            thisBindings[lam.symbol] = bound
+        }
+        if ((name == "let" || name == "run") && valueUsed) return lambdaValue(lam)
+        lam.body?.statements.orEmpty().forEach(::sectionStatement)
+        return if (name == "also" || name == "apply") Var(bound, pos) else null
+    }
+
+    /** `this` of a run or apply lambda of the section: the receiver it binds. */
+    private val thisBindings = IdentityHashMap<FirBasedSymbol<*>, Local>()
+
+    private fun thisValue(e: FirThisReceiverExpression): Expr? {
+        mark(e)
+        val bound = thisBindings[e.calleeReference.boundSymbol] ?: return unsupported(e::class.simpleName ?: "expression", "this FIR node is not translated in v0", e)
+        return Var(bound, ctx.posOf(e))
+    }
+
+    /** `a ?: b` outside result position: `?:` if b has no effect, else a mutable local set in both branches. */
+    private fun sectionElvis(e: FirElvisExpression): Expr? {
+        mark(e)
+        val pos = ctx.posOf(e)
+        val a = expr(e.lhs) ?: return null
+        val before = ran
+        var b: Expr? = null
+        val effects = collect { b = expr(e.rhs) }
+        val rhs = b ?: return null
+        if (effects.isEmpty()) return Elvis(a, rhs, pos)
+        val t = temp("value", nullable(rhs.type) ?: rhs.type, pos)
+        out += Let(t, NullLit(t.type, pos), true, pos)
+        out += If(Cmp(CmpOp.NE, a, NullLit(nullable(a.type) ?: a.type, pos), pos), listOf(Assign(t, a, pos)), effects + Assign(t, rhs, pos), pos)
+        ran = ran || before
+        return Var(t, pos)
+    }
+
+    /** `e!!` outside result position: raises on null; the statements after it move into the else branch. */
+    private fun sectionNotNull(e: FirCheckNotNullCall): Expr? {
+        mark(e)
+        val pos = ctx.posOf(e)
+        val a = expr(e.arguments.single()) ?: return null
+        out += If(Cmp(CmpOp.EQ, a, NullLit(nullable(a.type) ?: a.type, pos), pos), listOf(Raise(pos)), emptyList(), pos)
+        return a
+    }
+
+    /**
+     * Moves the statements after an `if` whose one branch ends (Exit, Return or Raise on every path) into its other
+     * branch (DESIGN-B.md 2.7 rule 2, the normalization of DESIGN-v0.md 2.4 rule 4), so that each path ends once.
+     */
+    private fun normalize(stmts: List<Stmt>): List<Stmt> {
+        for ((i, s) in stmts.withIndex()) {
+            if (s !is If) continue
+            val inner = s.copy(then = normalize(s.then), els = normalize(s.els))
+            val rest = stmts.subList(i + 1, stmts.size)
+            val t = ends(inner.then)
+            val e = ends(inner.els)
+            if (rest.isEmpty() || t == e) return stmts.subList(0, i) + inner + normalize(rest)
+            val moved = if (t) inner.copy(els = normalize(inner.els + rest)) else inner.copy(then = normalize(inner.then + rest))
+            return stmts.subList(0, i) + moved
+        }
+        return stmts
+    }
+
+    private fun ends(block: List<Stmt>): Boolean =
+        when (val last = block.lastOrNull()) {
+            is Exit, is Return, is Raise -> true
+            is If -> ends(last.then) && ends(last.els)
+            else -> false
+        }
+
     private fun where(p: Pos) = "${p.file.substringAfterLast('/')}:${p.line}:${p.col}"
 
     private fun nameOf(sym: FirBasedSymbol<*>): String = (sym as? FirCallableSymbol<*>)?.name?.asString() ?: "value"
@@ -1253,5 +1925,8 @@ internal class ActionLowering(
 
     private companion object {
         val COMPARISONS = mapOf(FirOperation.LT to CmpOp.LT, FirOperation.LT_EQ to CmpOp.LE, FirOperation.GT to CmpOp.GT, FirOperation.GT_EQ to CmpOp.GE)
+
+        /** The stdlib scope functions the section inlines (DESIGN-B.md 2.6 rule 2). */
+        val SCOPE_FUNCTIONS = setOf("let", "also", "run", "apply")
     }
 }

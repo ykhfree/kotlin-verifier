@@ -177,7 +177,7 @@ class AuditTest {
         val sweep = m.operations.single { it.name == "sweep" }
         assertEquals(listOf("Key", "Key", "Key"), listOf(tryLock, unLock, sweep).map { (it.action.key.local.type as kv.kvir.KType.Abs).name })
         assertEquals(kv.kvir.KType.Abs("Token", true), tryLock.cells.single().local.type)
-        assertEquals(kv.kvir.KType.Abs("Token", true), tryLock.result!!.local.type)
+        assertEquals(kv.kvir.KType.Abs("Token", true), tryLock.result!!.type)
         assertEquals(kv.kvir.KType.Abs("Token", false), unLock.action.free.single { it.sidecarName == "t" }.local.type)
         assertEquals(kv.kvir.KType.Abs("Token", true), m.classes.single().fields.single { it.name == "token" }.type)
     }
