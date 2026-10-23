@@ -1064,7 +1064,9 @@ L3 연결 자리 (v0에서는 구현하지 않음):
 | ID | 결정 |
 |---|---|
 | U3, U4, U5, U6 | 문서 권고대로 정한다: unsupported action이 있으면 INCOMPLETE, `MI_OWN`은 도구가 만든다, 전용 DSL, v0에서 자유 형식 `requires` 금지 |
-| U1, U2, U7 | 사용자에게 묻는다 (권한 절 검토가 제품의 모양이 되는지, compute 2개 함수를 v0 범위 밖으로 두는지, `reviewed` 정책) |
+| U1 | 사용자 결정: (c)를 채택한다. 프로토콜마다 사람이 권한 절(`ends_only_if`, `unbacked_only_if`)을 검토하는 것을 제품의 모양으로 받아들인다 |
+| U2 | 사용자 결정: 한 연산에 compute가 둘 이상이면 v0에서 UNSUPPORTED다. 확인 후 삽입 경쟁은 "action 밖 경쟁 읽기 + compute 1개" 형태만 다룬다 |
+| U7 | 사용자 결정: LLM 초안의 권한 절과 `issue` 규칙은 사람이 `reviewed`를 붙여야 채택한다 |
 | J1 | `spike/effect_ghost/`를 커밋한다 |
 | J2 | M9(분기 도달성 보고)를 v0에 넣는다. SB5가 왜 증명되는지 설명할 근거다 |
 | J3 | Silicon 1회 실행이 기본, 메서드별 실행은 옵션 |
