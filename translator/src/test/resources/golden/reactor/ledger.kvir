@@ -1,0 +1,49 @@
+ledger: 460 FIR nodes, 247 in the ledger, 213 translated
+  0-5 not-modeled property log                                    @36:1
+  6 not-modeled class KeyLocalLock                                @38:1
+  7-9 not-modeled constructor of KeyLocalLock                     @38:19
+  10-11 free-source property lockTimeoutMillis                    @39:5
+  12 structure class LockInfo                                     @45:5
+  13-21 structure constructor of LockInfo                         @45:27
+  22-23 structure field permits: property semaphore               @46:9
+  24-25 structure field expiresAt: property expiresAt             @51:9
+  26-27 structure field isHeld: property isHeld                   @58:9
+  28-29 structure field token: property token                     @66:9
+  30 structure module object Companion                            @69:5
+  31-32 not-modeled constructor of Companion                      @69:5
+  33-34 structure state m: property lockMap                       @70:9
+  35-37 structure state seq: property tokenSequence               @74:9
+  38-39 not-modeled property monitoringStarted                    @76:9
+  40-41 not-modeled property monitorDisposable                    @79:9
+  42-44 not-modeled property consecutiveFailures                  @83:9
+  53-97 not-modeled fun startMonitoringOnce                       @87:9
+  98-100 free-source val now = System.currentTimeMillis()         @98:37
+  101 not-modeled fun startMonitoringOnce                         @87:9
+  102-104 racy-read lockMap.keys                                  @104:37
+  105-106 not-modeled fun startMonitoringOnce                     @87:9
+  107 free-source param key                                       @104:60
+  108 not-modeled fun startMonitoringOnce                         @87:9
+  112 free-source key of sweep#105: key                           @105:57
+  157-212 not-modeled fun startMonitoringOnce                     @87:9
+  213-236 not-modeled fun stopMonitoring                          @144:9
+  237-240 not-modeled init                                        @154:5
+  241-251 not-modeled fun tryLock                                 @158:5
+  252-256 free-source val completeKey = completeKey(key, lockType) @163:13
+  257-258 free-source val now = nowToEpochTime()                  @164:13
+  259-261 cell val acquiredToken = AtomicReference<String?>(null) @166:13
+  265 free-source key of tryLock#170: completeKey                 @170:29
+  375 cell acquiredToken.get()                                    @212:13 fake=FromLastStatement
+  376-377 cell acquiredToken.get()                                @212:13
+  378-380 not-modeled fun unLock                                  @215:5
+  381 free-source param token                                     @218:9
+  382-389 not-modeled fun unLock                                  @215:5
+  390-394 free-source val completeKey = completeKey(key, lockType) @221:13
+  395-397 cell val released = AtomicBoolean(false)                @222:13
+  401 free-source key of unLock#227: completeKey                  @227:29
+  445 cell released.get()                                         @242:13 fake=FromLastStatement
+  446-447 cell released.get()                                     @242:13
+  448-459 not-modeled fun completeKey                             @245:5
+diagnostics
+  A85 ASSUMPTION Long unbounded: tokenSequence.incrementAndGet()  @85:52
+  A186 ASSUMPTION Long unbounded: now + lockTimeoutMillis         @186:46
+  A203 ASSUMPTION Long unbounded: now + lockTimeoutMillis         @203:58

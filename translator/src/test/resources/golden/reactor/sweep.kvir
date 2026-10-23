@@ -1,0 +1,19 @@
+operation sweep = compute in KeyLocalLock.Companion               @87:9
+  action sweep#105 = lockMap.compute                              @105:41
+    key   k: Key <- key (action key @105:57)                      @104:60
+    entry lockInfo__105: LockInfo?                                @105:67
+    free  now: Int <- now (captured @98:37)                       @98:37
+    translates FIR nodes 109-111,113-156
+    body
+      if lockInfo__105 == null                                    @106:45
+        exit remove                                               @106:67
+      else
+        if now > lockInfo__105.expiresAt                          @108:45
+          cond_112_53 := jdk.AtomicBoolean.compareAndSet(lockInfo__105.isHeld, true, false) @112:53
+          if cond_112_53                                          @112:49
+            jdk.Semaphore.release(lockInfo__105.permits)          @113:53
+          lockInfo__105.token := null                             @115:49
+          exit remove                                             @116:49
+        else
+          exit keep                                               @118:49
+    commit (empty)

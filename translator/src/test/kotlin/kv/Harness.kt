@@ -39,6 +39,7 @@ object ReqShield {
     val kotlincArgs: List<String> = System.getProperty("kv.reqShieldKotlincArgs").split(" ")
     val coroutineDir = File(dir, "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine")
     val coreDir = File(dir, "core/src/main/kotlin/com/linecorp/cse/reqshield")
+    val reactorDir = File(dir, "core-reactor/src/main/kotlin/com/linecorp/cse/reqshield/reactor")
 
     /** The files a variant compiles: KeyLock.kt declares the interface KeyLocalLock.kt implements. */
     fun sources(variantDir: File) = listOf(File(variantDir, "KeyLock.kt"), File(variantDir, "KeyLocalLock.kt"))

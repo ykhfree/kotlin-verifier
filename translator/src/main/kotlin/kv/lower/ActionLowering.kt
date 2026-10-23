@@ -56,6 +56,7 @@ import org.jetbrains.kotlin.contracts.description.LogicOperationKind
 import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.declarations.FirAnonymousFunction
+import org.jetbrains.kotlin.fir.declarations.FirFunction
 import org.jetbrains.kotlin.fir.declarations.FirNamedFunction
 import org.jetbrains.kotlin.fir.declarations.FirProperty
 import org.jetbrains.kotlin.fir.declarations.FirRegularClass
@@ -296,7 +297,7 @@ internal class ActionLowering(
                 entry = declare(entryParam.symbol, entryParam.name.asString().takeUnless { it.startsWith("<") } ?: "entry", KType.RefT(map.valueClass, true), ctx.posOf(entryParam))
                 seq(lambda.body?.statements.orEmpty(), resultLast = true)
             }
-        val result = operationResult()
+        val result = operationResult(operationScope())
         namedFreeValues()
         if (problems.isNotEmpty()) {
             markAll(lambda)
@@ -884,9 +885,10 @@ internal class ActionLowering(
     private fun useCheck(
         entry: Entry,
         c: FirFunctionCall,
+        inAction: Boolean = true,
     ): Boolean {
         if (entry.model in ctx.uses) return true
-        unsupported("trusted model ${entry.model}", "the call needs model ${entry.model}, which the sidecar does not `use`", c)
+        unsupported("trusted model ${entry.model}", "the call needs model ${entry.model}, which the sidecar does not `use`", c, inAction)
         return false
     }
 
@@ -910,6 +912,7 @@ internal class ActionLowering(
                 out += Nondet(listOf(n), first.model, pos)
                 Var(n, pos)
             }
+            Role.OPERATION_BODY -> unsupported("${first.model} inside an action", "a Mono.fromCallable lambda is the body of an operation function, not a value inside an action (DESIGN-v0.md 8.3)", c)
             Role.NO_EFFECT -> {
                 if (!useCheck(first, c)) return null
                 markAll(c.dispatchReceiver)
@@ -1110,8 +1113,78 @@ internal class ActionLowering(
 
     // ---- the operation ----
 
-    /** The operation result (W10): the function's one final `return` of a cell `get` or a constant. */
-    private fun operationResult(): OpResult? {
+    /**
+     * Where a `fun` operation holds its action (DESIGN-v0.md 8.3, model reactor.Mono.fromCallable): the function, if
+     * the compute call is directly in it; or the lambda of `Mono.fromCallable`, if that call is the whole function
+     * body (an expression body or a single return) and its lambda holds the compute call directly. Every other shape
+     * is UNSUPPORTED: any other lambda around the compute call, a second or nested fromCallable, a fromCallable
+     * without the compute call, and a chained call on the Mono. Null for an operation selected by `compute in`, for
+     * a stray action, and after a report.
+     */
+    private fun operationScope(): FirFunction? {
+        val fn = found.inFunction
+        if (op?.selector !is Selector.Fun || fn == null) return null
+
+        // The shape is outside the action: its nodes stay in the ledger.
+        fun fail(
+            what: String,
+            reason: String,
+            e: FirElement,
+        ): FirFunction? = unsupported(what, reason, e, inAction = false)
+
+        val shape = "v0 reads a fun operation from its body, or from the lambda of the one Mono.fromCallable that is its whole body (DESIGN-v0.md 8.3)"
+        // fromCallable calls inside the action are reported by the action lowering.
+        val action = ctx.index.subtree(call).toSet()
+        val bodies =
+            ctx.index.subtree(fn).filter { it !in action }.map { ctx.index.nodes[it] }.filterIsInstance<FirFunctionCall>()
+                .filter { c -> ctx.entriesOf(c).any { it.role == Role.OPERATION_BODY } }
+        val lambdas = found.scopes.drop(found.scopes.indexOf(fn) + 1)
+        if (lambdas.isEmpty()) {
+            val other = bodies.firstOrNull() ?: return fn
+            return fail("Mono.fromCallable without the action", "its lambda holds no compute call; the action of ${fn.name} is outside it (DESIGN-v0.md 8.3)", other)
+        }
+        for ((i, lambda) in lambdas.withIndex()) {
+            val holder = callOf(lambda)
+            val isBody = holder != null && bodies.any { it === holder }
+            if (i == 0 && isBody) continue
+            val what =
+                when {
+                    isBody -> "nested Mono.fromCallable"
+                    holder != null -> "compute inside the lambda of ${describe(ctx.calleeOf(holder))}"
+                    else -> "compute inside a lambda"
+                }
+            return fail(what, shape, holder ?: lambda)
+        }
+        val fc = callOf(lambdas.first())!!
+        bodies.firstOrNull { it !== fc }?.let { return fail("second Mono.fromCallable", "an operation function holds one Mono.fromCallable, whose lambda is the operation body (DESIGN-v0.md 8.3)", it) }
+        val whole = (fn.body?.statements?.singleOrNull() as? FirReturnExpression)?.takeIf { it.target.labeledElement === fn }?.result?.let(::unwrap)
+        if (whole !== fc) {
+            val chained = ctx.index.subtree(fn).map { ctx.index.nodes[it] }.filterIsInstance<FirQualifiedAccessExpression>().firstOrNull { unwrap(it.explicitReceiver) === fc }
+            if (chained != null) {
+                return fail(
+                    "chained call ${ctx.calleeOf(chained)?.name ?: sourceText(chained)} on Mono.fromCallable",
+                    "the model covers a Mono.fromCallable that is the whole body of ${fn.name}; an operator on the Mono changes when and how often the lambda runs (DESIGN-v0.md 8.3)",
+                    chained.calleeReference,
+                )
+            }
+            return fail("Mono.fromCallable that is not the whole body", "v0 accepts Mono.fromCallable only as the whole body of ${fn.name}: an expression body or a single return (DESIGN-v0.md 8.3)", fc)
+        }
+        if (!useCheck(ctx.entriesOf(fc).first { it.role == Role.OPERATION_BODY }, fc, inAction = false)) return null
+        return lambdas.first()
+    }
+
+    /** The call that takes [lambda] as an argument, or null. */
+    private fun callOf(lambda: FirFunction): FirFunctionCall? {
+        var x = ctx.index.parent(lambda)
+        while (x != null && x !is FirFunctionCall && x !is FirFunction) x = ctx.index.parent(x)
+        return x as? FirFunctionCall
+    }
+
+    /**
+     * The operation result (W10): the one final `return` of a cell `get` or a constant in [scope], which is the
+     * operation function or its Mono.fromCallable lambda (whose last expression is a return; DESIGN-v0.md 8.3).
+     */
+    private fun operationResult(scope: FirFunction?): OpResult? {
         val item = op?.result ?: return null
         val fn = found.inFunction
 
@@ -1122,17 +1195,20 @@ internal class ActionLowering(
         ): Nothing? = unsupported("operation result", reason, e, inAction = false)
 
         if (op.selector !is Selector.Fun || fn == null) return fail("an operation selected by 'compute in' has no function result", call)
+        // An operation shape v0 does not read is reported by operationScope.
+        scope ?: return null
+        val name = if (scope === fn) fn.name.asString() else "the Mono.fromCallable lambda of ${fn.name}"
         val returns = mutableListOf<FirReturnExpression>()
-        fn.body?.accept(
+        scope.body?.accept(
             object : FirVisitorVoid() {
                 override fun visitElement(element: FirElement) {
-                    if (element is FirReturnExpression && element.target.labeledElement === fn) returns += element
+                    if (element is FirReturnExpression && element.target.labeledElement === scope) returns += element
                     element.acceptChildren(this)
                 }
             },
         )
-        val r = returns.singleOrNull() ?: return fail("v0 reads the result from exactly one return; ${fn.name} has ${returns.size}", fn)
-        if (fn.body?.statements?.lastOrNull() !== r) return fail("the return is not the last statement of ${fn.name}", r)
+        val r = returns.singleOrNull() ?: return fail("v0 reads the result from exactly one return; $name has ${returns.size}", scope)
+        if (scope.body?.statements?.lastOrNull() !== r) return fail("the return is not the last statement of $name", r)
         val e = unwrap(r.result)!!
         val pos = ctx.posOf(e)
         val v: Expr =

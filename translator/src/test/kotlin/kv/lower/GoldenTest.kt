@@ -16,9 +16,9 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * M3 acceptance 1 (DESIGN-v0.md section 7): the KVIR of both KeyLocalLock variants x 3 actions equals the reviewed
- * golden files (golden/README.md maps each one to spike/effect_ghost/target.vpr), and every lowered module passes
- * W1-W14. The ledger part of each module is a golden file too (M4).
+ * M3 acceptance 1 (DESIGN-v0.md section 7): the KVIR of the three KeyLocalLock variants x 3 actions equals the
+ * reviewed golden files (golden/README.md maps each one to spike/effect_ghost/target.vpr or its variant), and every
+ * lowered module passes W1-W14. The ledger part of each module is a golden file too (M4).
  */
 class GoldenTest {
     private val specDir = File(System.getProperty("kv.specDir"), "reqshield")
@@ -69,8 +69,17 @@ class GoldenTest {
     fun `core sweep`() = assertAction("core", "sweep")
 
     @Test
-    fun `both modules are complete, with no stray action, and their ledgers match the golden files`() {
-        for (variant in listOf("coroutine", "core")) {
+    fun `reactor tryLock`() = assertAction("reactor", "tryLock")
+
+    @Test
+    fun `reactor unLock`() = assertAction("reactor", "unLock")
+
+    @Test
+    fun `reactor sweep`() = assertAction("reactor", "sweep")
+
+    @Test
+    fun `the three modules are complete, with no stray action, and their ledgers match the golden files`() {
+        for (variant in listOf("coroutine", "core", "reactor")) {
             val m = lower(variant)
             assertTrue(!m.incomplete, variant)
             assertEquals(emptyList(), m.strayActions, variant)

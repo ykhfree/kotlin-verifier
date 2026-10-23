@@ -337,7 +337,8 @@ internal class ModuleContext(
     /**
      * Why local [sym] is not a cell of the action [found], or null if it is one: a local `val` initialized with
      * `AtomicReference(c)` or `AtomicBoolean(c)` for a constant c, whose every use is the receiver of `set` or `get`,
-     * whose `set` calls are inside the action, and that no other lambda captures.
+     * whose `set` calls are inside the action, and that no lambda captures except the action's. The function or
+     * lambda that declares the cell (a Mono.fromCallable lambda, DESIGN-v0.md 8.3) reads it directly.
      */
     fun cellProblem(
         sym: FirBasedSymbol<*>,
@@ -356,7 +357,7 @@ internal class ModuleContext(
             val op = call?.takeIf { it.dispatchReceiver === read }?.let { c -> entriesOf(c).find { it.model == TrustedModels.CELL && it.role == Role.OP } }
             if (op == null) return Problem("cell $name escapes: it is used other than as the receiver of set or get", posOf(read))
             val lambda = enclosing(read) { it is FirAnonymousFunction || it === function }
-            if (lambda is FirAnonymousFunction && lambda !== found.lambda) return Problem("cell $name escapes: another lambda captures it", posOf(read))
+            if (lambda is FirAnonymousFunction && lambda !== found.lambda && lambda !== function) return Problem("cell $name escapes: another lambda captures it", posOf(read))
             if (op.name == "set" && lambda !== found.lambda) return Problem("cell $name is set outside the action", posOf(call))
         }
         return null

@@ -1,0 +1,22 @@
+operation unLock = fun KeyLocalLock.unLock                        @215:5
+  cell   released__222: Bool := false                             @222:13
+  result res: Bool := released__222                               @242:13
+  action unLock#227 = lockMap.compute                             @227:13
+    key   k: Key <- completeKey (action key @227:29)              @221:13
+    entry existing__227: LockInfo?                                @227:47
+    free  t: Token <- token (captured @218:9)                     @218:9
+    translates FIR nodes 398-400,402-444
+    body
+      if existing__227 == null                                    @228:17
+        exit remove                                               @228:39
+      else
+        var cond_230_21: Bool := false                            @230:21
+        if existing__227.token == t                               @230:21
+          cond_230_21 := jdk.AtomicBoolean.compareAndSet(existing__227.isHeld, true, false) @230:48
+        if cond_230_21                                            @230:17
+          jdk.Semaphore.release(existing__227.permits)            @231:21
+          released__222 := true                                   @232:21
+          exit remove                                             @236:21
+        else
+          exit keep                                               @240:17
+    commit (empty)

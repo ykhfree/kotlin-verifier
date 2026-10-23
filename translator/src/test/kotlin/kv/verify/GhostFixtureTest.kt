@@ -72,7 +72,7 @@ class GhostFixtureTest {
     fun `3 - the generated HIST is the HIST of the target models`() {
         val expected = File(dir, "target-hist.vpr").apply { writeText(hist(File(spikeDir, "effect_ghost/target.vpr").readText())) }
         assertTrue(expected.readText().startsWith("define HIST ("), expected.readText())
-        for (variant in listOf("coroutine", "core")) {
+        for (variant in listOf("coroutine", "core", "reactor")) {
             val (m, s) = lowerReqShield(variant)
             val actual = File(dir, "$variant-hist.vpr").apply { writeText(hist(emitBound(m, s).text)) }
             val (code, out) = normalize(expected, actual)

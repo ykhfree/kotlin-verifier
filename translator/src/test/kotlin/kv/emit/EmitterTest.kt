@@ -84,8 +84,8 @@ class EmitterTest {
     }
 
     @Test
-    fun `init ensures one initial value per state field, in both variants`() {
-        for (variant in listOf("coroutine", "core")) {
+    fun `init ensures one initial value per state field, in the three variants`() {
+        for (variant in listOf("coroutine", "core", "reactor")) {
             val init = emit(variant).text.substringAfter("method init() returns (S: Ref)").substringBefore("{")
             assertEquals(listOf("ensures MI(S)", "ensures S.m == Map[Key, Ref]()", "ensures S.seq == 0"), init.lines().map { it.trim() }.filter { it.isNotEmpty() }, variant)
         }

@@ -28,8 +28,8 @@ fun python(vararg args: String): Pair<Int, String> {
 
 /**
  * M5 acceptance 2 (DESIGN-v0.md section 7, gate of 8.3): the generated models are the hand-written target models up
- * to comments, layout and the names of position-suffixed locals. The core target is CORE_variant.vpr, which
- * spike/effect_ghost/mutants.py writes.
+ * to comments, layout and the names of position-suffixed locals. The core and reactor targets are CORE_variant.vpr
+ * and REACTOR_variant.vpr, which spike/effect_ghost/mutants.py writes (8.3 "reactor gate").
  */
 class GateTest {
     @TempDir
@@ -46,12 +46,23 @@ class GateTest {
         assertEquals(0, code, out)
     }
 
-    @Test
-    fun `the generated core model is CORE_variant_vpr`() {
+    /** The target models that spike/effect_ghost/mutants.py writes to a temp directory. */
+    private fun targets(): File {
         val targets = File(dir, "targets")
         val (made, list) = python(File(spikeDir, "effect_ghost/mutants.py").path, targets.path)
         assertEquals(0, made, list)
-        val (code, out) = normalize(File(targets, "CORE_variant.vpr"), generated("core"))
+        return targets
+    }
+
+    @Test
+    fun `the generated core model is CORE_variant_vpr`() {
+        val (code, out) = normalize(File(targets(), "CORE_variant.vpr"), generated("core"))
+        assertEquals(0, code, out)
+    }
+
+    @Test
+    fun `the generated reactor model is REACTOR_variant_vpr`() {
+        val (code, out) = normalize(File(targets(), "REACTOR_variant.vpr"), generated("reactor"))
         assertEquals(0, code, out)
     }
 }

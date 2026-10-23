@@ -29,8 +29,8 @@ class CheckTest {
     private fun lineOf(fragment: String) = File(dir, "keylocallock.common.kv").readLines().indexOfFirst { fragment in it } + 1
 
     @Test
-    fun `both KeyLocalLock specs pass the checks`() {
-        for (variant in listOf("coroutine", "core")) {
+    fun `the three KeyLocalLock specs pass the checks`() {
+        for (variant in listOf("coroutine", "core", "reactor")) {
             assertEquals(emptyList(), checkSidecar(SidecarLoader.load(File(specDir, "keylocallock.$variant.kv"))), variant)
         }
     }

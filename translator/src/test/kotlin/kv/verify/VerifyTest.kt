@@ -29,8 +29,8 @@ class VerifyTest {
     private fun Report.findings(label: String) = row(label).findings
 
     @Test
-    fun `1 - both generated models verify within the budget`() {
-        for (variant in listOf("coroutine", "core")) {
+    fun `1 - the three generated models verify within the budget, and the reactor report names the fromCallable model`() {
+        for (variant in listOf("coroutine", "core", "reactor")) {
             val r = ws.verify(variant)
             val text = r.render()
             assertEquals(ModuleVerdict.PROVEN, r.verdict, text)
@@ -38,6 +38,10 @@ class VerifyTest {
             assertEquals(listOf(Verdict.PROVEN), r.rows.map { it.verdict }.distinct(), text)
             assertTrue(r.seconds!! < SiliconBudget().wallSeconds, text)
             assertTrue("module: PROVEN" in text.lines().first(), text)
+            // DESIGN-v0.md 8.3: the trusted model of the reactor operation bodies is listed for review.
+            val models = text.lines().single { it.startsWith("  Trusted models: ") }.removePrefix("  Trusted models: ").split(", ")
+            assertEquals(variant == "reactor", "reactor.Mono.fromCallable" in models, text)
+            assertTrue("jdk.ConcurrentHashMap.compute" in models, text)
         }
     }
 

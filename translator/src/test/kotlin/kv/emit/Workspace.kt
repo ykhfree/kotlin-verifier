@@ -24,6 +24,7 @@ val variantDirs =
     mapOf(
         "coroutine" to "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine",
         "core" to "core/src/main/kotlin/com/linecorp/cse/reqshield",
+        "reactor" to "core-reactor/src/main/kotlin/com/linecorp/cse/reqshield/reactor",
     )
 
 /**

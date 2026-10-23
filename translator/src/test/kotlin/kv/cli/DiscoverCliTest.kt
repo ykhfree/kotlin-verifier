@@ -64,6 +64,16 @@ class DiscoverCliTest {
     }
 
     @Test
+    fun `finds the three compute sites of the reactor variant`() {
+        val run = discover(ReqShield.reactorDir)
+        assertEquals(0, run.exit, run.err)
+        assertEquals(
+            listOf("105:41 Companion.startMonitoringOnce", "170:13 KeyLocalLock.tryLock", "227:13 KeyLocalLock.unLock"),
+            sites(run.out),
+        )
+    }
+
+    @Test
     fun `fails with the compiler messages when the sources do not compile`() {
         // Without the req-shield classpath, KeyLocalLock.kt cannot resolve support and slf4j.
         val run = kv("discover", "--classpath", Harness.stdlib.path, *ReqShield.sources(ReqShield.coroutineDir).map { it.path }.toTypedArray())

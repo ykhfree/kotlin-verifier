@@ -49,6 +49,11 @@ class AuditTest {
     }
 
     @Test
+    fun `the racy read of reactor KeyLocalLock is the keys read of its sweep`() {
+        assertEquals(listOf("lockMap.keys 104:37"), racyReads(keyLocalLock("reactor")))
+    }
+
+    @Test
     fun `a racy read that a captured local holds is that free value's origin (E4 shape)`() {
         val f = LockFixture("if (sawEntry && e != null) e.expiresAt = now\ne", before = "        val sawEntry = lockMap.containsKey(key)")
         val m = f.lower(dir)

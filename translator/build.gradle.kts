@@ -16,7 +16,7 @@ val kotlinCompilerVersion = "2.4.21"
 // req-shield checkout that holds the KeyLocalLock sources. Read only.
 val reqShieldDir = providers.gradleProperty("reqShieldDir").getOrElse("/Users/ykhfree/IdeaProjects/req-shield")
 
-// Compile classpath of req-shield's core and core-kotlin-coroutine modules, with the versions from
+// Compile classpath of req-shield's core, core-kotlin-coroutine and core-reactor modules, with the versions from
 // req-shield's libs.versions.toml. KeyLocalLock needs nothing else.
 val reqShieldClasspath: Configuration by configurations.creating
 
@@ -31,6 +31,7 @@ dependencies {
     reqShieldClasspath("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
     reqShieldClasspath("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.1")
     reqShieldClasspath("org.slf4j:slf4j-api:1.7.36")
+    reqShieldClasspath("io.projectreactor:reactor-core:3.7.19")
     reqShieldClasspath(files("$reqShieldDir/support/build/libs/support-1.0.0.jar"))
 }
 
@@ -55,27 +56,27 @@ tasks.test {
 }
 
 // `./gradlew discoverReqShield`, `resolveReqShield`, `lowerReqShield`, `emitReqShield` and `verifyReqShield`: run
-// `kv discover`, `kv resolve`, `kv lower`, `kv emit` and `kv verify` on both KeyLocalLock variants (verify needs
+// `kv discover`, `kv resolve`, `kv lower`, `kv emit` and `kv verify` on the three KeyLocalLock variants (verify needs
 // Silicon: VIPER_HOME or the default install). The sidecar specs live in ../specs/reqshield.
 val discoverReqShield by tasks.registering {
     group = "kv"
-    description = "Lists the ConcurrentHashMap.compute sites of both req-shield KeyLocalLock variants."
+    description = "Lists the ConcurrentHashMap.compute sites of the three req-shield KeyLocalLock variants."
 }
 val resolveReqShield by tasks.registering {
     group = "kv"
-    description = "Binds the names of both KeyLocalLock sidecars to FIR symbols."
+    description = "Binds the names of the three KeyLocalLock sidecars to FIR symbols."
 }
 val lowerReqShield by tasks.registering {
     group = "kv"
-    description = "Prints the KVIR of both KeyLocalLock variants and checks W1-W14."
+    description = "Prints the KVIR of the three KeyLocalLock variants and checks W1-W14."
 }
 val emitReqShield by tasks.registering {
     group = "kv"
-    description = "Writes the Viper programs of both KeyLocalLock variants to build/kv/."
+    description = "Writes the Viper programs of the three KeyLocalLock variants to build/kv/."
 }
 val verifyReqShield by tasks.registering {
     group = "kv"
-    description = "Verifies both KeyLocalLock variants with Silicon and prints the reports."
+    description = "Verifies the three KeyLocalLock variants with Silicon and prints the reports."
 }
 
 /** Runs the kv CLI with [args]: the command first, then its arguments after the req-shield classpath and flags. */
@@ -93,6 +94,7 @@ fun JavaExec.kv(vararg args: String) {
 for ((variant, dir) in listOf(
     "Coroutine" to "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine",
     "Core" to "core/src/main/kotlin/com/linecorp/cse/reqshield",
+    "Reactor" to "core-reactor/src/main/kotlin/com/linecorp/cse/reqshield/reactor",
 )) {
     val sidecar = layout.projectDirectory.file("../specs/reqshield/keylocallock.${variant.lowercase()}.kv").asFile.path
     val discover = tasks.register<JavaExec>("discover$variant") { kv("discover", "$reqShieldDir/$dir/KeyLock.kt", "$reqShieldDir/$dir/KeyLocalLock.kt") }
