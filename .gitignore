@@ -12,3 +12,5 @@ spike/effect_ghost/mutants.list
 translator/.gradle/
 translator/.kotlin/
 translator/build/
+spike/aspect/mutants/
+spike/aspect/mutants.list
