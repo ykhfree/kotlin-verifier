@@ -24,6 +24,8 @@ import kv.sidecar.Sidecar
 import kv.sidecar.SidecarError
 import kv.sidecar.SidecarException
 import java.io.File
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 enum class Verdict { PROVEN, FAILED, UNSUPPORTED, ERROR }
 
@@ -79,6 +81,8 @@ data class Report(
     val sidecarErrors: List<SidecarError>,
     val warnings: List<String>,
     val seconds: Double?,
+    /** The branch reachability check (M9, INFO only); null if it did not run. */
+    val reach: Reachability? = null,
 )
 
 /**
@@ -212,6 +216,16 @@ fun Report.render(): String {
             module.diagnostics.filter { it.kind == DiagnosticKind.UNSUPPORTED }.map { "${it.message} ${at(it.pos)}" } +
             module.ledger.filter { it.kind == DispositionKind.UNSUPPORTED }.distinctBy { it.what to it.pos }.map { "${it.what} ${it.pos.line}:${it.pos.col}" }
     line("Unsupported: " + unsupported.distinct().joinToString("; ").ifEmpty { "none" })
+    reach?.let { r ->
+        val head = "Branch reachability (INFO, not part of any verdict; DESIGN-v0.md 5.4):"
+        if (r.notChecked != null) {
+            line("$head not checked: ${r.notChecked}")
+        } else {
+            line("$head ${r.probed} branch(es) probed, ${r.unreachable.size} unreachable")
+            r.unreachable.forEach { b -> line("  INFO unreachable branch: ${b.action} ${at(b.pos)} ${b.what}") }
+            r.note?.let { line("  note: $it") }
+        }
+    }
     warnings.forEach { line("Warning: $it") }
     line("Note: init and probe do not check inductiveness; the action methods do (DESIGN-v0.md 5.4).")
     return sb.toString()
@@ -241,6 +255,8 @@ private fun Report.specToReview(): String {
 /**
  * Binds the ghost rules, checks W1-W14, emits the program to [vpr], runs Silicon once and reports (DESIGN-v0.md
  * 5.6-5.8). A sidecar the emitter rejects, or a W1-W14 violation (a tool defect), is ERROR without a Silicon run.
+ * Next to it, the branch reachability clone (5.4 item 4, M9) goes to `<vpr>.reach.vpr` and runs at the same time
+ * as a second Silicon process; its result is INFO in the report and changes no verdict.
  */
 fun verify(
     module: Module,
@@ -258,10 +274,20 @@ fun verify(
         } catch (e: SidecarException) {
             return notEmittedReport(module, sidecar, "the sidecar cannot be emitted", e.errors)
         }
+    Silicon.check(home)
     vpr.absoluteFile.parentFile.mkdirs()
     vpr.writeText(emitted.text)
-    val run = Silicon.run(vpr, home, budget)
-    return buildReport(bound, sidecar, emitted, classify(run, budget), run.seconds)
+    val clone = emitViper(bound, sidecar, reach = true)
+    val cloneFile = File(vpr.path.removeSuffix(".vpr") + ".reach.vpr").apply { writeText(clone.text) }
+    val pool = Executors.newSingleThreadExecutor()
+    try {
+        val cloneRun = pool.submit(Callable { Silicon.run(cloneFile, home, budget) })
+        val run = Silicon.run(vpr, home, budget)
+        val reach = reachability(clone, cloneRun.get(), budget)
+        return buildReport(bound, sidecar, emitted, classify(run, budget), run.seconds).copy(reach = reach)
+    } finally {
+        pool.shutdownNow()
+    }
 }
 
 /** The row of [label]. */

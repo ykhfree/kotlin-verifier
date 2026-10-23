@@ -114,13 +114,13 @@ sealed interface SiliconOutcome {
     ) : SiliconOutcome
 }
 
-private val SUCCESS = Regex("""^Silicon finished verification successfully""", RegexOption.MULTILINE)
-private val SUMMARY = Regex("""^Silicon found (\d+) errors?""", RegexOption.MULTILINE)
+internal val SUCCESS = Regex("""^Silicon finished verification successfully""", RegexOption.MULTILINE)
+internal val SUMMARY = Regex("""^Silicon found (\d+) errors?""", RegexOption.MULTILINE)
 // With 10 or more errors, Silicon pads the index: `[ 0]` ... `[ 9]`, `[10]`.
 private val ERROR_LINE = Regex("""^\s*\[\s*(\d+)] (.*)\(([^()@]*)@(\d+)\.(\d+)--(\d+)\.(\d+)\)\s*$""")
 private val REASON = Regex("""^Potential prover incompleteness: (.*)$""")
-private val JAVA_EXCEPTION = Regex("""^(Exception in thread .*|[a-z][\w$]*(\.[\w$]+)+(Exception|Error)\b.*|\s+at [\w$.<>]+\(.*\))$""", RegexOption.MULTILINE)
-private val ABORTED = Regex("""\baborted\b""", RegexOption.IGNORE_CASE)
+internal val JAVA_EXCEPTION = Regex("""^(Exception in thread .*|[a-z][\w$]*(\.[\w$]+)+(Exception|Error)\b.*|\s+at [\w$.<>]+\(.*\))$""", RegexOption.MULTILINE)
+internal val ABORTED = Regex("""\baborted\b""", RegexOption.IGNORE_CASE)
 
 /**
  * The outcome rules of DESIGN-v0.md 5.6: PROVEN only with exit code 0 and the success line. Exit code 1 with the
@@ -150,7 +150,7 @@ fun classify(
     }
 }
 
-private fun parseErrors(output: String): List<SiliconError> {
+internal fun parseErrors(output: String): List<SiliconError> {
     val lines = output.lines()
     val out = mutableListOf<SiliconError>()
     for ((i, l) in lines.withIndex()) {
