@@ -1,6 +1,14 @@
 package kv.emit
 
 import kv.kvir.Action
+import kv.kvir.ActionKey
+import kv.kvir.Captured
+import kv.kvir.ClockRead
+import kv.kvir.InstanceVal
+import kv.kvir.NondetCall
+import kv.kvir.Origin
+import kv.kvir.RacyRead
+import kv.kvir.StateVar
 import kv.kvir.And
 import kv.kvir.Arith
 import kv.kvir.Assign
@@ -18,6 +26,7 @@ import kv.kvir.FieldRead
 import kv.kvir.FieldTarget
 import kv.kvir.FieldWrite
 import kv.kvir.FreeValue
+import kv.kvir.GhostKind
 import kv.kvir.If
 import kv.kvir.IntLit
 import kv.kvir.Issue
@@ -33,6 +42,7 @@ import kv.kvir.NullLit
 import kv.kvir.ObjClass
 import kv.kvir.Operation
 import kv.kvir.Or
+import kv.kvir.Pos
 import kv.kvir.StateTarget
 import kv.kvir.Status
 import kv.kvir.Stmt
@@ -65,6 +75,17 @@ fun emitViper(
     module: Module,
     sidecar: Sidecar,
 ): Emitted = Emitter(module, sidecar).run()
+
+/** What kind of value a free value is, for comments and reports (DESIGN-v0.md 2.12). */
+internal fun Origin.kind(): String =
+    when (this) {
+        is Captured -> "captured"
+        is InstanceVal -> "instance val $property"
+        is ActionKey -> "action key"
+        is ClockRead -> "clock"
+        is NondetCall -> "trusted call $model"
+        is RacyRead -> "racy read"
+    }
 
 private fun fail(
     pos: SPos,
@@ -136,10 +157,10 @@ private class Emitter(
     private val templates = m.types.filter { it.template != null }.map { it.name }.toSet()
     private val ghost = s.ghosts.singleOrNull() ?: fail(anchor, "v0 emits a module with a ghost record (DESIGN-v0.md 3.5)")
     private val issued =
-        ghost.fields.filter { it.kind == kv.kvir.GhostKind.SET_ONCE }.singleOrNull()?.name?.text
+        ghost.fields.filter { it.kind == GhostKind.SET_ONCE }.singleOrNull()?.name?.text
             ?: fail(ghost.pos, "v0 needs exactly one set-once field in the ghost record: the issued flag")
     private val held =
-        ghost.fields.filter { it.kind == kv.kvir.GhostKind.ENDS }.singleOrNull()?.name?.text
+        ghost.fields.filter { it.kind == GhostKind.ENDS }.singleOrNull()?.name?.text
             ?: fail(ghost.pos, "v0 needs exactly one ends field in the ghost record: the held flag")
     private val map: MapVar = m.state.filterIsInstance<MapVar>().singleOrNull() ?: fail(anchor, "v0 emits a module with exactly one state map")
     private val cls: ObjClass =
@@ -157,12 +178,12 @@ private class Emitter(
      * The allowance clauses of 5.2 name it. Null if no issue rule sets one.
      */
     private val backed: String? =
-        m.operations.flatMap { op -> op.action.commit.filterIsInstance<Issue>().flatMap { it.fields.filterValues(::isCarriedResult).keys } }.distinct().let {
+        m.operations.flatMap { op ->
+            op.action.commit.filterIsInstance<Issue>().flatMap { issue -> issue.fields.filterValues { it is Carried && (it.token as? Var)?.local == op.result?.local }.keys }
+        }.distinct().let {
             if (it.size > 1) fail(ghost.pos, "issue rules set different backed fields $it to carried(S, k, result); v0 needs one")
             it.singleOrNull()
         }
-
-    private fun isCarriedResult(e: Expr) = e is Carried && e.key is Var && e.token is Var
 
     fun run(): Emitted {
         header()
@@ -192,9 +213,7 @@ private class Emitter(
             is KType.RefT -> "Ref"
         }
 
-    private fun file(pos: kv.kvir.Pos) = pos.file.substringAfterLast('/')
-
-    private fun at(pos: kv.kvir.Pos) = "@${pos.line}:${pos.col}"
+    private fun at(pos: Pos) = "@${pos.line}:${pos.col}"
 
     private val g get() = ghost.name.text
 
@@ -303,9 +322,9 @@ private class Emitter(
             ghost.fields.map { f ->
                 val x = "$g(qt).${f.name.text}"
                 when (f.kind) {
-                    kv.kvir.GhostKind.SET_ONCE -> x
-                    kv.kvir.GhostKind.FROZEN -> "$x == old($x)"
-                    kv.kvir.GhostKind.ENDS -> "(!old($x) ==> !$x)"
+                    GhostKind.SET_ONCE -> x
+                    GhostKind.FROZEN -> "$x == old($x)"
+                    GhostKind.ENDS -> "(!old($x) ==> !$x)"
                 }
             }
         w.line(parts.joinToString(" && "), indent = 4)
@@ -325,7 +344,7 @@ private class Emitter(
         name: String,
         kind: MethodKind,
         label: String,
-        kotlin: kv.kvir.Pos?,
+        kotlin: Pos?,
         body: () -> Unit,
     ) {
         val start = w.line
@@ -352,7 +371,7 @@ private class Emitter(
         }
     }
 
-    private fun initial(v: kv.kvir.StateVar): String =
+    private fun initial(v: StateVar): String =
         when (v) {
             is MapVar -> "Map[$keyType, Ref]()"
             is CounterVar -> "${v.initial}"
@@ -387,18 +406,7 @@ private class Emitter(
         }
     }
 
-    private fun origin(fv: FreeValue): String {
-        val kind =
-            when (val o = fv.origin) {
-                is kv.kvir.Captured -> "captured"
-                is kv.kvir.InstanceVal -> "instance val ${o.property}"
-                is kv.kvir.ActionKey -> "action key"
-                is kv.kvir.ClockRead -> "clock"
-                is kv.kvir.NondetCall -> "trusted call ${o.model}"
-                is kv.kvir.RacyRead -> "racy read"
-            }
-        return "${fv.local.name} <- ${fv.kotlin} ${at(fv.origin.pos)} ($kind)"
-    }
+    private fun origin(fv: FreeValue): String = "${fv.local.name} <- ${fv.kotlin} ${at(fv.origin.pos)} (${fv.origin.kind()})"
 
     /** `requires`: MI, the trusted contracts of named Nondet values, the type facts of named values (5.2). */
     private fun requires(a: Action) {
@@ -567,8 +575,8 @@ private class Emitter(
             ghost.fields.forEach { f ->
                 val value =
                     when (f.kind) {
-                        kv.kvir.GhostKind.SET_ONCE, kv.kvir.GhostKind.ENDS -> "true"
-                        kv.kvir.GhostKind.FROZEN -> expr(issue.fields.getValue(f.name.text))
+                        GhostKind.SET_ONCE, GhostKind.ENDS -> "true"
+                        GhostKind.FROZEN -> expr(issue.fields.getValue(f.name.text))
                     }
                 w.line("$g($t).${f.name.text} := $value", src, 4)
             }

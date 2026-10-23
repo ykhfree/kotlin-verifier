@@ -4,9 +4,12 @@ import kv.emit.Emitted
 import kv.emit.MethodKind
 import kv.emit.Source
 import kv.emit.emitViper
+import kv.emit.kind
 import kv.emit.posInRange
+import kv.kvir.Action
 import kv.kvir.DiagnosticKind
 import kv.kvir.DispositionKind
+import kv.kvir.FreeValue
 import kv.kvir.Module
 import kv.kvir.Pos
 import kv.kvir.RacyRead
@@ -191,11 +194,10 @@ fun Report.render(): String {
     val longs = module.diagnostics.filter { it.kind == DiagnosticKind.ASSUMPTION }
     line("  Long unbounded: " + longs.joinToString { at(it.pos) }.ifEmpty { "none" })
     line("  Free values:")
-    module.operations.forEach { op ->
-        val a = op.action
-        line("    ${op.name}: " + (listOf(a.key) + a.free).joinToString { fv -> "${fv.local.name} <- ${fv.kotlin} ${fv.local.pos.line}:${fv.local.pos.col} (${origin(fv, fv === a.key)})" })
-    }
-    module.strayActions.forEach { a -> line("    stray ${a.id}: " + (listOf(a.key) + a.free).joinToString { fv -> "${fv.local.name} <- ${fv.kotlin} ${fv.local.pos.line}:${fv.local.pos.col} (${origin(fv, fv === a.key)})" }) }
+    fun freeValues(a: Action) =
+        (listOf(a.key) + a.free).joinToString { fv -> "${fv.local.name} <- ${fv.kotlin} ${fv.local.pos.line}:${fv.local.pos.col} (${origin(fv, fv === a.key)})" }
+    module.operations.forEach { line("    ${it.name}: ${freeValues(it.action)}") }
+    module.strayActions.forEach { line("    stray ${it.id}: ${freeValues(it)}") }
     line("  Trusted models: ${sidecar.uses.joinToString { it.model.text }}")
     line("  Trusted project functions: " + sidecar.trusted.joinToString { "${it.shortName} (reviewed: ${it.reviewed})" }.ifEmpty { "none" })
     line("  Init: the ghost records are allocated by an inhale with no record issued (trusted)")
@@ -220,17 +222,9 @@ fun Report.render(): String {
 private fun label(r: Row) = if (r.kind == MethodKind.STRAY) r.label else "action ${r.label}"
 
 private fun origin(
-    fv: kv.kvir.FreeValue,
+    fv: FreeValue,
     key: Boolean,
-): String =
-    when (val o = fv.origin) {
-        is kv.kvir.Captured -> "captured"
-        is kv.kvir.InstanceVal -> "instance val ${o.property}"
-        is kv.kvir.ActionKey -> "action key"
-        is kv.kvir.ClockRead -> "clock"
-        is kv.kvir.NondetCall -> "trusted contract of ${o.model}"
-        is RacyRead -> "racy read"
-    } + if (fv.sidecarName == null && !key) ", unnamed" else ""
+): String = fv.origin.kind() + if (fv.sidecarName == null && !key) ", unnamed" else ""
 
 /** The allowance clauses and issue rules a person must review (DESIGN-v0.md 3.6), and the defaults stray actions get. */
 private fun Report.specToReview(): String {
