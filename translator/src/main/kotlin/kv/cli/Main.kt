@@ -1,6 +1,6 @@
 package kv.cli
 
-import kv.frontend.ComputeSite
+import kv.frontend.ActionSite
 import kv.frontend.Frontend
 import kv.emit.Emitted
 import kv.emit.emitViper
@@ -23,8 +23,9 @@ import java.io.PrintStream
 import kotlin.system.exitProcess
 
 private const val USAGE = """usage:
-  kv discover [--classpath CP] [--kotlinc "ARGS"] FILE.kt...
-      Compiles the files and lists every ConcurrentHashMap.compute call (one candidate action each).
+  kv discover [--classpath CP] [--kotlinc "ARGS"] FILE.kt|DIR...
+      Compiles the files (a directory means every .kt file under it) and lists every ConcurrentHashMap call that
+      can be an action: compute, computeIfAbsent, putIfAbsent, put, remove, m[k] = v and getOrPut.
   kv resolve --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
       Checks the sidecar, compiles its source files (relative to DIR) and binds its Kotlin names to FIR symbols.
   kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
@@ -91,7 +92,7 @@ private fun discover(
         err.println("kv: discover needs at least one .kt file")
         return 2
     }
-    val result = Frontend.run(options.files, options.classpath, options.kotlincArgs)
+    val result = Frontend.run(options.files.flatMap(::kotlinFiles), options.classpath, options.kotlincArgs)
     if (!result.compiled) {
         err.print(result.messages)
         err.println("kv: compilation failed")
@@ -266,9 +267,12 @@ private fun hole(
     }
 }
 
-private fun format(site: ComputeSite): String {
+/** [f] itself, or every .kt file under the directory [f], sorted by path. */
+private fun kotlinFiles(f: File): List<File> = if (f.isDirectory) f.walk().filter { it.isFile && it.extension == "kt" }.sortedBy { it.path }.toList() else listOf(f)
+
+private fun format(site: ActionSite): String {
     val lambda = site.lambda?.let { "${it.line}:${it.col}" } ?: "none"
-    return "${site.pos} ${site.receiver ?: "?"}.compute class=${site.inClass ?: "-"} fun=${site.inFunction ?: "-"} lambda=$lambda"
+    return "${site.pos} ${site.receiver ?: "?"}.${site.kind.method} class=${site.inClass ?: "-"} fun=${site.inFunction ?: "-"} lambda=$lambda"
 }
 
 private class UsageError(

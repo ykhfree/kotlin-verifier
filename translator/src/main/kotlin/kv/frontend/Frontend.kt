@@ -26,8 +26,8 @@ data class FrontendResult(
     val compiled: Boolean,
     /** Compiler messages (errors and warnings), as kotlinc prints them. */
     val messages: String,
-    /** `ConcurrentHashMap.compute` calls in all compiled sources, in file and source order. */
-    val sites: List<ComputeSite>,
+    /** Map action calls ([MapCall]) in all compiled sources, in file and source order. */
+    val sites: List<ActionSite>,
     /** The sidecar's Kotlin names bound to FIR symbols; null without a sidecar or if no source declares the module. */
     val resolution: Resolution?,
     /** Sidecar names that did not resolve. */
@@ -41,7 +41,7 @@ class FrontendSession(
     /** A sidecar that passed [kv.sidecar.checkSidecar]; null to only discover compute calls. */
     private val sidecar: Sidecar?,
 ) {
-    private val sites = Collections.synchronizedList(mutableListOf<ComputeSite>())
+    private val sites = Collections.synchronizedList(mutableListOf<ActionSite>())
     private val errors = Collections.synchronizedList(mutableListOf<SidecarError>())
 
     @Volatile
@@ -55,8 +55,10 @@ class FrontendSession(
         file: FirFile,
         firSession: FirSession,
     ) {
-        val found = findComputes(file)
-        sites += found.map { it.site }
+        val all = findActions(file)
+        sites += all.map { it.site }
+        // B0: the lowering still takes compute calls only (DESIGN-v0.md 2.2).
+        val found = all.filter { it.kind == MapCall.COMPUTE }
         val module = sidecar?.modules?.single() ?: return
         val moduleClass = findClass(file, module.fqn.text) ?: return
         val resolver = SidecarResolver(sidecar, file, firSession, found, moduleClass)

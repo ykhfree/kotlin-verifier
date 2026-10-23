@@ -1,5 +1,6 @@
 package kv.cli
 
+import kv.Aspects
 import kv.Harness
 import kv.ReqShield
 import java.io.ByteArrayOutputStream
@@ -71,6 +72,39 @@ class DiscoverCliTest {
             listOf("105:41 Companion.startMonitoringOnce", "170:13 KeyLocalLock.tryLock", "227:13 KeyLocalLock.unLock"),
             sites(run.out),
         )
+    }
+
+    /**
+     * DESIGN-B.md 8, B0 acceptance 1: in each Spring aspect module, `kv discover` on the main source root finds the
+     * three computeIfAbsent calls of section 1.1 (reqShieldMap, expressionMap, keyGeneratorMap), all in the aspect file.
+     */
+    @Test
+    fun `finds the three computeIfAbsent calls of each Spring aspect module`() {
+        val expected =
+            mapOf(
+                "core-spring" to listOf("112:9 reqShieldMap getOrCreateReqShield", "237:9 expressionMap getOrParseExpression", "246:16 keyGeneratorMap getOrCreateKeyGenerator"),
+                "webflux" to listOf("125:9 reqShieldMap getOrCreateReqShield", "249:9 expressionMap getOrParseExpression", "258:16 keyGeneratorMap getOrCreateKeyGenerator"),
+                "coroutine" to listOf("196:34 expressionMap getCacheKeyOrDefault", "232:9 reqShieldMap getOrCreateReqShield", "282:16 keyGeneratorMap getOrCreateKeyGenerator"),
+            )
+        for ((module, sites) in expected) {
+            val run =
+                kv(
+                    "discover",
+                    "--classpath", Aspects.classpath.joinToString(File.pathSeparator),
+                    "--kotlinc", ReqShield.kotlincArgs.joinToString(" "),
+                    File(ReqShield.dir, Aspects.roots.getValue(module)).path,
+                )
+            assertEquals(0, run.exit, run.err)
+            val lines = run.out.lines().filter { it.isNotBlank() }
+            assertTrue(lines.all { it.substringBefore(' ').substringBeforeLast(':').substringBeforeLast(':').endsWith(Aspects.aspectFile(module)) }, run.out)
+            val actual =
+                lines.map { line ->
+                    val (pos, call, _, fn) = line.split(" ")
+                    assertEquals("computeIfAbsent", call.substringAfter('.'), line)
+                    "${pos.substringAfter("ReqShieldAspect.kt:")} ${call.substringBefore('.')} ${fn.removePrefix("fun=")}"
+                }
+            assertEquals(sites, actual, module)
+        }
     }
 
     @Test

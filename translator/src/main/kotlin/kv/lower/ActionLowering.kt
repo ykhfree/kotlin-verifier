@@ -1,6 +1,6 @@
 package kv.lower
 
-import kv.frontend.FoundCompute
+import kv.frontend.FoundAction
 import kv.kvir.Action
 import kv.kvir.ActionKey
 import kv.kvir.And
@@ -139,7 +139,7 @@ private val OPERATOR_SYMBOLS = mapOf("times" to "*", "div" to "/", "rem" to "%",
  */
 internal class ActionLowering(
     private val ctx: ModuleContext,
-    private val found: FoundCompute,
+    private val found: FoundAction,
     private val op: OperationDecl?,
     private val id: String,
     private val map: MapVar,

@@ -1,6 +1,6 @@
 package kv.lower
 
-import kv.frontend.FoundCompute
+import kv.frontend.FoundAction
 import kv.kvir.CounterVar
 import kv.kvir.Disposition
 import kv.kvir.DispositionKind
@@ -46,7 +46,7 @@ private enum class Region { KEY_ARG, ACTION, HELPER, OUTSIDE }
  */
 internal class Audit(
     private val ctx: ModuleContext,
-    lowered: List<Pair<FoundCompute, Lowered>>,
+    lowered: List<Pair<FoundAction, Lowered>>,
     /** compute calls that are not actions (their receiver is not a state map), with the reason. */
     private val notActions: Map<FirFunctionCall, String>,
 ) {

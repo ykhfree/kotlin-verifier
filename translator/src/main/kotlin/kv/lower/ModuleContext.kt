@@ -1,6 +1,6 @@
 package kv.lower
 
-import kv.frontend.FoundCompute
+import kv.frontend.FoundAction
 import kv.frontend.Positions
 import kv.frontend.SidecarResolver
 import kv.kvir.AbsType
@@ -342,7 +342,7 @@ internal class ModuleContext(
      */
     fun cellProblem(
         sym: FirBasedSymbol<*>,
-        found: FoundCompute,
+        found: FoundAction,
     ): Problem? {
         val decl = declarations[sym] as? FirProperty ?: return Problem("${sym} is not a local of the module file", posOf(found.call))
         val name = decl.name.asString()
@@ -419,7 +419,7 @@ internal class ModuleContext(
      * compute's key and the template type for a matching template (2.13 rules 1-2). Field types are fixed in init.
      */
     fun collectAbstractions(
-        found: FoundCompute,
+        found: FoundAction,
         keyType: String,
     ) {
         val keyArg = found.call.arguments.firstOrNull() ?: return

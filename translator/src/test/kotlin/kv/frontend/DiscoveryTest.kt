@@ -9,7 +9,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Compiles fixtures in-process and checks which calls discovery reports as `ConcurrentHashMap.compute` sites. */
+/** Compiles fixtures in-process and checks which calls discovery reports as ConcurrentHashMap action sites ([MapCall]). */
 class DiscoveryTest {
     @TempDir
     lateinit var dir: File
@@ -57,7 +57,7 @@ class DiscoveryTest {
     }
 
     @Test
-    fun `ignores compute on other map types and other ConcurrentHashMap methods`() {
+    fun `ignores calls on other map types and the ConcurrentHashMap methods without a model`() {
         val text =
             """
             package fixture
@@ -70,14 +70,87 @@ class DiscoveryTest {
                 chm.computeIfAbsent("c") { 1 }
                 chm.computeIfPresent("d") { _, v -> v }
                 chm.merge("e", 1) { a, b -> a + b }
+                chm.remove("g", 1)
+                view["h"] = 1
                 chm.compute("f") { _, v -> v }
             }
             """.trimIndent()
         val sites = Harness.compile(dir, "Other.kt" to text).sites
-        // Only the last call is ConcurrentHashMap.compute; the MutableMap-typed call resolves to the Kotlin interface.
-        assertEquals(listOf(at(text, "chm.compute(\"f\")")), sites.map { it.pos.line to it.pos.col })
-        assertNull(sites.single().inClass, "a top-level call has no enclosing class")
-        assertEquals("other", sites.single().inFunction)
+        // The MutableMap- and HashMap-typed calls resolve to other classes; computeIfPresent, merge and remove(k, v)
+        // have no model (DESIGN-B.md 2.3); `view["h"] = 1` is `set` on a MutableMap receiver.
+        assertEquals(
+            listOf(at(text, "chm.computeIfAbsent") to MapCall.COMPUTE_IF_ABSENT, at(text, "chm.compute(\"f\")") to MapCall.COMPUTE),
+            sites.map { (it.pos.line to it.pos.col) to it.kind },
+        )
+        assertTrue(sites.all { it.inClass == null }, "a top-level call has no enclosing class")
+        assertTrue(sites.all { it.inFunction == "other" })
+    }
+
+    @Test
+    fun `reports each modeled ConcurrentHashMap call with its kind, receiver and lambda`() {
+        val text =
+            """
+            package fixture
+
+            import java.util.concurrent.ConcurrentHashMap
+
+            class Cache {
+                private val m = ConcurrentHashMap<String, String>()
+
+                fun all(k: String): String? {
+                    m.computeIfAbsent(k) { it + "!" }
+                    m.putIfAbsent(k, "a")
+                    m.put(k, "b")
+                    m[k] = "c"
+                    m.remove(k)
+                    return m.getOrPut(k) { "d" }
+                }
+            }
+            """.trimIndent()
+        val sites = Harness.compile(dir, "Cache.kt" to text).sites
+        assertEquals(
+            listOf(
+                MapCall.COMPUTE_IF_ABSENT to "m.computeIfAbsent",
+                MapCall.PUT_IF_ABSENT to "m.putIfAbsent",
+                MapCall.PUT to "m.put(",
+                MapCall.SET to "m[k] = ",
+                MapCall.REMOVE to "m.remove",
+                MapCall.GET_OR_PUT to "m.getOrPut",
+            ).map { (kind, fragment) -> kind to at(text, fragment) },
+            sites.map { it.kind to (it.pos.line to it.pos.col) },
+        )
+        assertTrue(sites.all { it.receiver == "m" && it.inClass == "fixture.Cache" && it.inFunction == "all" }, sites.toString())
+        // computeIfAbsent takes a SAM-converted lambda, getOrPut a plain Kotlin lambda; the others take none.
+        assertEquals(
+            listOf(at(text, "{ it + "), null, null, null, null, at(text, "{ \"d\" }")),
+            sites.map { s -> s.lambda?.let { it.line to it.col } },
+        )
+    }
+
+    /**
+     * DESIGN-B.md 8, B0 acceptance 3: getOrPut on a ConcurrentHashMap resolves to the `ConcurrentMap` overload, which
+     * is the trusted model (DESIGN-B.md 2.5); the `MutableMap` overload, here on a MutableMap-typed view of the same
+     * map, is not a candidate action.
+     */
+    @Test
+    fun `tells the ConcurrentMap getOrPut overload from the MutableMap one`() {
+        val text =
+            """
+            package fixture
+
+            import java.util.concurrent.ConcurrentHashMap
+
+            object Store {
+                val chm = ConcurrentHashMap<String, Int>()
+                val view: MutableMap<String, Int> = chm
+
+                fun viaConcurrentMap(k: String): Int = chm.getOrPut(k) { 1 }
+
+                fun viaMutableMap(k: String): Int = view.getOrPut(k) { 2 }
+            }
+            """.trimIndent()
+        val sites = Harness.compile(dir, "Store.kt" to text).sites
+        assertEquals(listOf(Triple(MapCall.GET_OR_PUT, "viaConcurrentMap", at(text, "chm.getOrPut"))), sites.map { Triple(it.kind, it.inFunction, it.pos.line to it.pos.col) })
     }
 
     @Test
