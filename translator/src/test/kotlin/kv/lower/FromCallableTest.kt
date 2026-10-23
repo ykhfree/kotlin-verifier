@@ -221,11 +221,16 @@ class FromCallableTest {
         assertTrue("no local 'now' is visible at the compute call at ${f.line("lockMap.compute")}:" in e.message, e.message)
     }
 
-    @Test
-    fun `a sweep inside reactor wrappers binds the fromRunnable local, and the wrappers are not modeled`() {
+    /**
+     * A sweep in the shape of the reactor monitor: `compute in Lock.Companion`, inside Flux.interval, flatMap,
+     * Mono.fromRunnable, forEach, onErrorResume and subscribe, with `free now = local now`. If [outerNow], fun sweep
+     * also declares a `now` that the fromRunnable lambda shadows.
+     */
+    private fun sweepFixture(outerNow: Boolean): LockFixture {
         val sweep =
             """
             |        fun sweep() {
+            |${if (outerNow) "            val now = 0L" else ""}
             |            reactor.core.publisher.Flux.interval(java.time.Duration.ofMillis(10))
             |                .flatMap({
             |                    $MONO.fromRunnable<Unit> {
@@ -241,7 +246,12 @@ class FromCallableTest {
             |        }
             """.trimMargin()
         val ops = LockFixture.DEFAULT_OPERATION + "\noperation sweep = compute in Lock.Companion {\n  free now = local now\n}"
-        val f = LockFixture("e", companion = sweep, operations = ops)
+        return LockFixture("e", companion = sweep, operations = ops)
+    }
+
+    @Test
+    fun `a sweep inside reactor wrappers binds the fromRunnable local, and the wrappers are not modeled`() {
+        val f = sweepFixture(outerNow = false)
         val m = f.lower(dir)
         assertSupported(m)
         val op = m.operations.single { it.name == "sweep" }
@@ -262,6 +272,15 @@ class FromCallableTest {
             constructs.sortedBy { it.toString() },
             m.ledger.joinToString("\n"),
         )
+    }
+
+    @Test
+    fun `free local binds the innermost now, the one the action reads, not a now outside the lambda`() {
+        val f = sweepFixture(outerNow = true)
+        val m = f.lower(dir)
+        assertSupported(m)
+        val free = m.operations.single { it.name == "sweep" }.action.free
+        assertEquals(listOf("now" to f.at("val now = System")), free.map { it.sidecarName to (it.local.pos.line to it.local.pos.col) })
     }
 
     // ---- decision 4: a log call inside an action ----
