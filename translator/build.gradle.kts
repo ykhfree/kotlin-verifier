@@ -50,8 +50,8 @@ tasks.test {
     systemProperty("kv.specDir", rootProject.layout.projectDirectory.dir("../specs").asFile.absolutePath)
 }
 
-// `./gradlew discoverReqShield` and `./gradlew resolveReqShield`: run `kv discover` and `kv resolve` on both
-// KeyLocalLock variants. The sidecar specs live in ../specs/reqshield.
+// `./gradlew discoverReqShield`, `resolveReqShield` and `lowerReqShield`: run `kv discover`, `kv resolve` and
+// `kv lower` on both KeyLocalLock variants. The sidecar specs live in ../specs/reqshield.
 val discoverReqShield by tasks.registering {
     group = "kv"
     description = "Lists the ConcurrentHashMap.compute sites of both req-shield KeyLocalLock variants."
@@ -59,6 +59,10 @@ val discoverReqShield by tasks.registering {
 val resolveReqShield by tasks.registering {
     group = "kv"
     description = "Binds the names of both KeyLocalLock sidecars to FIR symbols."
+}
+val lowerReqShield by tasks.registering {
+    group = "kv"
+    description = "Prints the KVIR of both KeyLocalLock variants and checks W1-W14."
 }
 
 /** Runs the kv CLI with [args]: the command first, then its arguments after the req-shield classpath and flags. */
@@ -80,6 +84,8 @@ for ((variant, dir) in listOf(
     val sidecar = layout.projectDirectory.file("../specs/reqshield/keylocallock.${variant.lowercase()}.kv").asFile.path
     val discover = tasks.register<JavaExec>("discover$variant") { kv("discover", "$reqShieldDir/$dir/KeyLock.kt", "$reqShieldDir/$dir/KeyLocalLock.kt") }
     val resolve = tasks.register<JavaExec>("resolve$variant") { kv("resolve", "--root", reqShieldDir, sidecar) }
+    val lower = tasks.register<JavaExec>("lower$variant") { kv("lower", "--root", reqShieldDir, sidecar) }
     discoverReqShield { dependsOn(discover) }
     resolveReqShield { dependsOn(resolve) }
+    lowerReqShield { dependsOn(lower) }
 }

@@ -1,5 +1,7 @@
 package kv.frontend
 
+import kv.kvir.Module
+import kv.lower.lowerModule
 import kv.sidecar.Sidecar
 import kv.sidecar.SidecarError
 import kv.sidecar.SidecarException
@@ -30,6 +32,8 @@ data class FrontendResult(
     val resolution: Resolution?,
     /** Sidecar names that did not resolve. */
     val sidecarErrors: List<SidecarError>,
+    /** The module in KVIR; null without a resolution or with sidecar errors. */
+    val module: Module?,
 )
 
 /** Input and output of one compiler run. The plugin finds it by id, so it must run in this JVM. */
@@ -43,6 +47,9 @@ class FrontendSession(
     @Volatile
     private var resolution: Resolution? = null
 
+    @Volatile
+    private var kvir: Module? = null
+
     /** Called by the plugin once per source file, after full body resolution. */
     internal fun analyze(
         file: FirFile,
@@ -52,9 +59,11 @@ class FrontendSession(
         sites += found.map { it.site }
         val module = sidecar?.modules?.single() ?: return
         val moduleClass = findClass(file, module.fqn.text) ?: return
-        val (res, errs) = SidecarResolver(sidecar, file, firSession, found, moduleClass).resolve()
+        val resolver = SidecarResolver(sidecar, file, firSession, found, moduleClass)
+        val (res, errs) = resolver.resolve()
         resolution = res
         errors += errs
+        if (errs.isEmpty()) kvir = lowerModule(sidecar, resolver, res, file, found, moduleClass)
     }
 
     internal fun result(
@@ -65,7 +74,7 @@ class FrontendSession(
         if (module != null && compiled && resolution == null) {
             errors += SidecarError(module.fqn.pos, "unresolved", "no source file declares module class ${module.fqn.text}")
         }
-        return FrontendResult(compiled, messages, sites.toList(), resolution, errors.toList())
+        return FrontendResult(compiled, messages, sites.toList(), resolution, errors.toList(), kvir.takeIf { errors.isEmpty() })
     }
 }
 
@@ -75,6 +84,8 @@ data class ResolveOutcome(
     /** Set when the sources did not compile. */
     val compileMessages: String?,
     val resolution: Resolution?,
+    /** The module in KVIR, set with the resolution. */
+    val module: Module?,
 )
 
 /** Runs the K2 compiler in-process with the kv FIR plugin. */
@@ -120,8 +131,8 @@ object Frontend {
     }
 
     /**
-     * Loads and checks [sidecarFile], compiles the `source` files it names (relative to [root]), and binds its Kotlin
-     * names to FIR symbols. Stops at the first stage that reports errors.
+     * Loads and checks [sidecarFile], compiles the `source` files it names (relative to [root]), binds its Kotlin
+     * names to FIR symbols, and lowers the module to KVIR. Stops at the first stage that reports errors.
      */
     fun resolve(
         sidecarFile: File,
@@ -133,15 +144,16 @@ object Frontend {
             try {
                 SidecarLoader.load(sidecarFile)
             } catch (e: SidecarException) {
-                return ResolveOutcome(e.errors, null, null)
+                return ResolveOutcome(e.errors, null, null, null)
             }
         val errors = checkSidecar(sidecar)
-        if (errors.isNotEmpty()) return ResolveOutcome(errors, null, null)
+        if (errors.isNotEmpty()) return ResolveOutcome(errors, null, null, null)
         val missing = sidecar.sources.filter { !File(root, it.path).isFile }
-        if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file ${File(root, it.path)}") }, null, null)
+        if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file ${File(root, it.path)}") }, null, null, null)
         val result = run(sidecar.sources.map { File(root, it.path) }, classpath, kotlincArgs, sidecar)
-        if (!result.compiled) return ResolveOutcome(emptyList(), result.messages, null)
-        return ResolveOutcome(result.sidecarErrors, null, result.resolution.takeIf { result.sidecarErrors.isEmpty() })
+        if (!result.compiled) return ResolveOutcome(emptyList(), result.messages, null, null)
+        val ok = result.sidecarErrors.isEmpty()
+        return ResolveOutcome(result.sidecarErrors, null, result.resolution.takeIf { ok }, result.module.takeIf { ok })
     }
 
     /**

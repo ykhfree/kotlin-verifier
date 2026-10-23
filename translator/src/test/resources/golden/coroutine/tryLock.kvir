@@ -1,0 +1,48 @@
+operation tryLock = fun KeyLocalLock.tryLock                      @145:5
+  cell   acquiredToken__151: Token? := null                       @151:9
+  result res: Token? := acquiredToken__151                        @195:16
+  action tryLock#155 = lockMap.compute                            @155:9
+    key   k: Key <- completeKey (action key @155:25)              @149:9
+    entry existing__155: LockInfo?                                @155:43
+    free  now: Int <- now (captured @150:9)                       @150:9
+    free  timeout: Int <- this.lockTimeoutMillis (instance val lockTimeoutMillis @172:48) @172:48
+    free  rej: Bool <- LocalLockLimit.rejectsNewEntry(...) (nondet LocalLockLimit.rejectsNewEntry @181:21) @181:21
+    free  limit: Int <- LocalLockLimit.rejectsNewEntry(...) (nondet LocalLockLimit.rejectsNewEntry @181:21) @181:21
+    translates FIR nodes 39-46,211-213,215-320
+    body
+      if existing__155 != null                                    @156:13
+        var cond_161_21: Bool := false                            @161:21
+        if now > existing__155.expiresAt                          @161:21
+          cond_161_21 := jdk.AtomicBoolean.compareAndSet(existing__155.isHeld, true, false) @161:49
+        if cond_161_21                                            @161:17
+          existing__155.token := null                             @163:21
+          jdk.Semaphore.release(existing__155.permits)            @164:21
+        cond_168_21 := jdk.Semaphore.tryAcquire(existing__155.permits) @168:21
+        if cond_168_21                                            @168:17
+          n_80_52 := jdk.AtomicLong.incrementAndGet(seq) [ASSUME A80] @80:52
+          let token__169: Token := tokenOf(n_80_52)               @169:21
+          jdk.AtomicBoolean.set(existing__155.isHeld, true)       @170:21
+          existing__155.token := token__169                       @171:21
+          existing__155.expiresAt := now + timeout [ASSUME A172]  @172:21
+          acquiredToken__151 := token__169                        @173:21
+        exit keep                                                 @175:17
+      else
+        nondet n_181_52 := jdk.ConcurrentHashMap.mappingCount     @181:52
+        nondet rej, limit := LocalLockLimit.rejectsNewEntry       @181:21
+        if rej                                                    @181:17
+          n_80_52b := jdk.AtomicLong.incrementAndGet(seq) [ASSUME A80] @80:52
+          acquiredToken__151 := tokenOf(n_80_52b)                 @182:21
+          exit remove                                             @183:21
+        else
+          n_80_52c := jdk.AtomicLong.incrementAndGet(seq) [ASSUME A80] @80:52
+          let token__187: Token := tokenOf(n_80_52c)              @187:17
+          new newLock__188: LockInfo {permits := 1, isHeld := false, token := token__187, expiresAt := now + timeout} [ASSUME A188] @188:31
+          cond_189_17 := jdk.Semaphore.tryAcquire(newLock__188.permits) @189:17
+          jdk.AtomicBoolean.set(newLock__188.isHeld, true)        @190:17
+          acquiredToken__151 := token__187                        @191:17
+          exit put(newLock__188)                                  @192:17
+    commit (empty)
+assumptions
+  A80 ASSUMPTION Long unbounded: tokenSequence.incrementAndGet()  @80:52
+  A172 ASSUMPTION Long unbounded: now + lockTimeoutMillis         @172:42
+  A188 ASSUMPTION Long unbounded: now + lockTimeoutMillis         @188:54
