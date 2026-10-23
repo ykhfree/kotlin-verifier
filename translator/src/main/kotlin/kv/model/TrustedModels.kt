@@ -22,6 +22,9 @@ enum class Role {
 
     /** No effect on modeled state; the arguments must be pure. */
     NO_EFFECT,
+
+    /** reactor Mono.fromCallable: its lambda is the body of a `fun` operation (DESIGN-v0.md 8.3). */
+    OPERATION_BODY,
 }
 
 /** The value a model operation returns. */
@@ -66,6 +69,9 @@ object TrustedModels {
     /** The model of non-escaping local AtomicReference and AtomicBoolean values (DESIGN-v0.md 2.5). */
     const val CELL = "jdk.AtomicCell"
 
+    /** The model of a `fun` operation whose whole body is one `Mono.fromCallable { ... }` call (DESIGN-v0.md 8.3). */
+    const val FROM_CALLABLE = "reactor.Mono.fromCallable"
+
     val entries: List<Entry> =
         listOf(
             Entry("jdk.ConcurrentHashMap.compute", CHM, "compute", listOf("?", "java/util/function/BiFunction"), Role.ACTION),
@@ -99,6 +105,20 @@ object TrustedModels {
             Entry(CELL, ATOMIC_BOOLEAN, "set", listOf(BOOLEAN), Role.OP),
             Entry(CELL, ATOMIC_BOOLEAN, "get", emptyList(), Role.OP, Returns.BOOL),
             Entry("jdk.System.currentTimeMillis", "java/lang/System", "currentTimeMillis", emptyList(), Role.CLOCK, Returns.LONG),
+            // model reactor.Mono.fromCallable
+            //   match   reactor.core.publisher.Mono.fromCallable(java.util.concurrent.Callable)
+            //   role    operation body: the whole body of a `fun` operation is this one call, as an expression body or
+            //           a single return, and its lambda holds the action; anything else is UNSUPPORTED
+            //   runs    each run of the lambda is one call of the operation; no subscription, no call
+            //   result  the lambda's last expression, which reads only a cell get or a constant; null -> empty Mono (NULL)
+            //   effects none beyond the lambda
+            //   source  "reactor-core 3.7.19 sources jar, reactor/core/publisher/Mono.java:512-513: 'If the Callable
+            //           resolves to {@code null}, the resulting Mono completes empty.' MonoCallable.java:48 (cold: each
+            //           subscriber gets its own subscription): 'actual.onSubscribe(new MonoCallableSubscription<>(actual,
+            //           this.callable));' MonoCallable.java:129 and 137 (the callable runs once, on the first
+            //           request): 'if (this.requestedOnce == 1 || !REQUESTED_ONCE.compareAndSet(this, 0 , 1)) {' (its
+            //           body returns), then 'value = this.callable.call();'"
+            Entry(FROM_CALLABLE, "reactor/core/publisher/Mono", "fromCallable", listOf("java/util/concurrent/Callable"), Role.OPERATION_BODY),
         ) +
             listOf("trace", "debug", "info", "warn", "error", "isTraceEnabled").map {
                 Entry("slf4j.Logger", "org/slf4j/Logger", it, null, Role.NO_EFFECT)

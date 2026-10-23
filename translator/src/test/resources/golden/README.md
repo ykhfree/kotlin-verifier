@@ -8,18 +8,19 @@ This directory holds the golden KVIR text that `GoldenTest` compares with the lo
 | `tryLock.kvir` | M1: the hand-built tryLock KVIR of DESIGN-v0.md 1.3 (printer test only) |
 | `coroutine/{tryLock,unLock,sweep}.kvir` | M3: lowered actions of `core-kotlin-coroutine/.../KeyLocalLock.kt` |
 | `core/{tryLock,unLock,sweep}.kvir` | M3: lowered actions of `core/.../KeyLocalLock.kt` |
-| `coroutine/ledger.kvir`, `core/ledger.kvir` | M4: the ledger of each module file and its ASSUMPTION diagnostics |
+| `reactor/{tryLock,unLock,sweep}.kvir` | lowered actions of `core-reactor/.../KeyLocalLock.kt` (DESIGN-v0.md 8.3, reactor variant) |
+| `coroutine/ledger.kvir`, `core/ledger.kvir`, `reactor/ledger.kvir` | M4: the ledger of each module file and its ASSUMPTION diagnostics |
 
 How to read and update:
 
 1. `@line:col` is a position in the variant's `KeyLocalLock.kt`. Nodes of the inlined helper `nextToken()` carry
-   the helper's position (coroutine line 80, core line 76).
+   the helper's position (coroutine line 80, core line 76, reactor line 85).
 2. If the lowering output changes, the test writes the new text to `build/golden-actual/<file>`. Review the new
    text against the tables below before you copy it here.
-3. `./gradlew lowerCoroutine` and `./gradlew lowerCore` print the whole module and check W1-W14.
-4. `./gradlew emitCoroutine` and `./gradlew emitCore` write the emitted Viper programs to
-   `translator/build/kv/keylocallock.{coroutine,core}.vpr`, each with a `.positions` file (the position table of
-   DESIGN-v0.md 5.7). The line numbers below are target.vpr line numbers, not those of the emitted files.
+3. `./gradlew lowerCoroutine`, `lowerCore` and `lowerReactor` print the whole module and check W1-W14.
+4. `./gradlew emitCoroutine`, `emitCore` and `emitReactor` write the emitted Viper programs to
+   `translator/build/kv/keylocallock.{coroutine,core,reactor}.vpr`, each with a `.positions` file (the position
+   table of DESIGN-v0.md 5.7). The line numbers below are target.vpr line numbers, not those of the emitted files.
 
 Rule: a golden action that disagrees with `spike/effect_ghost/target.vpr` without a reason listed here is a bug,
 not a golden.
@@ -33,6 +34,8 @@ not a golden.
   `OUT/CORE_variant.vpr`, measured PROVEN). The edit changes only the new entry's token: the constructor gives
   `token := NULL`, and `newLock.token := token` comes after `newLock.isHeld := true`. The core tables below map to
   target.vpr line numbers; the core positions differ from the target comments.
+- Reactor: `REACTOR_variant` of the same script (lines 192-212), written to `OUT/REACTOR_variant.vpr`. It is the
+  `CORE_variant` edit plus three order changes (DESIGN-v0.md 8.3, "reactor gate"); the reactor tables below list them.
 
 ## Differences that hold for every action
 
@@ -171,19 +174,63 @@ Rows 1-11 and H1-H4 of coroutine sweep, with core positions: operation 97:9 (`st
 `lockMap.keys` 108:21, `now` 101:21, entry `lockInfo__109` 109:51, CAS `cond_116_37` 116:37, exits 110:51, 120:33
 and 122:33. No difference beyond D1-D5.
 
-## Ledgers (`coroutine/ledger.kvir`, `core/ledger.kvir`)
+## reactor tryLock (`reactor/tryLock.kvir`, analogue: target.vpr 110-211 with `REACTOR_variant`)
+
+`tryLock` is `= Mono.fromCallable { ... }` (158:5, call 162:9). The model `reactor.Mono.fromCallable` (DESIGN-v0.md
+8.3) makes the lambda the operation body: its locals `completeKey` 163:13, `now` 164:13 and the cell
+`acquiredToken` 166:13 are read as in core, and its last expression `acquiredToken.get()` 212:13 is the result.
+The rows are those of core tryLock with reactor positions: core lines 163-214 become reactor lines 158-212,
+`nextToken()` is at 85:52, and the names follow (`existing__170`, `acquiredToken__166`, `token__184`, `token__202`,
+`newLock__203`, `cond_176_25`, `cond_183_25`, `cond_204_21`, `n_85_52`, `n_196_56`). Only the rows below differ.
+
+| # | KVIR | Kotlin | analogue line | Note |
+|---|---|---|---|---|
+| H1 | `operation tryLock = fun KeyLocalLock.tryLock` | 158:5 | 110, 115 | the function whose whole body is the `Mono.fromCallable` call |
+| H3 | `result res: Token? := acquiredToken__166` | 212:13 | 115, 196 | the lambda's last expression (a fake `return@fromCallable`), not a function `return`; `null` is the empty Mono, `NULL` |
+| H4 | `key k: Key <- completeKey (action key @170:29)` | 163:13 | 111, 115 | a local of the fromCallable lambda |
+| H6 | `free now <- now (captured @164:13)` | 164:13 | 112, 115 | `free now = local now` binds the lambda's local (DESIGN-v0.md 8.3) |
+| 6, 7 | `jdk.Semaphore.release(existing__170.permits)` then `existing__170.token := null` | 177:25, 179:25 | 153-154, swapped | `REACTOR_variant` edit 1: the source releases first |
+| 13, 14 | `existing__170.expiresAt := now + timeout` then `existing__170.token := token__184` | 186:25, 187:25 | 164-165, swapped | `REACTOR_variant` edit 2 |
+| A | `A85`, `A186`, `A203` | 85:52, 186:46, 203:58 | | the reactor Long sites |
+
+Differences: D1-D5 as for coroutine tryLock; D6 and D7 are resolved (`n_196_56` is `var n_196_56: Int`).
+
+## reactor unLock (`reactor/unLock.kvir`, analogue: target.vpr 213-262)
+
+`unLock` is `= Mono.fromCallable { ... }` (215:5, call 220:9). Rows 1-12 and H1-H6 of coroutine unLock, with
+reactor positions: function 215:5, cell `released__222` 222:13, key 221:13, entry `existing__227` 227:47, `t`
+218:9, early exit 228:39, condition 230:21 with CAS 230:48, release 231:21, `released__222 := true` 232:21,
+`exit remove` 236:21, `exit keep` 240:17, result 242:13 (the lambda's last expression). The `log.debug` call
+239:17 is the `slf4j.Logger` no-effect model, as in coroutine 225 and core 244. No difference beyond D1-D5.
+
+## reactor sweep (`reactor/sweep.kvir`, analogue: target.vpr 264-303)
+
+Rows 1-11 and H1-H4 of coroutine sweep, with reactor positions: operation 87:9 (`startMonitoringOnce`; the compute
+runs in `synchronized` -> `Flux.interval(...).flatMap` -> `Mono.fromRunnable` -> `forEach` lambdas, all outside the
+action and not modeled), compute 105:41, key `key` 104:60 over the racy read `lockMap.keys` 104:37, `now` 98:37 (a
+local of the fromRunnable lambda), entry `lockInfo__105` 105:67, CAS `cond_112_53` 112:53, exits 106:67, 116:49
+and 118:49. One row differs:
+
+| # | KVIR | Kotlin | analogue line | Note |
+|---|---|---|---|---|
+| 7 | `lockInfo__105.token := null`, after the `if cond_112_53` block | 115:49 | 291, moved after 293 | `REACTOR_variant` edit 3. Its comments give `@113:49` and `@115:45`; the Kotlin positions are 113:53 and 115:49 (comments only, not compared by the gate) |
+
+No difference beyond D1-D5.
+
+## Ledgers (`coroutine/ledger.kvir`, `core/ledger.kvir`, `reactor/ledger.kvir`)
 
 Each line is one construct and the range of FIR node numbers it holds (`first-last kind what @position`).
 Numbers missing from the list are the nodes the actions translated (their `translates FIR nodes` lines).
 
-| Kind | Coroutine | Core |
-|---|---|---|
-| racy-read | `lockMap.keys` 96:33 | `lockMap.size` 102:34, `lockMap.keys` 108:21, `lockMap.size` 126:33 |
-| free-source | `lockTimeoutMillis`, both `completeKey = lockKeyOf(...)`, `now = nowToEpochTime()`, sweep `now = System.currentTimeMillis()`, parameter `token`, `forEach` parameter `key`, the three key arguments | the same, with `buildLockKey(...)` |
-| cell | `acquiredToken`, `released`, and their `get()` after the action | same |
-| structure | module object `Companion`, state `lockMap` and `tokenSequence`, class `LockInfo`, its constructor and four fields | same, with `tokenCounter` |
-| not-modeled | `log`, `monitorJob`, `ensureMonitorStarted` (launch, while, try, delay), `stopMonitoring`, `job`, `coroutineContext`, `init`, `cancel`, and the rest of `tryLock` and `unLock` | `log`, `sharedScheduler`, `getOrCreateScheduler`, `createScheduler`, `startMonitoring` (scheduleWithFixedDelay, try, logging), both `init` blocks, `buildLockKey`, `shutdown`, and the rest of `tryLock` and `unLock` |
-| unsupported | none | none |
+| Kind | Coroutine | Core | Reactor |
+|---|---|---|---|
+| racy-read | `lockMap.keys` 96:33 | `lockMap.size` 102:34, `lockMap.keys` 108:21, `lockMap.size` 126:33 | `lockMap.keys` 104:37 |
+| free-source | `lockTimeoutMillis`, both `completeKey = lockKeyOf(...)`, `now = nowToEpochTime()`, sweep `now = System.currentTimeMillis()`, parameter `token`, `forEach` parameter `key`, the three key arguments | the same, with `buildLockKey(...)` | the same, with `completeKey(...)`; `completeKey` and `now` are locals of the fromCallable lambdas |
+| cell | `acquiredToken`, `released`, and their `get()` after the action | same | same; each `get()` is the last expression of its fromCallable lambda (a fake return) |
+| structure | module object `Companion`, state `lockMap` and `tokenSequence`, class `LockInfo`, its constructor and four fields | same, with `tokenCounter` | same as coroutine |
+| not-modeled | `log`, `monitorJob`, `ensureMonitorStarted` (launch, while, try, delay), `stopMonitoring`, `job`, `coroutineContext`, `init`, `cancel`, and the rest of `tryLock` and `unLock` | `log`, `sharedScheduler`, `getOrCreateScheduler`, `createScheduler`, `startMonitoring` (scheduleWithFixedDelay, try, logging), both `init` blocks, `buildLockKey`, `shutdown`, and the rest of `tryLock` and `unLock` | `log`, `monitoringStarted`, `monitorDisposable`, `consecutiveFailures`, `startMonitoringOnce` (synchronized, Flux.interval, flatMap, Mono.fromRunnable, onErrorResume, subscribe, logging), `stopMonitoring`, `init`, `completeKey`, and the rest of `tryLock` and `unLock`: the function frame and its `Mono.fromCallable` call |
+| unsupported | none | none | none |
 
-The node count is 397 (coroutine: 191 in the ledger, 206 translated) and 479 (core: 270 and 209). The `structure`
+The node count is 397 (coroutine: 191 in the ledger, 206 translated), 479 (core: 270 and 209) and 460 (reactor:
+247 and 213). The `structure`
 kind is not in the table of DESIGN-v0.md 2.14; see the M3/M4 report.
