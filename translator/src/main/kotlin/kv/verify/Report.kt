@@ -12,7 +12,6 @@ import kv.kvir.DispositionKind
 import kv.kvir.FreeValue
 import kv.kvir.Module
 import kv.kvir.Pos
-import kv.kvir.RacyRead
 import kv.kvir.Status
 import kv.kvir.checkWellFormed
 import kv.kvir.incomplete
@@ -39,6 +38,7 @@ data class Finding(
     val source: Source?,
     val at: SPos?,
 ) {
+    /** The failure, where it maps to, and Silicon's reason for an unknown prover result if it gave one (Q1). */
     fun describe(): String {
         val first = error.message.substringBefore(". ").removeSuffix(".")
         val where =
@@ -51,7 +51,8 @@ data class Finding(
                 is Source.Generated -> "generated ${source.what}"
                 null -> "no source range (Viper ${error.line}.${error.col})"
             }
-        return "$first: $where"
+        val reason = error.reason?.let { if (it.startsWith("(")) " $it" else " ($it)" } ?: ""
+        return "$first: $where$reason"
     }
 }
 
@@ -201,12 +202,9 @@ fun Report.render(): String {
     line("  Trusted models: ${sidecar.uses.joinToString { it.model.text }}")
     line("  Trusted project functions: " + sidecar.trusted.joinToString { "${it.shortName} (reviewed: ${it.reviewed})" }.ifEmpty { "none" })
     line("  Init: the ghost records are allocated by an inhale with no record issued (trusted)")
+    // Q5 (DESIGN-v0.md 8.3): v0 lists the racy reads without linking them to the free values that hold them.
     val racy = module.ledger.filter { it.kind == DispositionKind.RACY_READ }.distinctBy { it.what to it.pos }
-    val racyUses = (module.operations.map { it.name to it.action } + module.strayActions.map { "stray ${it.id}" to it }).flatMap { (n, a) -> a.free.filter { it.origin is RacyRead }.map { fv -> "${fv.origin.pos.line}:${fv.origin.pos.col}" to "$n ${fv.local.name}" } }.toMap()
-    line(
-        "Racy reads (modeled as arbitrary values): " +
-            racy.joinToString { d -> "${d.what} ${d.pos.line}:${d.pos.col}" + (racyUses["${d.pos.line}:${d.pos.col}"]?.let { " -> $it" } ?: "") }.ifEmpty { "none" },
-    )
+    line("Racy reads (modeled as arbitrary values): " + racy.joinToString { d -> "${d.what} ${d.pos.line}:${d.pos.col}" }.ifEmpty { "none" })
     val notModeled = module.ledger.filter { it.kind == DispositionKind.NOT_MODELED }.distinctBy { it.what }
     line("Not modeled (no module-state access): " + notModeled.joinToString { "${it.what} ${it.pos.line}:${it.pos.col}" }.ifEmpty { "none" })
     val unsupported =
