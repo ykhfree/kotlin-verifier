@@ -11,6 +11,8 @@ import kv.kvir.DiagnosticKind
 import kv.kvir.DispositionKind
 import kv.kvir.FreeValue
 import kv.kvir.Module
+import kv.kvir.ModuleKind
+import kv.model.TrustedModels
 import kv.kvir.Pos
 import kv.kvir.Status
 import kv.kvir.checkWellFormed
@@ -182,7 +184,11 @@ fun Report.render(): String {
     for (r in actions) {
         line("  ${label(r).padEnd(width)}  ${r.kotlin?.let(::at) ?: "-"}   ${r.verdict}")
         r.note?.let { line("      $it") }
-        r.findings.forEach { line("      ${it.describe()}") }
+        r.findings.forEach { f ->
+            line("      ${f.describe()}")
+            // DESIGN-B.md 5.5 rule 3: what a failed MI_OWN means, on a line the M8 script does not read as a finding.
+            if ((f.source as? Source.Generated)?.what == "MI_OWN") line("        meaning: a map value is not an object this module created, or two keys share one object")
+        }
     }
     val others = rows.filter { it.kind != MethodKind.ACTION && it.kind != MethodKind.STRAY }
     if (others.isNotEmpty()) line("  " + others.joinToString(" · ") { "${it.label} ${it.verdict}" })
@@ -205,7 +211,12 @@ fun Report.render(): String {
     module.strayActions.forEach { line("    stray ${it.id}: ${freeValues(it)}") }
     line("  Trusted models: ${sidecar.uses.joinToString { it.model.text }}")
     line("  Trusted project functions: " + sidecar.trusted.joinToString { "${it.shortName} (reviewed: ${it.reviewed})" }.ifEmpty { "none" })
-    line("  Init: the ghost records are allocated by an inhale with no record issued (trusted)")
+    if (module.kind == ModuleKind.INSTANCE) {
+        instanceAssumptions().forEach { line("  $it") }
+        line("  Init: the map is empty and no object is created, as after the constructor's initializer")
+    } else {
+        line("  Init: the ghost records are allocated by an inhale with no record issued (trusted)")
+    }
     // Q5 (DESIGN-v0.md 8.3): v0 lists the racy reads without linking them to the free values that hold them.
     val racy = module.ledger.filter { it.kind == DispositionKind.RACY_READ }.distinctBy { it.what to it.pos }
     line("Racy reads (modeled as arbitrary values): " + racy.joinToString { d -> "${d.what} ${d.pos.line}:${d.pos.col}" }.ifEmpty { "none" })
@@ -238,6 +249,29 @@ private fun origin(
     key: Boolean,
 ): String = fv.origin.kind() + if (fv.sidecarName == null && !key) ", unnamed" else ""
 
+/**
+ * The assumptions an instance module adds (DESIGN-B.md 5.5 rule 2, appendix B, 9.4 questions 5, 6 and 8). Silicon
+ * checks none of them.
+ */
+private fun Report.instanceAssumptions(): List<String> {
+    val out = mutableListOf<String>()
+    if (sidecar.setOnce.isNotEmpty()) {
+        out += "Racy reads of a set-once map: a non-null get is a value the map held, so the read is null or the current value (ConcurrentHashMap.java:87-91, DESIGN-B.md 2.4)"
+    }
+    module.types.filter { it.kclass != null }.forEach { t ->
+        out += "Key equality: == on ${t.name} is ${t.kclass!!.replace('/', '.')}.equals (${TrustedModels.keyClasses[t.kclass.replace('/', '.')] ?: "no source"})"
+    }
+    out += "Test sources are not audited: they may write an internal state field (DESIGN-B.md 2.1 rule 6, UB6)"
+    sidecar.trusted.filter { it.fresh != null }.forEach { t ->
+        out += "Trusted ${t.shortName}: a person read that every call that can throw runs before the ${t.fresh!!.text} constructor, and that the constructor and the calls reach no state or operation of this module; the tool checks direct calls only (DESIGN-B.md 3.4, 9.4 question 6)"
+    }
+    out += "Throws outside the model: a call the model does not give a meaning to, or an untranslated !!, may throw after a fresh call and before the action (a non-deterministic raise); elsewhere its throw is not modeled (DESIGN-B.md 9.4 question 5)"
+    if (sidecar.uses.any { it.model.text == TrustedModels.GET_OR_PUT }) {
+        out += "getOrPut: its inline body is the one of stdlib 2.0.21 MapsJVM.kt:70-75 (DESIGN-B.md appendix B 6, 9.4 question 8)"
+    }
+    return out
+}
+
 /** The allowance clauses and issue rules a person must review (DESIGN-v0.md 3.6), and the defaults stray actions get. */
 private fun Report.specToReview(): String {
     fun clauses(kind: Allowance) =
@@ -247,7 +281,15 @@ private fun Report.specToReview(): String {
             clauses(Allowance.ENDS_ONLY_IF).takeIf { it.isNotEmpty() }?.let { "ends_only_if ${it.joinToString()}" },
             clauses(Allowance.UNBACKED_ONLY_IF).takeIf { it.isNotEmpty() }?.let { "unbacked_only_if ${it.joinToString()}" },
             sidecar.operations.filter { op -> op.items.any { it is IssueItem } }.takeIf { it.isNotEmpty() }?.let { ops -> "issue ${ops.joinToString { it.name.text }}" },
-            module.strayActions.takeIf { it.isNotEmpty() }?.let { s -> "default ends_only_if false for stray ${s.joinToString { it.id }}" },
+            module.strayActions.takeIf { it.isNotEmpty() && module.kind == ModuleKind.OBJECT }?.let { s -> "default ends_only_if false for stray ${s.joinToString { it.id }}" },
+            module.strayActions.takeIf { it.isNotEmpty() && module.kind == ModuleKind.INSTANCE }?.let { s ->
+                "default contract MI${sidecar.setOnce.joinToString("") { " and ${it.id.text}" }} for stray ${s.joinToString { it.id }}"
+            },
+            // DESIGN-B.md 5.5 rule 1: the set-once declarations and the fresh and throws claims of trusted functions.
+            sidecar.setOnce.takeIf { it.isNotEmpty() }?.let { d -> "set-once ${d.joinToString { "${it.id.text}: ${it.map.text}" }}" },
+            sidecar.trusted.filter { it.fresh != null || it.throws }.takeIf { it.isNotEmpty() }?.let { ts ->
+                ts.joinToString("; ") { t -> "trusted ${t.shortName}: " + listOfNotNull(t.fresh?.let { "returns fresh ${it.text}" }, "throws".takeIf { t.throws }, "effects none".takeIf { t.effectsNone }).joinToString(", ") }
+            },
         )
     return parts.joinToString("; ").ifEmpty { "none" }
 }

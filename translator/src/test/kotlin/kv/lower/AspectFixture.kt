@@ -7,8 +7,11 @@ import kv.kvir.Module
 import kv.kvir.Operation
 import kv.kvir.incomplete
 import kv.kvir.printOperation
+import kv.sidecar.Sidecar
 import kv.sidecar.checkSidecar
 import kv.sidecar.parseSidecar
+import kv.verify.Report
+import kv.verify.Silicon
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.fail
@@ -36,6 +39,12 @@ data class AspectFixture(
     val setOnce: String = "set-once P_stable: m",
     /** More import lines of the module file. */
     val imports: String = "",
+    /** The sidecar's state properties. */
+    val invariants: String = DEFAULT_INVARIANTS,
+    /** The text of `hole MI_INV`. */
+    val hole: String = "true",
+    /** More jars on the compile classpath, e.g. slf4j for a logger. */
+    val classpath: List<File> = emptyList(),
 ) {
     val kotlin: String =
         """
@@ -74,9 +83,8 @@ data class AspectFixture(
         |$uses
         |$trusted
         |$operations
-        |invariant P_once: forall qr1: Ref, qr2: Ref :: { qr1 in S.created, qr2 in S.created }
-        |    qr1 in S.created && qr2 in S.created && qr1.gFor == qr2.gFor ==> qr1 == qr2
-        |hole MI_INV ""${'"'} true ""${'"'}
+        |$invariants
+        |hole MI_INV ""${'"'} $hole ""${'"'}
         |$sidecarExtra
         |
         """.trimMargin()
@@ -103,23 +111,31 @@ data class AspectFixture(
     }
 
     /** Compiles the fixture under [dir] with its sidecar; the sidecar must pass its checks. */
-    fun compile(dir: File): FrontendResult {
+    fun compile(dir: File): FrontendResult = compiled(dir).first
+
+    private fun compiled(dir: File): Pair<FrontendResult, Sidecar> {
         dir.mkdirs()
         val sidecarFile = File(dir, "Aspect.kv").apply { writeText(sidecar) }
         val parsed = parseSidecar(sidecarFile.path, sidecar)
         assertEquals(emptyList(), checkSidecar(parsed), "fixture sidecar")
         val sources = (mapOf("Aspect.kt" to kotlin) + otherFiles).map { (name, text) -> File(dir, name).apply { writeText(text) } }
-        val result = Frontend.run(sources, listOf(Harness.stdlib), emptyList(), parsed)
+        val result = Frontend.run(sources, listOf(Harness.stdlib) + classpath, emptyList(), parsed)
         if (!result.compiled) fail("fixture did not compile:\n${result.messages}\n$kotlin")
-        return result
+        return result to parsed
     }
 
     /** Compiles and lowers the fixture; the sidecar must resolve. */
-    fun lower(dir: File): Module {
-        val result = compile(dir)
+    fun lower(dir: File): Module = lowered(dir).first
+
+    /** The lowered module and its sidecar; the sidecar must resolve. */
+    fun lowered(dir: File): Pair<Module, Sidecar> {
+        val (result, sidecar) = compiled(dir)
         assertEquals(emptyList(), result.sidecarErrors, "fixture sidecar resolves")
-        return result.module ?: fail("no module")
+        return (result.module ?: fail("no module")) to sidecar
     }
+
+    /** Lowers the fixture, emits it to [dir]/Aspect.vpr and verifies it with Silicon (DESIGN-v0.md 5.6-5.8). */
+    fun verify(dir: File): Report = lowered(dir).let { (m, s) -> kv.verify.verify(m, s, File(dir, "Aspect.vpr"), Silicon.defaultHome()) }
 
     companion object {
         const val DEFAULT_OP = "    fun getOrCreate(jp: Any): Shield =\n        shieldMap.computeIfAbsent(target(jp)) { create(jp) }"
@@ -145,6 +161,13 @@ use jdk.ConcurrentHashMap.put
 use jdk.ConcurrentHashMap.remove
 use jdk.ConcurrentHashMap.racyRead
 use kotlin.collections.getOrPut"""
+
+        const val DEFAULT_INVARIANTS =
+            """invariant P_once: forall qr1: Ref, qr2: Ref :: { qr1 in S.created, qr2 in S.created }
+    qr1 in S.created && qr2 in S.created && qr1.gFor == qr2.gFor ==> qr1 == qr2"""
+
+        /** The hole of the aspect sidecars (DESIGN-B.md 6.1): every created object is the value mapped at its key. */
+        const val CREATED_ARE_MAPPED = "(forall qr: Ref :: { qr in S.created } qr in S.created ==> has(S, qr.gFor) && S.m[qr.gFor] == qr)"
 
         const val DEFAULT_OPERATION =
             """operation getOrCreate = fun Aspect.getOrCreate {

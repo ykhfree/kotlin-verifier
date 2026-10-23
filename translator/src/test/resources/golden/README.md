@@ -275,6 +275,13 @@ Differences, each a job of the B3 emitter:
 | E2 | No `exc := false`, `has(S, k) ? S.m[k] : null` or `if (cur_112_9 == null)` statement. | The emitter template (DESIGN-B.md 5.4) and the computeIfAbsent row of DESIGN-B.md 2.3. |
 | E3 | The method header, `requires`, `ensures` and the probe are not KVIR. | Emitter template, from the sidecar (D2 above). |
 
+B3 (DESIGN-B.md 8) closes E1-E3 in the emitter: `./gradlew emitAspect` writes `build/kv/aspect.<module>.vpr`, and
+`GateTest` checks that the core-spring model is `spike/aspect/target.vpr` after `spike/vpr_normalize.py`. The action's
+`out` is the result `res` when the section returns it directly (DESIGN-B.md 9.4 question 3). For the Kotlin mutants of
+`scripts/mutants.py --suite aspect`, `GateTest` compares the core-spring models with `spike/aspect/mutants.py`: M2, M4
+and M7 have one more raise path (9.4 question 5: `getTargetMethod(joinPoint)` runs after the fresh call and before the
+action), and they are the same without it.
+
 The mutant shapes of `spike/aspect/mutants.py` lower on the `AspectFixture` fixtures of `SectionTest` (`kv.lower`):
 R1 (`compute` + elvis + `!!`), R2 (racy read + elvis), M1 (racy read + elvis + `also` + `m[k] = v`), M2 (`m[k] = v`),
 M3 (`getOrPut`), M4 (`putIfAbsent` + elvis), M5 (`{ shared }`), M6 (stray `remove`), M7 (`putIfAbsent`, result

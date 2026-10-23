@@ -29,6 +29,22 @@ class SectionTest {
 
     private fun op(body: String) = "    fun getOrCreate(jp: Any): Shield {\n$body\n    }"
 
+    /**
+     * DESIGN-B.md 9.4 question 5: the raise at an unmodeled call of [fn] at [at] that runs after a fresh call and
+     * before the action, as printed KVIR lines indented by [indent]; the statements after it follow in its else.
+     */
+    private fun q5Raise(
+        at: Pair<Int, Int>,
+        fn: String = "Aspect.target",
+        indent: String = "  ",
+    ): List<String> {
+        val flag = "cond_${at.first}_${at.second}"
+        return listOf("${indent}nondet $flag := call $fn may throw", "${indent}if $flag", "$indent  raise", "${indent}else")
+    }
+
+    /** The position of the first `target(jp)` call in the body of getOrCreate. */
+    private fun AspectFixture.targetCall() = at("target(jp)", after = "fun getOrCreate")
+
     // ---- the original and its action ----
 
     @Test
@@ -65,7 +81,12 @@ class SectionTest {
         assertSupportedOp(m)
         val r = f.at("create(jp)", after = "fun getOrCreate").let { "r_${it.first}_${it.second}" }
         val cur = f.at("shieldMap.putIfAbsent").let { "cur_${it.first}_${it.second}" }
-        assertEquals(listOf("nondet thrown := Aspect.create", "if thrown", "  raise", "else", "  fresh $r: Shield := create", "  run action getOrCreate#${f.at("shieldMap.putIfAbsent").first}", "  return $cur ?: $r"), m.sectionShape)
+        // The key argument target(jp) runs after the fresh call: it may throw and drop the object (question 5).
+        assertEquals(
+            listOf("nondet thrown := Aspect.create", "if thrown", "  raise", "else", "  fresh $r: Shield := create") + q5Raise(f.targetCall()) +
+                listOf("    run action getOrCreate#${f.at("shieldMap.putIfAbsent").first}", "    return $cur ?: $r"),
+            m.sectionShape,
+        )
         assertEquals(ActionKind.PUT_IF_ABSENT, m.getOrCreate.action.kind)
         assertEquals(r, (m.getOrCreate.action.value as kv.kvir.Var).local.name)
     }
@@ -126,7 +147,7 @@ class SectionTest {
         val m = f.lowered()
         assertSupportedOp(m)
         val r = f.at("create(jp).let").let { "r_${it.first}_${it.second}" }
-        assertEquals("  return cur_${f.at("shieldMap.putIfAbsent").let { "${it.first}_${it.second}" }} ?: $r", m.sectionShape.last())
+        assertEquals("    return cur_${f.at("shieldMap.putIfAbsent").let { "${it.first}_${it.second}" }} ?: $r", m.sectionShape.last())
     }
 
     @Test
@@ -136,12 +157,12 @@ class SectionTest {
         assertSupportedOp(m1)
         val r1 = apply.at("create(jp).apply").let { "r_${it.first}_${it.second}" }
         assertEquals(r1, (m1.getOrCreate.action.value as kv.kvir.Var).local.name)
-        assertEquals("  return $r1", m1.sectionShape.last())
+        assertEquals("    return $r1", m1.sectionShape.last())
         val run = AspectFixture(op = op("        return create(jp).run { shieldMap.putIfAbsent(target(jp), this) ?: this }"))
         val m2 = run.lowered()
         assertSupportedOp(m2)
         val r2 = run.at("create(jp).run").let { "r_${it.first}_${it.second}" }
-        assertEquals("  return cur_${run.at("shieldMap.putIfAbsent").let { "${it.first}_${it.second}" }} ?: $r2", m2.sectionShape.last())
+        assertEquals("    return cur_${run.at("shieldMap.putIfAbsent").let { "${it.first}_${it.second}" }} ?: $r2", m2.sectionShape.last())
     }
 
     @Test
@@ -218,7 +239,11 @@ class SectionTest {
         val m = f.lowered()
         assertSupportedOp(m)
         val r = f.at("create(jp)", after = "fun getOrCreate").let { "r_${it.first}_${it.second}" }
-        assertEquals(listOf("nondet thrown := Aspect.create", "if thrown", "  raise", "else", "  fresh $r: Shield := create", "  run action getOrCreate#${f.at("shieldMap[target(jp)]").first}", "  return $r"), m.sectionShape)
+        assertEquals(
+            listOf("nondet thrown := Aspect.create", "if thrown", "  raise", "else", "  fresh $r: Shield := create") + q5Raise(f.targetCall()) +
+                listOf("    run action getOrCreate#${f.at("shieldMap[target(jp)]").first}", "    return $r"),
+            m.sectionShape,
+        )
         assertEquals(ActionKind.PUT, m.getOrCreate.action.kind)
         assertEquals(null, m.getOrCreate.action.out, "the value of m[k] = v is Unit")
     }
@@ -237,7 +262,7 @@ class SectionTest {
         val m = f.lowered()
         assertSupportedOp(m)
         assertEquals(null, m.getOrCreate.action.out)
-        assertEquals("  return ${f.at("create(jp)", after = "fun getOrCreate").let { "r_${it.first}_${it.second}" }}", m.sectionShape.last())
+        assertEquals("    return ${f.at("create(jp)", after = "fun getOrCreate").let { "r_${it.first}_${it.second}" }}", m.sectionShape.last())
     }
 
     @Test
@@ -293,7 +318,11 @@ class SectionTest {
         val m = f.lowered()
         assertSupportedOp(m)
         val r = f.at("create(jp)", after = "fun getOrCreate").let { "r_${it.first}_${it.second}" }
-        assertEquals(listOf("nondet thrown := Aspect.create", "if thrown", "  raise", "else", "  fresh $r: Shield := create", "  run action getOrCreate#${f.at("shieldMap.computeIfAbsent").first}"), m.sectionShape.take(6))
+        assertEquals(
+            listOf("nondet thrown := Aspect.create", "if thrown", "  raise", "else", "  fresh $r: Shield := create") + q5Raise(f.targetCall()) +
+                "    run action getOrCreate#${f.at("shieldMap.computeIfAbsent").first}",
+            m.sectionShape.take(10),
+        )
         // The sidecar names the first call; the call inside the action has an unnamed flag.
         assertTrue(m.actionShape.first().startsWith("nondet cond_"), m.actionShape.toString())
     }
