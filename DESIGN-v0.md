@@ -1000,7 +1000,7 @@ Kotlin 편집은 coroutine 변형 기준이다. core는 같은 문자열을 쓴�
 | SB5b (대조) | 104행 `lockInfo.isHeld.compareAndSet(true, false)` → `true` | CAS `ModelOp` 사라짐 | `if (true)` | PROVEN | — |
 
 변이마다 (c)가 판정을 지키는 이유:
-1. SB1, SB2: END 규칙은 "entry가 사라졌다"는 효과로 발동한다. 편집은 이 효과를 바꾸지 않는다. 그래서 다른 보유자의 토큰이 끝나고, unLock의 `ends_only_if P3a: qt == t && res`가 거부한다. P1(`old(S.m[k].token) == t`)도 거짓이지만 보고되지 않는다: Silicon은 경로마다 처음 실패한 사후조건만 보고하고, 5.2 템플릿은 권한 절을 sidecar `ensures`보다 앞에 둔다 (측정: 순서를 바꾸면 SB1은 P1로 보고된다). SB2의 새 값은 이름이 없어 sidecar와 probe를 고치지 않아도 된다.
+1. SB1, SB2: END 규칙은 "entry가 사라졌다"는 효과로 발동한다. 편집은 이 효과를 바꾸지 않는다. 그래서 다른 보유자의 토큰이 끝나고, unLock의 `ends_only_if P3a: qt == t && res`가 거부한다. P1(`old(S.m[k].token) == t`)도 거짓이지만 보고되지 않는다: Silicon은 경로마다 처음 실패한 사후조건만 보고하고, 5.2 템플릿은 권한 절을 sidecar `ensures`보다 앞에 둔다 (구현 agent의 측정, 메인 세션은 재현하지 않음: 순서를 바꾸면 SB1은 P1로 보고된다). SB2의 새 값은 이름이 없어 sidecar와 probe를 고치지 않아도 된다.
 2. SB3: `gLease`는 명세 항 `now + timeout`에서 온다 (R1). 코드가 쓰는 `expiresAt`에서 오지 않는다. 그래서 MI의 lease 연결이 깨진다.
 3. SB4: 발급 규칙은 돌려준 값에 묶인다. 같은 값이 다시 나오면 set-once 검사가 깨진다.
 4. SB6, E4: END 규칙이 밀려난 보유자의 종료를 기록한다. `ends_only_if` P3a가 "만료 전 종료"를 거부한다. E4는 상한 분기가 entry를 지우며 unbacked 토큰을 내므로 P3b도 깨진다.
