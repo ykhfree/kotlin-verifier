@@ -109,7 +109,8 @@ object TrustedModels {
             //   match   reactor.core.publisher.Mono.fromCallable(java.util.concurrent.Callable)
             //   role    operation body: the whole body of a `fun` operation is this one call, as an expression body or
             //           a single return, and its lambda holds the action; anything else is UNSUPPORTED
-            //   runs    each run of the lambda is one call of the operation; no subscription, no call
+            //   runs    each run of the lambda is one call of the operation: at most once per subscription (on its
+            //           first request), and once per direct block() or call() of the Mono (MonoCallable.java:51-73)
             //   result  the lambda's last expression, which reads only a cell get or a constant; null -> empty Mono (NULL)
             //   effects none beyond the lambda
             //   source  "reactor-core 3.7.19 sources jar, reactor/core/publisher/Mono.java:512-513: 'If the Callable
@@ -118,6 +119,8 @@ object TrustedModels {
             //           this.callable));' MonoCallable.java:129 and 137 (the callable runs once, on the first
             //           request): 'if (this.requestedOnce == 1 || !REQUESTED_ONCE.compareAndSet(this, 0 , 1)) {' (its
             //           body returns), then 'value = this.callable.call();'"
+            //           The Gradle cache holds only the 3.7.19 binary jar. The sources jar came from Maven Central (SHA-1
+            //           860cffe5cb59cf6f79290d37329c664035e07b0c); javap of the cached binary shows the same request().
             Entry(FROM_CALLABLE, "reactor/core/publisher/Mono", "fromCallable", listOf("java/util/concurrent/Callable"), Role.OPERATION_BODY),
         ) +
             listOf("trace", "debug", "info", "warn", "error", "isTraceEnabled").map {
