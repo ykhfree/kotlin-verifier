@@ -52,8 +52,9 @@ tasks.test {
     systemProperty("kv.spikeDir", rootProject.layout.projectDirectory.dir("../spike").asFile.absolutePath)
 }
 
-// `./gradlew discoverReqShield`, `resolveReqShield`, `lowerReqShield` and `emitReqShield`: run `kv discover`,
-// `kv resolve`, `kv lower` and `kv emit` on both KeyLocalLock variants. The sidecar specs live in ../specs/reqshield.
+// `./gradlew discoverReqShield`, `resolveReqShield`, `lowerReqShield`, `emitReqShield` and `verifyReqShield`: run
+// `kv discover`, `kv resolve`, `kv lower`, `kv emit` and `kv verify` on both KeyLocalLock variants (verify needs
+// Silicon: VIPER_HOME or the default install). The sidecar specs live in ../specs/reqshield.
 val discoverReqShield by tasks.registering {
     group = "kv"
     description = "Lists the ConcurrentHashMap.compute sites of both req-shield KeyLocalLock variants."
@@ -69,6 +70,10 @@ val lowerReqShield by tasks.registering {
 val emitReqShield by tasks.registering {
     group = "kv"
     description = "Writes the Viper programs of both KeyLocalLock variants to build/kv/."
+}
+val verifyReqShield by tasks.registering {
+    group = "kv"
+    description = "Verifies both KeyLocalLock variants with Silicon and prints the reports."
 }
 
 /** Runs the kv CLI with [args]: the command first, then its arguments after the req-shield classpath and flags. */
@@ -93,8 +98,10 @@ for ((variant, dir) in listOf(
     val lower = tasks.register<JavaExec>("lower$variant") { kv("lower", "--root", reqShieldDir, sidecar) }
     val vpr = layout.buildDirectory.file("kv/keylocallock.${variant.lowercase()}.vpr").get().asFile.path
     val emit = tasks.register<JavaExec>("emit$variant") { kv("emit", "--root", reqShieldDir, "--out", vpr, sidecar) }
+    val verify = tasks.register<JavaExec>("verify$variant") { kv("verify", "--root", reqShieldDir, "--out", vpr, sidecar) }
     discoverReqShield { dependsOn(discover) }
     resolveReqShield { dependsOn(resolve) }
     lowerReqShield { dependsOn(lower) }
     emitReqShield { dependsOn(emit) }
+    verifyReqShield { dependsOn(verify) }
 }
