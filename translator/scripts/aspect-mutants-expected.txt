@@ -1,0 +1,46 @@
+# Expected `kv verify` results of the B4 Kotlin mutants (scripts/mutants.py --suite aspect; DESIGN-B.md 7.2, 8).
+# Columns, separated by two or more spaces: module, mutant, module verdict, the one FAILED action, and its failing
+# obligations as `kv verify` names them (sidecar IDs, or what the tool generated, e.g. MI_OWN; separated by ';').
+# '-' means none.
+#
+# Measured before they were written here (2026-10-24, Silicon v.26.08): the three modules give the same verdicts and
+# obligations. Silicon reports the first failing ensures line on each path (DESIGN-B.md 7.1), so a row lists those
+# lines, not every obligation the mutant breaks.
+# - M2, M4, M7: getTargetMethod(joinPoint) runs after createReqShield and before the action, so a raise path drops the
+#   created object (DESIGN-B.md 9.4 question 5); that path fails P_once or MI_INV_1 first. DESIGN-B.md 7.2 measured
+#   the first report without that path (M2 P_stable, M4 and M7 P_once).
+# - M5: its ReqShield constructor outside createReqShield makes the module INCOMPLETE too (DESIGN-B.md 3.3 rule 4);
+#   FAILED ranks first.
+# - M6: the stray remove is in a different around function per module, so the action column differs.
+#
+# module       mutant    verdict  action                                     obligations
+core-spring  original  PROVEN   -                                          -
+core-spring  R1        PROVEN   -                                          -
+core-spring  R2        PROVEN   -                                          -
+core-spring  M1        FAILED   getOrCreate                                P_stable
+core-spring  M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1
+core-spring  M3        FAILED   getOrCreate                                P_once
+core-spring  M4        FAILED   getOrCreate                                P_once; MI_INV_1
+core-spring  M5        FAILED   getOrCreate                                MI_OWN
+core-spring  M6        FAILED   stray action aroundReqShieldCacheable#100  P_stable
+core-spring  M7        FAILED   getOrCreate                                P_once; MI_INV_1
+webflux      original  PROVEN   -                                          -
+webflux      R1        PROVEN   -                                          -
+webflux      R2        PROVEN   -                                          -
+webflux      M1        FAILED   getOrCreate                                P_stable
+webflux      M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1
+webflux      M3        FAILED   getOrCreate                                P_once
+webflux      M4        FAILED   getOrCreate                                P_once; MI_INV_1
+webflux      M5        FAILED   getOrCreate                                MI_OWN
+webflux      M6        FAILED   stray action aroundTargetCacheable#83      P_stable
+webflux      M7        FAILED   getOrCreate                                P_once; MI_INV_1
+coroutine    original  PROVEN   -                                          -
+coroutine    R1        PROVEN   -                                          -
+coroutine    R2        PROVEN   -                                          -
+coroutine    M1        FAILED   getOrCreate                                P_stable
+coroutine    M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1
+coroutine    M3        FAILED   getOrCreate                                P_once
+coroutine    M4        FAILED   getOrCreate                                P_once; MI_INV_1
+coroutine    M5        FAILED   getOrCreate                                MI_OWN
+coroutine    M6        FAILED   stray action aroundReqShieldCacheable#98   P_stable
+coroutine    M7        FAILED   getOrCreate                                P_once; MI_INV_1
