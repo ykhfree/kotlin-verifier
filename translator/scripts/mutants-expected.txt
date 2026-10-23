@@ -1,0 +1,32 @@
+# Expected `kv verify` results of the M8 Kotlin mutants (scripts/mutants.py; DESIGN-v0.md section 6).
+# Columns, separated by two or more spaces: variant, mutant, module verdict, the one FAILED action, and its failing
+# obligations as `kv verify` names them (sidecar IDs, separated by ';'). '-' means none.
+#
+# Deviation from the section-6 table (see the M8 hand-back report): for SB1 and SB2 the table names unLock P1.
+# The 5.2 template (and spike/effect_ghost/target.vpr) checks `ends_only_if P3a` before P1, and Silicon reports
+# only the first failing postcondition on each path. The hand-written target.vpr mutants SB1_no_token_check and
+# SB2_toctou_unlock fail at the same clauses as below (measured 2026-10-23).
+#
+# variant   mutant    verdict  action   obligations
+coroutine   original  PROVEN   -        -
+coroutine   SB1       FAILED   unLock   ends_only_if P3a
+coroutine   SB2       FAILED   unLock   ends_only_if P3a; progress_owner
+coroutine   SB3       FAILED   tryLock  MI_INV_4
+coroutine   SB4       FAILED   tryLock  issue tryLock: set-once gIssued
+coroutine   SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
+coroutine   E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
+coroutine   SB5       PROVEN   -        -
+coroutine   SB5b      PROVEN   -        -
+coroutine   R1        PROVEN   -        -
+coroutine   R2        PROVEN   -        -
+core        original  PROVEN   -        -
+core        SB1       FAILED   unLock   ends_only_if P3a
+core        SB2       FAILED   unLock   ends_only_if P3a; progress_owner
+core        SB3       FAILED   tryLock  MI_INV_4
+core        SB4       FAILED   tryLock  issue tryLock: set-once gIssued
+core        SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
+core        E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
+core        SB5       PROVEN   -        -
+core        SB5b      PROVEN   -        -
+core        R1        PROVEN   -        -
+core        R2        PROVEN   -        -

@@ -50,6 +50,8 @@ tasks.test {
     systemProperty("kv.specDir", rootProject.layout.projectDirectory.dir("../specs").asFile.absolutePath)
     // The M5 gate (vpr_normalize.py) and the hand-written target models.
     systemProperty("kv.spikeDir", rootProject.layout.projectDirectory.dir("../spike").asFile.absolutePath)
+    // The M8 mutant script (scripts/mutants.py), tested with a fake kv.
+    systemProperty("kv.scriptsDir", layout.projectDirectory.dir("scripts").asFile.absolutePath)
 }
 
 // `./gradlew discoverReqShield`, `resolveReqShield`, `lowerReqShield`, `emitReqShield` and `verifyReqShield`: run
@@ -104,4 +106,29 @@ for ((variant, dir) in listOf(
     lowerReqShield { dependsOn(lower) }
     emitReqShield { dependsOn(emit) }
     verifyReqShield { dependsOn(verify) }
+}
+
+// `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of both
+// KeyLocalLock variants, runs the installed `kv verify` on each, and checks the verdicts and failing obligations
+// against scripts/mutants-expected.txt. Needs python3 and Silicon. It takes about a minute, so `test` does not run it.
+// Options: -PmutantJobs=N (parallel runs, default 3), -PmutantOnly=SB1,SB2 (a subset).
+val mutantsReqShield by tasks.registering(Exec::class) {
+    group = "kv"
+    description = "Runs the M8 Kotlin mutant script on both KeyLocalLock variants."
+    dependsOn(tasks.installDist)
+    executable = "python3"
+    val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
+    val out = layout.buildDirectory.dir("kv/mutants").get().asFile.path
+    val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
+    val jobs = providers.gradleProperty("mutantJobs").getOrElse("3")
+    val only = providers.gradleProperty("mutantOnly").orNull
+    argumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                "-I", "scripts/mutants.py", "--kv", kv, "--req-shield", reqShieldDir, "--classpath", reqShieldClasspath.asPath,
+                "--kotlinc", reqShieldKotlincArgs, "--specs", specs, "--expected", "scripts/mutants-expected.txt", "--out", out,
+                "--jobs", jobs,
+            ) + (only?.let { listOf("--only", it) } ?: emptyList())
+        },
+    )
 }
