@@ -113,6 +113,24 @@ class ParserTest {
     }
 
     @Test
+    fun `parses the abstract type of a free value after its first name`() {
+        val op =
+            parse(
+                """
+                operation unLock = fun C.unLock {
+                  free t: Token = param token
+                  free now = local now
+                }
+                """,
+            ).operations.single()
+        assertEquals(Name("Token", SPos("t.kv", 2, 11)), op.free[0].type)
+        assertEquals(listOf("t"), op.free[0].names.map { it.text })
+        assertEquals(FreeSource.Param(Name("token", SPos("t.kv", 2, 25))), op.free[0].source)
+        assertNull(op.free[1].type)
+        assertEquals(SPos("t.kv", 2, 11), syntaxError("operation op = fun C.op {\n  free t: = param token\n}").pos)
+    }
+
+    @Test
     fun `parses trusted functions, a hole and a probe`() {
         val s =
             parse(

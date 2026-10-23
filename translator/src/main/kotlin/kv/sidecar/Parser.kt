@@ -399,6 +399,7 @@ private class SidecarParser(
             when (val kw = name("an operation item").text) {
                 "free" -> {
                     val names = mutableListOf(name("a free value name"))
+                    val type = if (accept(":")) name("an abstract type name") else null
                     while (accept(",")) names += name("a free value name")
                     expect("=")
                     val srcStart = i
@@ -414,7 +415,7 @@ private class SidecarParser(
                             }
                             else -> fail(srcStart, "expected 'local', 'param', 'this.' or 'call'")
                         }
-                    items += FreeItem(names, source, itemPos)
+                    items += FreeItem(names, source, itemPos, type)
                 }
                 "result" -> items += ResultItem(name("a result name"), itemPos)
                 "issue" -> {

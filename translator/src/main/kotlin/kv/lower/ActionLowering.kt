@@ -1154,7 +1154,9 @@ internal class ActionLowering(
             val sym = target as? FirBasedSymbol<*> ?: continue
             if (sym in free || sym in locals) continue
             val decl = ctx.declarationOf(sym) ?: continue
-            val type = ktype((sym as FirCallableSymbol<*>).resolvedReturnType, sym, decl) ?: continue
+            // The declaration is outside the action and its nodes are in the ledger: a type problem is reported
+            // at it without marking it translated (W14).
+            val type = ktype((sym as FirCallableSymbol<*>).resolvedReturnType, sym, decl, inAction = false) ?: continue
             val name = item.names.single().text
             names += name
             val local = Local(name, type, ctx.posOf(decl))

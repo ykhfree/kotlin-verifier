@@ -190,10 +190,15 @@ sealed interface OpItem {
     val pos: SPos
 }
 
+/**
+ * `free NAME [: TYPE] {, NAME} = SOURCE`. [type] is the abstract type of a String value (DESIGN-v0.md 4.2,
+ * restriction 4): a sidecar `type` name such as Key or Token, written after the first name.
+ */
 data class FreeItem(
     val names: List<Name>,
     val source: FreeSource,
     override val pos: SPos,
+    val type: Name? = null,
 ) : OpItem
 
 data class ResultItem(

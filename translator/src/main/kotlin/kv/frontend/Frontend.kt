@@ -63,7 +63,12 @@ class FrontendSession(
         val (res, errs) = resolver.resolve()
         resolution = res
         errors += errs
-        if (errs.isEmpty()) kvir = lowerModule(sidecar, resolver, res, file, found, moduleClass)
+        if (errs.isNotEmpty()) return
+        try {
+            kvir = lowerModule(sidecar, resolver, res, file, found, moduleClass)
+        } catch (e: SidecarException) {
+            errors += e.errors
+        }
     }
 
     internal fun result(

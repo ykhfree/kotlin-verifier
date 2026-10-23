@@ -45,6 +45,17 @@ class CheckTest {
     }
 
     @Test
+    fun `an abstract type of a free value is a sidecar type, and call values take none`() {
+        val unknown = check("free t: Token = param token", "free t: Tok = param token")
+        assertEquals(listOf("unknown-name"), unknown.map { it.code }, unknown.joinToString("\n"))
+        assertEquals(lineOf("free t: Tok") to 11, unknown.single().pos.line to unknown.single().pos.col)
+        val call = check("free rej, limit = call rejectsNewEntry", "free rej: Bool, limit = call rejectsNewEntry")
+        assertEquals(listOf("free-type"), call.map { it.code }, call.joinToString("\n"))
+        assertTrue("'returns' and 'ghost' clauses" in call.single().message, call.single().message)
+        assertEquals(lineOf("free rej: Bool"), call.single().pos.line)
+    }
+
+    @Test
     fun `an issue rule names the operation result`() {
         val errors = check("issue res { gKey", "issue out { gKey")
         assertEquals("unknown-name", errors.single().code)

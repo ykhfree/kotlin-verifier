@@ -10,6 +10,7 @@ import kv.kvir.Module
 import kv.kvir.Operation
 import kv.sidecar.Selector
 import kv.sidecar.Sidecar
+import kv.sidecar.SidecarException
 import org.jetbrains.kotlin.fir.declarations.FirFile
 import org.jetbrains.kotlin.fir.declarations.FirRegularClass
 
@@ -17,6 +18,7 @@ import org.jetbrains.kotlin.fir.declarations.FirRegularClass
  * FIR to KVIR for the module of a resolved sidecar (DESIGN-v0.md 2.1 steps 2-7): each compute call on a state map
  * is an action of its sidecar operation or a stray action; every other node of the module file goes to the ledger.
  * [computes] are the compute calls of [file]; [resolver] holds the symbols [resolution] was made from.
+ * Throws [SidecarException] if a free value's abstract type contradicts the code (DESIGN-v0.md 4.2 restriction 4).
  */
 internal fun lowerModule(
     sidecar: Sidecar,
@@ -32,6 +34,7 @@ internal fun lowerModule(
     val notActions = computes.filter { maps[it] == null }.associate { it.call to "compute on ${it.site.receiver ?: "a value"}, which is not a sidecar state map" }
     val actionSites = computes.filter { maps[it] != null }
     actionSites.forEach { ctx.collectAbstractions(it, maps.getValue(it)!!.key.name) }
+    ctx.fixAnnotations().takeIf { it.isNotEmpty() }?.let { throw SidecarException(it) }
 
     val lowered = mutableListOf<Pair<FoundCompute, Lowered>>()
     val operations =
