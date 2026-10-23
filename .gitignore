@@ -9,3 +9,6 @@ frontend-probe/.kotlin/
 frontend-probe/build/
 spike/effect_ghost/mutants/
 spike/effect_ghost/mutants.list
+translator/.gradle/
+translator/.kotlin/
+translator/build/
