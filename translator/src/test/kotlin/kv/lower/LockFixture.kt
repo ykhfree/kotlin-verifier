@@ -29,8 +29,8 @@ import kotlin.test.fail
 /**
  * A small KeyLocalLock-like module for construct fixtures: class `fixture.Lock` with a companion that holds the map
  * and the counter, and operation `run`, whose compute lambda is [body] (parameters `_` and `e`). The other arguments
- * add code around it. The default sidecar names `now` and `timeout` as free values; [RESULT_OPERATION] also makes
- * the cell `result` the operation result.
+ * add code around it; [run] replaces the whole function `run`. The default sidecar names `now` and `timeout` as free
+ * values; [RESULT_OPERATION] also makes the cell `result` the operation result.
  */
 data class LockFixture(
     val body: String,
@@ -43,7 +43,22 @@ data class LockFixture(
     val operations: String = DEFAULT_OPERATION,
     /** More source files of package `fixture`, by file name. */
     val otherFiles: Map<String, String> = emptyMap(),
+    /** The whole function `run` (indented 4 spaces); null for the default one built from [before], [body], [after]. */
+    val run: String? = null,
 ) {
+    private val defaultRun: String =
+        """
+        |    fun run(key: String, now: Long): String? {
+        |        val result = AtomicReference<String?>(null)
+        |$before
+        |        lockMap.compute(key) { _, e ->
+        |$body
+        |        }
+        |$after
+        |        return result.get()
+        |    }
+        """.trimMargin()
+
     val kotlin: String =
         """
         |package fixture
@@ -67,15 +82,7 @@ data class LockFixture(
         |$companion
         |    }
         |
-        |    fun run(key: String, now: Long): String? {
-        |        val result = AtomicReference<String?>(null)
-        |$before
-        |        lockMap.compute(key) { _, e ->
-        |$body
-        |        }
-        |$after
-        |        return result.get()
-        |    }
+        |${run ?: defaultRun}
         |$members
         |}
         |
