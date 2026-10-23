@@ -71,7 +71,7 @@ operation tryLock = fun KeyLocalLock.tryLock {
 }
 
 operation unLock = fun KeyLocalLock.unLock {
-  free t = param token
+  free t: Token = param token
   result res
   ensures P1: res ==> old(has(S, k)) && old(S.m[k].token) == t && old(tok(t).gIssued) &&
       old(tok(t).gKey) == k && old(tok(t).gBacked) && old(tok(t).gHeld) && !tok(t).gHeld && !has(S, k)

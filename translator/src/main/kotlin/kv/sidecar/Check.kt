@@ -153,6 +153,15 @@ private class SidecarChecker(
         results.drop(1).forEach { err(it.pos, "duplicate-decl", "operation ${op.name.text} has a second result") }
 
         op.free.forEach { item -> (item.source as? FreeSource.Call)?.let { call(item, it) } }
+        // 4.2 restriction 4: the annotation names a sidecar type. Call values take their types from the trusted fun.
+        op.free.forEach { item ->
+            val t = item.type ?: return@forEach
+            if (item.source is FreeSource.Call) {
+                err(t.pos, "free-type", "free ${item.names[0].text}: the values of call ${item.source.name.text} take their types from its 'returns' and 'ghost' clauses; remove ': ${t.text}'")
+            } else {
+                type(t, emptySet(), "abstract type of free ${item.names[0].text}")
+            }
+        }
 
         val ids = mutableMapOf<String, SPos>()
         op.items.forEach { item ->

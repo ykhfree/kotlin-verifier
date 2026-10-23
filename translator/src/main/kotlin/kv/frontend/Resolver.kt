@@ -420,11 +420,32 @@ class SidecarResolver(
     private fun freeBinding(
         op: OperationDecl,
         item: FreeItem,
-        sym: FirBasedSymbol<*>,
+        sym: FirCallableSymbol<*>,
         what: String,
     ) {
         bind(what, item.pos, sym)
         freeOf.getOrPut(op.name.text) { mutableListOf() } += item to sym
+        freeType(item, sym)
+    }
+
+    /**
+     * DESIGN-v0.md 4.2 restriction 4: a free value whose Kotlin type is String or String? names its abstract type,
+     * and no other free value does. The lowering adds the type to the 2.13 inference as a fixed point.
+     */
+    private fun freeType(
+        item: FreeItem,
+        sym: FirCallableSymbol<*>,
+    ) {
+        val t = sym.resolvedReturnType.lowerBoundIfFlexible()
+        val name = item.names[0]
+        val annotation = item.type
+        val kotlin = "'${item.source.name.text}' is a Kotlin ${typeText(t)}"
+        if (t.classId == STRING && annotation == null) {
+            val fix = sidecar.types.joinToString(" or ") { ": ${it.name.text}" }.ifEmpty { "a sidecar type" }
+            err(name.pos, "free-type", "free ${name.text}: $kotlin, so it needs an abstract type; add $fix to free ${name.text}")
+        } else if (t.classId != STRING && annotation != null) {
+            err(annotation.pos, "free-type", "free ${name.text}: $kotlin, not a String; only a String free value takes an abstract type, so remove ': ${annotation.text}'")
+        }
     }
 
     /** Local properties declared before [found]'s call in the blocks that enclose it, outermost first. */

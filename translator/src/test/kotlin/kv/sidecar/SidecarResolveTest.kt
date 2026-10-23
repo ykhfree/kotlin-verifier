@@ -183,7 +183,7 @@ class SidecarResolveTest {
     @Test
     fun `reports a free value whose name clashes with a model field`() {
         copySpecs()
-        edit("keylocallock.common.kv", "free t = param token", "free token = param token")
+        edit("keylocallock.common.kv", "free t: Token = param token", "free token: Token = param token")
         edit("keylocallock.common.kv", "t = t1)", "token = t1)", count = 2)
         val e = assertSingleError(resolve("coroutine"), "name-clash", "keylocallock.common.kv", at("keylocallock.common.kv", "free token", "token"))
         assertTrue("field of LockInfo" in e.message, e.message)
@@ -276,6 +276,33 @@ class SidecarResolveTest {
         edit("keylocallock.common.kv", "LocalLockLimit.rejectsNewEntry(kotlin.Long)", "LocalLockLimit.rejectsNewEntry(kotlin.Int)")
         val e = assertSingleError(resolve("core"), "unresolved", "keylocallock.common.kv", at("keylocallock.common.kv", "trusted fun com.linecorp.cse.reqshield.support.config", "com.linecorp"))
         assertTrue("[[kotlin.Long]]" in e.message, e.message)
+    }
+
+    // ---- abstract types of free values (DESIGN-v0.md 4.2, restriction 4) ----
+
+    @Test
+    fun `reports a String free value without an abstract type, with the fix`() {
+        copySpecs()
+        edit("keylocallock.common.kv", "free t: Token = param token", "free t = param token")
+        val e = assertSingleError(resolve("coroutine"), "free-type", "keylocallock.common.kv", at("keylocallock.common.kv", "free t = param token", "t ="))
+        assertTrue("'token' is a Kotlin kotlin.String" in e.message && "add : Key or : Token to free t" in e.message, e.message)
+    }
+
+    @Test
+    fun `reports an abstract type on a free value that is not a String`() {
+        copySpecs()
+        edit("keylocallock.common.kv", "free now        = local now", "free now: Token = local now")
+        val e = assertSingleError(resolve("core"), "free-type", "keylocallock.common.kv", at("keylocallock.common.kv", "free now: Token", "Token"))
+        assertTrue("'now' is a Kotlin kotlin.Long, not a String" in e.message, e.message)
+    }
+
+    @Test
+    fun `reports an abstract type that contradicts the code inference`() {
+        copySpecs()
+        // unLock compares the token with LockInfo.token, a Token field.
+        edit("keylocallock.common.kv", "free t: Token = param token", "free t: Key = param token")
+        val e = assertSingleError(resolve("coroutine"), "free-type", "keylocallock.common.kv", at("keylocallock.common.kv", "free t: Key", "Key"))
+        assertTrue("free t: Key contradicts the code, which uses 'token' as Token at KeyLocalLock.kt:65:9" in e.message, e.message)
     }
 
     @Test

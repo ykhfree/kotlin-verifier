@@ -22,6 +22,7 @@ import kv.model.Entry
 import kv.model.Role
 import kv.model.TrustedModels
 import kv.sidecar.Sidecar
+import kv.sidecar.SidecarError
 import kv.sidecar.StateKind
 import kv.sidecar.TrustedDecl
 import org.jetbrains.kotlin.fir.FirElement
@@ -470,6 +471,29 @@ internal class ModuleContext(
                 },
             )
         }
+    }
+
+    /**
+     * Adds the abstract type of each annotated free value (DESIGN-v0.md 4.2 restriction 4) to the String abstraction
+     * as a fixed point. Call it after the code constraints are collected: a type the code fixes otherwise is a
+     * sidecar error. Returns the errors.
+     */
+    fun fixAnnotations(): List<SidecarError> {
+        val errors = mutableListOf<SidecarError>()
+        for (op in sidecar.operations) {
+            for ((item, target) in resolver.freeOf[op.name.text].orEmpty()) {
+                val type = item.type ?: continue
+                val sym = target as? FirBasedSymbol<*> ?: continue
+                val others = abstraction.types(sym).filterKeys { it != type.text }
+                if (others.isEmpty()) {
+                    abstraction.fix(sym, type.text, Pos(type.pos.file, type.pos.line, type.pos.col))
+                } else {
+                    val uses = others.entries.joinToString { (t, p) -> "$t at ${p.file.substringAfterLast('/')}:${p.line}:${p.col}" }
+                    errors += SidecarError(type.pos, "free-type", "free ${item.names[0].text}: ${type.text} contradicts the code, which uses '${item.source.name.text}' as $uses (DESIGN-v0.md 2.13)")
+                }
+            }
+        }
+        return errors
     }
 
     /** The template type [e] builds, with the Long part; null if no sidecar template matches its parts. */

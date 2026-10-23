@@ -2,9 +2,12 @@ package kv.lower
 
 import kv.Harness
 import kv.ReqShield
+import kv.emit.emitViper
 import kv.frontend.Frontend
 import kv.kvir.Action
 import kv.kvir.DiagnosticKind
+import kv.kvir.GhostKind
+import kv.kvir.GhostSchema
 import kv.kvir.Module
 import kv.kvir.Status
 import kv.kvir.Unsupported
@@ -14,6 +17,10 @@ import kv.kvir.printOperation
 import kv.kvir.walk
 import kv.sidecar.checkSidecar
 import kv.sidecar.parseSidecar
+import kv.verify.ModuleVerdict
+import kv.verify.SiliconOutcome
+import kv.verify.buildReport
+import kv.verify.render
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -113,7 +120,10 @@ data class LockFixture(
         return n + 1 to lines[n].indexOf(fragment) + 1
     }
 
-    /** Compiles the fixture under [dir] and lowers it. The sidecar must pass its checks and resolve. */
+    /**
+     * Compiles the fixture under [dir] and lowers it. The sidecar must pass its checks and resolve. An incomplete
+     * module also goes through the rest of the pipeline ([assertIncompleteThroughPipeline]).
+     */
     fun lower(dir: File): Module {
         val sidecarFile = File(dir, "Lock.kv").apply { writeText(sidecar) }
         val parsed = parseSidecar(sidecarFile.path, sidecar)
@@ -122,7 +132,28 @@ data class LockFixture(
         val result = Frontend.run(sources, listOf(Harness.stdlib) + ReqShield.classpath, emptyList(), parsed)
         if (!result.compiled) fail("fixture did not compile:\n${result.messages}\n$kotlin")
         assertEquals(emptyList(), result.sidecarErrors, "fixture sidecar resolves")
-        return result.module ?: fail("no module")
+        val m = result.module ?: fail("no module")
+        if (m.incomplete) assertIncompleteThroughPipeline(m, sidecarFile.path)
+        return m
+    }
+
+    /**
+     * The pipeline after lowering, as `kv verify` runs it: the ghost binder, W1-W14 on the bound module, the emitter,
+     * and the report of a clean Silicon run. The report must say INCOMPLETE, never ERROR. The emitter needs a ghost
+     * record and a witness, so a fixture sidecar without them gets [MINIMAL_GHOST] here; the lowering does not read
+     * the ghost record, so the module only takes its schema.
+     */
+    private fun assertIncompleteThroughPipeline(
+        m: Module,
+        sidecarPath: String,
+    ) {
+        val withGhost = "ghost record" in sidecar
+        val s = parseSidecar(sidecarPath, if (withGhost) sidecar else sidecar + MINIMAL_GHOST)
+        val module = if (withGhost) m else m.copy(ghost = GhostSchema("tok", mapOf("gIssued" to GhostKind.SET_ONCE, "gHeld" to GhostKind.ENDS)))
+        val bound = bindGhosts(module, s)
+        assertEquals(emptyList(), checkWellFormed(bound), "W1-W14 after the ghost binder\n${printOperation(bound, "run")}")
+        val report = buildReport(bound, s, emitViper(bound, s), SiliconOutcome.Verified, null)
+        assertEquals(ModuleVerdict.INCOMPLETE, report.verdict, report.render())
     }
 
     companion object {
@@ -137,6 +168,9 @@ data class LockFixture(
   free now     = param now
   free timeout = this.timeout
 }"""
+
+        /** The ghost record and witness [lower] adds to a sidecar without them, so that the emitter can run. */
+        const val MINIMAL_GHOST = "ghost record tok(Token) {\n  gIssued: Bool set-once\n  gHeld: Bool ends\n}\nwitness Info.token\n"
 
         /** The default operation with the result cell `result` as its result `res`. */
         const val RESULT_OPERATION =
