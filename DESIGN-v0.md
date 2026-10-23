@@ -1106,6 +1106,9 @@ L3 연결 자리 (v0에서는 구현하지 않음):
 | v0 질문 1 | SB1/SB2의 실패 의무는 측정값(P3a)으로 6절 표를 고친다. 어떤 `ensures` 순서도 6절의 옛 표 전체를 재현하지 못한다 (측정). 템플릿 순서는 그대로 둔다 |
 | v0 질문 2, 3 | M9는 `kv verify`에서 항상 두 번째 Silicon으로 동시에 돈다 (INFO, 판정 무관). 분기: 번역된 `if`의 then 팔과 비어 있지 않은 else 팔, 결과를 읽는 CAS/tryAcquire의 성공·실패. 결과를 읽지 않는 연산(189:17)과 빈 else는 뺀다 |
 | v0 질문 4, 5 | `call` 출처의 자유 값에는 타입 표기를 쓸 수 없다 (trusted fun의 `returns`/`ghost`가 정한다). `kv hole`은 hole을 담은 파일(`keylocallock.common.kv`)을 직접 받는다 |
+| reactor 변형 (적용 A) | 사용자 결정: 다른 모듈에 적용한다, A(core-reactor `KeyLocalLock`) 다음 B(Spring Aspect `computeIfAbsent`). A는 같은 sidecar 공통부(`keylocallock.common.kv`)를 쓰고, 변형 파일 `keylocallock.reactor.kv`는 module, source, state 줄과 `use reactor.Mono.fromCallable`만 다르다 |
+| `reactor.Mono.fromCallable` 신뢰 모델 | 람다가 연산 몸체다. 구독마다 람다가 한 번 실행되고, 실행 하나가 연산 호출 하나다 (구독이 없으면 호출도 없다). 람다의 마지막 식이 연산 결과이고, `null`은 빈 Mono(= `NULL`)다. Mono는 그 밖의 효과를 더하지 않는다. 연산 결과 규칙은 "함수 끝의 `return` 하나, 또는 이 모델 아래에서 람다의 마지막 식 하나; 둘 다 셀 `get`이나 상수만 읽는다"가 된다 |
+| reactor gate | `mutants.py`의 `REACTOR_variant`(메인 세션 작성): `CORE_variant`의 새 entry 편집에 순서 차이 3곳을 더한다. 만료 해제 뒤 토큰 지우기(177, 179), `expiresAt` 뒤 `token`(186, 187), sweep은 CAS 블록 뒤에 토큰을 지운다(113, 115). Silicon 3.93 s로 검증된다. 생성한 reactor 모델은 정규화하면 이것과 같아야 한다 |
 
 ## 부록 A. 실험 재현
 

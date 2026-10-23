@@ -9,6 +9,7 @@
 == SB5b_no_cas_sweep expect=pass -> ACCEPTED
 == E4_split_trylock expect=fail -> DETECTED
 == CORE_variant expect=pass -> ACCEPTED
+== REACTOR_variant expect=pass -> ACCEPTED
 == CASB_original expect=pass -> ACCEPTED
 == CASB_SB5_no_cas_trylock_expiry expect=pass -> UNEXPECTED(exit=1)
 == CASB_SB5b_no_cas_sweep expect=pass -> UNEXPECTED(exit=1)

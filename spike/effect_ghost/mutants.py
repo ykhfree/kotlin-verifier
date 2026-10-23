@@ -95,6 +95,13 @@ SB4_EDITS = [
     ("tryLock", "      S.seq := S.seq + 1                       // nextToken() @187:29\n", ""),
 ]
 
+# A new LockInfo takes the token default null, and `newLock.token = token` runs after `newLock.isHeld.set(true)`.
+NEW_ENTRY_TOKEN_LATE = [
+    ("tryLock", "      newLock__188.token := token__187\n", "      newLock__188.token := NULL\n"),
+    ("tryLock", "      newLock__188.isHeld := true              // @190:17\n",
+     "      newLock__188.isHeld := true              // @190:17\n      newLock__188.token := token__187\n"),
+]
+
 MUTANTS = {
     # Refactoring control R1 (must stay proven): unLock clears the token before dropping the entry,
     # `existing.token = null` ahead of `return@compute null` @219:17. Equivalent behavior.
@@ -178,10 +185,30 @@ MUTANTS = {
     ]),
     # Core variant (core/.../KeyLocalLock.kt:206-209): LockInfo(Semaphore(1), now + lockTimeoutMillis) takes the
     # token default null, and `newLock.token = token` runs after `newLock.isHeld.set(true)`.
-    "CORE_variant": ("pass", [
-        ("tryLock", "      newLock__188.token := token__187\n", "      newLock__188.token := NULL\n"),
-        ("tryLock", "      newLock__188.isHeld := true              // @190:17\n",
-         "      newLock__188.isHeld := true              // @190:17\n      newLock__188.token := token__187\n"),
+    "CORE_variant": ("pass", NEW_ENTRY_TOKEN_LATE),
+    # Reactor variant (core-reactor/.../KeyLocalLock.kt): the core variant's new entry (203-206), plus three orders.
+    # The expiry branch releases before it clears the token (177, 179). An acquisition writes expiresAt before
+    # token (186, 187). The monitor clears the token after the CAS block, whatever the CAS result (113, 115).
+    "REACTOR_variant": ("pass", NEW_ENTRY_TOKEN_LATE + [
+        ("tryLock",
+         "      existing__155.token := NULL                        // @163:21\n"
+         "      existing__155.permits := existing__155.permits + 1 // Semaphore.release() @164:21\n",
+         "      existing__155.permits := existing__155.permits + 1 // Semaphore.release() @177:25\n"
+         "      existing__155.token := NULL                        // @179:25\n"),
+        ("tryLock",
+         "      existing__155.token := token__169        // @171:21\n"
+         "      existing__155.expiresAt := now + timeout // @172:21 (Long.plus @172:42, unbounded)\n",
+         "      existing__155.expiresAt := now + timeout // @186:25\n"
+         "      existing__155.token := token__169        // @187:25\n"),
+        ("sweep",
+         "      if (cond_104_49) {\n"
+         "        lockInfo__97.token := NULL                       // @105:49\n"
+         "        lockInfo__97.permits := lockInfo__97.permits + 1 // Semaphore.release() @106:49\n"
+         "      }\n",
+         "      if (cond_104_49) {\n"
+         "        lockInfo__97.permits := lockInfo__97.permits + 1 // Semaphore.release() @113:49\n"
+         "      }\n"
+         "      lockInfo__97.token := NULL                       // @115:45\n"),
     ]),
     # Design (b) with the unmodified code: CAS-bound END must verify too.
     "CASB_original": ("pass", CAS_BOUND),
