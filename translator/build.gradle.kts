@@ -50,8 +50,8 @@ tasks.test {
     systemProperty("kv.specDir", rootProject.layout.projectDirectory.dir("../specs").asFile.absolutePath)
 }
 
-// `./gradlew discoverReqShield`, `resolveReqShield` and `lowerReqShield`: run `kv discover`, `kv resolve` and
-// `kv lower` on both KeyLocalLock variants. The sidecar specs live in ../specs/reqshield.
+// `./gradlew discoverReqShield`, `resolveReqShield`, `lowerReqShield` and `emitReqShield`: run `kv discover`,
+// `kv resolve`, `kv lower` and `kv emit` on both KeyLocalLock variants. The sidecar specs live in ../specs/reqshield.
 val discoverReqShield by tasks.registering {
     group = "kv"
     description = "Lists the ConcurrentHashMap.compute sites of both req-shield KeyLocalLock variants."
@@ -63,6 +63,10 @@ val resolveReqShield by tasks.registering {
 val lowerReqShield by tasks.registering {
     group = "kv"
     description = "Prints the KVIR of both KeyLocalLock variants and checks W1-W14."
+}
+val emitReqShield by tasks.registering {
+    group = "kv"
+    description = "Writes the Viper programs of both KeyLocalLock variants to build/kv/."
 }
 
 /** Runs the kv CLI with [args]: the command first, then its arguments after the req-shield classpath and flags. */
@@ -85,7 +89,10 @@ for ((variant, dir) in listOf(
     val discover = tasks.register<JavaExec>("discover$variant") { kv("discover", "$reqShieldDir/$dir/KeyLock.kt", "$reqShieldDir/$dir/KeyLocalLock.kt") }
     val resolve = tasks.register<JavaExec>("resolve$variant") { kv("resolve", "--root", reqShieldDir, sidecar) }
     val lower = tasks.register<JavaExec>("lower$variant") { kv("lower", "--root", reqShieldDir, sidecar) }
+    val vpr = layout.buildDirectory.file("kv/keylocallock.${variant.lowercase()}.vpr").get().asFile.path
+    val emit = tasks.register<JavaExec>("emit$variant") { kv("emit", "--root", reqShieldDir, "--out", vpr, sidecar) }
     discoverReqShield { dependsOn(discover) }
     resolveReqShield { dependsOn(resolve) }
     lowerReqShield { dependsOn(lower) }
+    emitReqShield { dependsOn(emit) }
 }

@@ -241,10 +241,12 @@ data class PropertyDecl(
     override val pos: SPos,
 ) : Decl
 
+/** [text] is the hole body between the triple quotes; [textPos] is the position of its first character. */
 data class HoleDecl(
     val name: Name,
     val text: String,
     override val pos: SPos,
+    val textPos: SPos,
 ) : Decl
 
 /** A probe call argument: positional when [name] is null. */
