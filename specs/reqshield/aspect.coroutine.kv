@@ -1,0 +1,15 @@
+// Sidecar spec for req-shield ReqShieldAspect.reqShieldMap (core-spring-webflux-kotlin-coroutine). Format:
+// kv-sidecar/0 with the B additions (DESIGN-B.md 5.1); the declarations the three aspect modules share are in
+// aspect.common.kv (DESIGN-B.md 6.2). `source` paths are relative to the req-shield checkout (kv resolve --root).
+
+module com.linecorp.cse.reqshield.spring.webflux.kotlin.coroutine.aspect.ReqShieldAspect   // a class: each instance is one module
+source "core-spring-webflux-kotlin-coroutine/src/main/kotlin"                               // reqShieldMap is internal: audit every main file
+
+// ---- Trusted project functions (bodies read by a person) ----
+trusted fun ReqShieldAspect.createReqShield(org.aspectj.lang.ProceedingJoinPoint)
+  returns fresh Shield                  // every normal return is a new ReqShield
+  throws                                // it may throw; then it has created no ReqShield
+  effects none                          // it writes no module state (the tool checks the body too)
+  reviewed "DRAFT by implementing agent, pending ykhfree review: core-spring-webflux-kotlin-coroutine ReqShieldAspect.kt:236-264: the only return is ReqShield(reqShieldConfiguration) (263); every call that can throw (getCacheableAnnotation 237, getTargetMethod 238, require 240-243, the ReqShieldConfiguration constructor 245-261, which reads the lateinit scope) runs before it; the ReqShield constructor only stores the configuration; the body reads the annotation and the instance values lockSupport, asyncCache and scope, and calls no operation of this aspect"
+
+include "aspect.common.kv"

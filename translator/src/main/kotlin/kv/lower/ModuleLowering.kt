@@ -1,6 +1,7 @@
 package kv.lower
 
 import kv.frontend.FoundAction
+import kv.frontend.MapCall
 import kv.frontend.Resolution
 import kv.frontend.SidecarResolver
 import kv.kvir.Diagnostic
@@ -32,7 +33,11 @@ internal fun lowerModule(
     val maps = computes.associateWith { ctx.stateRead(it.call.dispatchReceiver) as? MapVar }
     // 2.2 rule 2: a compute call whose receiver is not a sidecar state map is no action; the ledger reports it.
     val notActions = computes.filter { maps[it] == null }.associate { it.call to "compute on ${it.site.receiver ?: "a value"}, which is not a sidecar state map" }
-    val actionSites = computes.filter { maps[it] != null }
+    // B1: the lowering of the other map calls comes with B2 (DESIGN-B.md 8); until then they are unsupported.
+    computes.filter { maps[it] != null && it.kind != MapCall.COMPUTE }.forEach {
+        ctx.diagnostics += Diagnostic("U${it.site.pos.line}_${it.site.pos.col}", DiagnosticKind.UNSUPPORTED, "${it.kind.method} on ${it.site.receiver}: not lowered yet (DESIGN-B.md 8, B2)", it.site.pos)
+    }
+    val actionSites = computes.filter { maps[it] != null && it.kind == MapCall.COMPUTE }
     actionSites.forEach { ctx.collectAbstractions(it, maps.getValue(it)!!.key.name) }
     ctx.fixAnnotations().takeIf { it.isNotEmpty() }?.let { throw SidecarException(it) }
 
@@ -42,6 +47,7 @@ internal fun lowerModule(
             val found = resolver.computeOf[decl.name.text] ?: return@mapNotNull null
             val name = decl.name.text
             val map = maps[found]
+            if (found.kind != MapCall.COMPUTE) return@mapNotNull null
             if (map == null) {
                 ctx.diagnostics += Diagnostic("U${found.site.pos.line}_${found.site.pos.col}", DiagnosticKind.UNSUPPORTED, "operation $name: ${notActions.getValue(found.call)}", found.site.pos)
                 return@mapNotNull null

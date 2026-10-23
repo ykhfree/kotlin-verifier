@@ -69,12 +69,34 @@ object TrustedModels {
     /** The model of non-escaping local AtomicReference and AtomicBoolean values (DESIGN-v0.md 2.5). */
     const val CELL = "jdk.AtomicCell"
 
+    /** The model of `getOrPut` on a ConcurrentMap (DESIGN-B.md 2.5). */
+    const val GET_OR_PUT = "kotlin.collections.getOrPut"
+
     /** The model of a `fun` operation whose whole body is one `Mono.fromCallable { ... }` call (DESIGN-v0.md 8.3). */
     const val FROM_CALLABLE = "reactor.Mono.fromCallable"
 
     val entries: List<Entry> =
         listOf(
             Entry("jdk.ConcurrentHashMap.compute", CHM, "compute", listOf("?", "java/util/function/BiFunction"), Role.ACTION),
+            // DESIGN-B.md 2.3, Corretto 21.0.10 src.zip ConcurrentHashMap.java and ConcurrentMap.java. Each is one
+            // atomic action on a state map, with the call's key argument as the action key.
+            // computeIfAbsent: 1670 "method invocation is performed atomically.  The supplied"; 1672 "if the key is
+            //   absent, else not at all.  Some attempted update"; 1669 "and enters it into this map unless {@code
+            //   null}.  The entire"; 1689 "in which case the mapping is left unestablished".
+            Entry("jdk.ConcurrentHashMap.computeIfAbsent", CHM, "computeIfAbsent", listOf("?", "java/util/function/Function"), Role.ACTION),
+            // putIfAbsent: ConcurrentMap.java:127-128 "If the specified key is not already associated" "with a value,
+            //   associates it with the given value."; 136 "except that the action is performed atomically."
+            Entry("jdk.ConcurrentHashMap.putIfAbsent", CHM, "putIfAbsent", listOf("?", "?"), Role.ACTION),
+            // put: 993 "Maps the specified key to the specified value in this table." Also `m[k] = v`: stdlib 2.0.21
+            //   Maps.kt:266-267 "public inline operator fun <K, V> MutableMap<K, V>.set(key: K, value: V): Unit {" "put(key, value)"
+            Entry("jdk.ConcurrentHashMap.put", CHM, "put", listOf("?", "?"), Role.ACTION),
+            // remove: 1093 "Removes the key (and its corresponding value) from this map."
+            Entry("jdk.ConcurrentHashMap.remove", CHM, "remove", listOf("?"), Role.ACTION),
+            // getOrPut on a ConcurrentMap (DESIGN-B.md 2.5): a racy read, the default function outside any action, then
+            // the putIfAbsent action. stdlib 2.0.21 MapsJVM.kt:72-73 "return this.get(key)"
+            // "?: defaultValue().let { default -> this.putIfAbsent(key, default) ?: default }". A top-level function:
+            // calls match it by MapCall, not by this entry.
+            Entry(GET_OR_PUT, "kotlin/collections", "getOrPut", listOf("?", "kotlin/Function0"), Role.ACTION),
             Entry("jdk.ConcurrentHashMap.mappingCount", CHM, "mappingCount", emptyList(), Role.NONDET, Returns.LONG),
             // Racy reads; `keys` and `size` are Kotlin properties of the Java map.
             Entry("jdk.ConcurrentHashMap.racyRead", CHM, "get", null, Role.RACY_READ),
@@ -126,6 +148,18 @@ object TrustedModels {
             listOf("trace", "debug", "info", "warn", "error", "isTraceEnabled").map {
                 Entry("slf4j.Logger", "org/slf4j/Logger", it, null, Role.NO_EFFECT)
             }
+
+    /**
+     * Kotlin classes an opaque sidecar type may bind (DESIGN-B.md 2.2): Viper `==` on the type stands for the class's
+     * `equals`, with the source that justifies it.
+     */
+    val keyClasses: Map<String, String> =
+        mapOf(
+            // jdk.reflect.Method key: JDK 21 Method.java:361-364 "Two {@code Methods} are the same if" "they were declared
+            // by the same class and have the same name" "and formal parameter types and return type."; ConcurrentHashMap
+            // compares keys with equals (ConcurrentHashMap.java:928 "such that {@code key.equals(k)}").
+            "java.lang.reflect.Method" to "JDK 21 Method.java:361-364",
+        )
 
     /** Names a sidecar may `use`. */
     val builtIn: Set<String> = entries.map { it.model }.toSet()

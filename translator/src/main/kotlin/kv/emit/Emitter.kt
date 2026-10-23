@@ -783,11 +783,13 @@ private class Emitter(
                 when (step) {
                     is ProbeCall -> {
                         val op = ops.getValue(step.op.text)
-                        val result = op.result ?: fail(step.op.pos, "operation ${op.name} has no result to assign to ${step.out.text}")
+                        // A second out (exc, DESIGN-B.md 5.1) comes with the emitter of operation sections (B3).
+                        val out = step.outs.singleOrNull() ?: fail(step.outs[1].pos, "the emitter takes one out per probe call; exc outs come with DESIGN-B.md 8, B3")
+                        val result = op.result ?: fail(step.op.pos, "operation ${op.name} has no result to assign to ${out.text}")
                         val byName = step.args.filter { it.name != null }.associateBy { it.name!!.text }
                         val args = listOf(step.args.first().value.text) + op.action.free.filter { it.sidecarName != null }.map { byName.getValue(it.sidecarName!!).value.text }
-                        w.line("var ${step.out.text}: ${vtype(result.local.type)}", indent = 2)
-                        w.line("${step.out.text} := ${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "probe call ${op.name}"), 2)
+                        w.line("var ${out.text}: ${vtype(result.local.type)}", indent = 2)
+                        w.line("${out.text} := ${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "probe call ${op.name}"), 2)
                     }
                     is ProbeAssert -> {
                         w.put("  assert ")

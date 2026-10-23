@@ -14,12 +14,13 @@ import kv.sidecar.StateDecl
 import kv.sidecar.StateKind
 import kv.sidecar.TrustedDecl
 import org.jetbrains.kotlin.descriptors.ClassKind
+import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.DirectDeclarationsAccess
-import org.jetbrains.kotlin.fir.declarations.FirAnonymousFunction
 import org.jetbrains.kotlin.fir.declarations.FirFile
 import org.jetbrains.kotlin.fir.declarations.FirProperty
+import org.jetbrains.kotlin.fir.declarations.FirResolvedImport
 import org.jetbrains.kotlin.fir.declarations.FirRegularClass
 import org.jetbrains.kotlin.fir.expressions.FirBlock
 import org.jetbrains.kotlin.fir.expressions.FirFunctionCall
@@ -138,7 +139,10 @@ class SidecarResolver(
     fun resolve(): Pair<Resolution, List<SidecarError>> {
         val decl = sidecar.modules.single()
         bind("module ${decl.fqn.text}", decl.pos, module.symbol)
-        if (module.classKind != ClassKind.OBJECT) err(decl.fqn.pos, "kotlin-kind", "module ${decl.fqn.text} must be an object or a companion object")
+        // DESIGN-B.md 2.1: a class is an instance module (each instance is one module).
+        if (module.classKind != ClassKind.OBJECT && module.classKind != ClassKind.CLASS) {
+            err(decl.fqn.pos, "kotlin-kind", "module ${decl.fqn.text} must be an object, a companion object or a class")
+        }
         sidecar.classes.forEach(::cls)
         sidecar.states.forEach(::state)
         sidecar.trusted.forEach(::trustedFun)
@@ -177,14 +181,26 @@ class SidecarResolver(
             it as T
         }
 
-    /** A short class name: nested in the module object, nested in its outer class, or in the module's package. */
+    /**
+     * A short class name: nested in the module object, nested in its outer class, in the module's package, or
+     * imported by the module file (DESIGN-B.md 2.2 rule 6).
+     */
     private fun lookupClass(path: List<String>): FirRegularClassSymbol? {
         val first =
             listOfNotNull(module.symbol, outer).firstNotNullOfOrNull { nested(it, path[0]) }
                 ?: classSymbol(ClassId(pkg, Name.identifier(path[0])))
+                ?: imported(path[0])
                 ?: return null
         return path.drop(1).fold(first as FirRegularClassSymbol?) { c, n -> c?.let { nested(it, n) } }
     }
+
+    /** The class an explicit (not `*`) import of the module file names [name], under its alias if it has one. */
+    private fun imported(name: String): FirRegularClassSymbol? =
+        file.imports.filterIsInstance<FirResolvedImport>().filter { !it.isAllUnder }.firstNotNullOfOrNull { import ->
+            val simple = import.importedName ?: return@firstNotNullOfOrNull null
+            if ((import.aliasName ?: simple).asString() != name) return@firstNotNullOfOrNull null
+            classSymbol(import.resolvedParentClassId?.createNestedClassId(simple) ?: ClassId(import.packageFqName, simple))
+        }
 
     /** A short member name: in the module object, its outer class, then the package; `C.m` is member m of class C. */
     private fun <T : FirCallableSymbol<*>> lookupMember(
@@ -258,7 +274,7 @@ class SidecarResolver(
     private fun cls(c: ClassDecl) {
         val sym = lookupClass(c.kname.text.split('.'))
         if (sym == null) {
-            err(c.kname.pos, "unresolved", "no class '${c.kname.text}' in the module object, its outer class or package $pkg")
+            err(c.kname.pos, "unresolved", "no class '${c.kname.text}' in the module object, its outer class, package $pkg or the imports of ${file.name}")
             return
         }
         classes[c.name.text] = sym
@@ -296,18 +312,26 @@ class SidecarResolver(
         bind("state ${st.name.text}", st.pos, prop)
         states[st.name.text] = prop
         val t = prop.resolvedReturnType.lowerBoundIfFlexible()
+        // The key class: the Kotlin class an opaque type binds (DESIGN-B.md 2.2), else String (DESIGN-v0.md 2.13).
+        val keyClass = (st.kind as? StateKind.MapOf)?.let { kind -> sidecar.types.find { it.name.text == kind.key.text }?.kclass?.let { ClassId.topLevel(FqName(it.text)) } } ?: STRING
         val ok =
             when (val kind = st.kind) {
                 StateKind.Counter -> t.classId == ATOMIC_LONG
                 is StateKind.MapOf -> {
                     val args = t.typeArguments.map { it.type?.lowerBoundIfFlexible()?.classId }
                     val value = classes[kind.value.text]?.classId
-                    t.classId == CHM && args.size == 2 && args[0] == STRING && (value == null || args[1] == value)
+                    t.classId == CHM && args.size == 2 && args[0] == keyClass && (value == null || args[1] == value)
                 }
             }
         if (!ok) {
-            val want = if (st.kind == StateKind.Counter) "an AtomicLong" else "a ConcurrentHashMap<String, ${(st.kind as StateKind.MapOf).value.text}>"
+            val want = if (st.kind == StateKind.Counter) "an AtomicLong" else "a ConcurrentHashMap<${keyClass.asSingleFqName().asString().removePrefix("kotlin.")}, ${(st.kind as StateKind.MapOf).value.text}>"
             err(st.kname.pos, "kotlin-type", "state ${st.name.text} needs $want, but '${st.kname.text}' is ${typeText(t)}")
+        }
+        // DESIGN-B.md 2.1 rule 6: the audit covers the module file for a private field and every source file for an
+        // internal one; code outside the sources could reach any other field.
+        val visibility = prop.resolvedStatus.visibility
+        if (visibility != Visibilities.Private && visibility != Visibilities.Internal) {
+            err(st.kname.pos, "state-visibility", "state ${st.name.text}: '${st.kname.text}' is ${visibility.name}; a state field must be private (the module file is audited) or internal (every source file is audited)")
         }
     }
 
@@ -320,9 +344,23 @@ class SidecarResolver(
             match.size == 1 -> {
                 trusted[t.shortName] = match.single()
                 bind("trusted ${t.shortName}", t.pos, match.single())
+                freshType(t, match.single())
             }
             candidates.isEmpty() -> err(t.fn.pos, "unresolved", "no function '${t.fn.text}'")
             else -> err(t.fn.pos, "unresolved", "no '${t.fn.text}' takes ($wanted); candidates take ${candidates.map(::signature)}")
+        }
+    }
+
+    /** `returns fresh C`: the Kotlin function returns C's class; type arguments are ignored (DESIGN-B.md 2.2 rule 5). */
+    private fun freshType(
+        t: TrustedDecl,
+        fn: FirNamedFunctionSymbol,
+    ) {
+        val cls = t.fresh ?: return
+        val want = classes[cls.text] ?: return // the class did not resolve; that error is reported
+        val got = fn.resolvedReturnType.lowerBoundIfFlexible()
+        if (got.classId != want.classId || got.isMarkedNullable) {
+            err(cls.pos, "kotlin-type", "trusted fun ${t.shortName} returns fresh ${cls.text}, a ${want.classId.asSingleFqName()}, but ${t.fn.text} returns ${typeText(got)}")
         }
     }
 
@@ -353,8 +391,8 @@ class SidecarResolver(
                     }
                     val inFun = computes.filter { it.inFunction?.symbol == fn }
                     if (inFun.size != 1) {
-                        // U2: v0 translates an operation with exactly one action; otherwise the operation is unsupported.
-                        unsupported += UnsupportedOperation(op.name.text, target.pos, "fun ${target.text} has ${inFun.size} compute calls ${inFun.map { at(it) }}; v0 translates an operation with exactly one", posOf(fn))
+                        // U2: an operation has exactly one action call; otherwise the operation is unsupported.
+                        unsupported += UnsupportedOperation(op.name.text, target.pos, "fun ${target.text} has ${inFun.size} action calls ${inFun.map { at(it) }}; an operation has exactly one (DESIGN-v0.md 8.3 U2)", posOf(fn))
                         return
                     }
                     inFun.single()
@@ -364,7 +402,7 @@ class SidecarResolver(
                     bind("operation ${op.name.text}", op.pos, cls)
                     val inCls = computes.filter { it.inClass?.symbol == cls }
                     if (inCls.size != 1) {
-                        return err(target.pos, "ambiguous-selector", "compute in ${target.text} matches ${inCls.size} compute calls ${inCls.map { at(it) }}; it must match exactly one")
+                        return err(target.pos, "ambiguous-selector", "compute in ${target.text} matches ${inCls.size} action calls ${inCls.map { at(it) }}; it must match exactly one")
                     }
                     inCls.single()
                 }
@@ -373,7 +411,7 @@ class SidecarResolver(
         claimed[found] = op.name.text
         actions[op.name.text] = found.site
         computeOf[op.name.text] = found
-        bindings += Binding("action ${op.name.text}", op.pos, "compute call", found.site.pos)
+        bindings += Binding("action ${op.name.text}", op.pos, "${found.kind.method} call", found.site.pos)
         op.free.forEach { free(op, it, found) }
     }
 
@@ -404,15 +442,11 @@ class SidecarResolver(
             }
             is FreeSource.Call -> {
                 val fn = trusted[name] ?: return // the trusted function did not resolve; that error is reported
-                val calls = callsIn(found.lambda, fn)
-                when (calls.size) {
-                    0 -> err(src.name.pos, "unresolved", "the action at ${at(found)} makes no call to $name")
-                    1 -> {
-                        bind(what, item.pos, fn, positions.of(calls.single().source))
-                        freeOf.getOrPut(op.name.text) { mutableListOf() } += item to calls.single()
-                    }
-                    else -> err(src.name.pos, "ambiguous", "the action at ${at(found)} calls $name ${calls.size} times")
-                }
+                // DESIGN-B.md 5.3 rule 6: the names bind the first call of the operation; without a call they are
+                // parameters the code does not use (INFO, reported by the lowering).
+                val call = callsIn(operationScope(op, found), fn).firstOrNull()
+                bind(what, item.pos, fn, call?.let { positions.of(it.source) } ?: posOf(fn))
+                if (call != null) freeOf.getOrPut(op.name.text) { mutableListOf() } += item to call
             }
         }
     }
@@ -478,12 +512,19 @@ class SidecarResolver(
         return visible.orEmpty()
     }
 
+    /** Where an operation's calls are: the function of a `fun` operation, else the action's lambda. */
+    private fun operationScope(
+        op: OperationDecl,
+        found: FoundAction,
+    ): FirElement? = if (op.selector is Selector.Fun) found.inFunction else found.lambda
+
+    /** The calls of [fn] in [scope], in source order. */
     private fun callsIn(
-        lambda: FirAnonymousFunction?,
+        scope: FirElement?,
         fn: FirNamedFunctionSymbol,
     ): List<FirFunctionCall> {
         val calls = mutableListOf<FirFunctionCall>()
-        lambda?.body?.accept(
+        scope?.accept(
             object : FirVisitorVoid() {
                 override fun visitElement(element: FirElement) = element.acceptChildren(this)
 

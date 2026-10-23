@@ -151,20 +151,28 @@ for ((variant, dir) in listOf(
     verifyReqShield { dependsOn(verify) }
 }
 
-// `./gradlew discoverAspect`: run `kv discover` on the main sources of the three req-shield Spring aspect modules
-// (DESIGN-B.md 8, B0). Each module also has its own task, e.g. `discoverAspectCoreSpring`.
+// `./gradlew discoverAspect` and `resolveAspect`: run `kv discover` and `kv resolve` on the three req-shield Spring
+// aspect modules (DESIGN-B.md 8, B0 and B1). Each module also has its own tasks, e.g. `discoverAspectCoreSpring`.
+// The sidecars are ../specs/reqshield/aspect.{core-spring,webflux,coroutine}.kv.
 val discoverAspect by tasks.registering {
     group = "kv"
     description = "Lists the ConcurrentHashMap action calls of the three req-shield Spring aspect modules."
 }
+val resolveAspect by tasks.registering {
+    group = "kv"
+    description = "Binds the names of the three Spring aspect sidecars to FIR symbols."
+}
 
-for ((module, dir) in listOf(
-    "CoreSpring" to "core-spring",
-    "Webflux" to "core-spring-webflux",
-    "Coroutine" to "core-spring-webflux-kotlin-coroutine",
+for ((module, dir, spec) in listOf(
+    Triple("CoreSpring", "core-spring", "core-spring"),
+    Triple("Webflux", "core-spring-webflux", "webflux"),
+    Triple("Coroutine", "core-spring-webflux-kotlin-coroutine", "coroutine"),
 )) {
+    val sidecar = layout.projectDirectory.file("../specs/reqshield/aspect.$spec.kv").asFile.path
     val discover = tasks.register<JavaExec>("discoverAspect$module") { kv("discover", "$reqShieldDir/$dir/src/main/kotlin", cp = aspectClasspath) }
+    val resolve = tasks.register<JavaExec>("resolveAspect$module") { kv("resolve", "--root", reqShieldDir, sidecar, cp = aspectClasspath) }
     discoverAspect { dependsOn(discover) }
+    resolveAspect { dependsOn(resolve) }
 }
 
 // `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of the three
