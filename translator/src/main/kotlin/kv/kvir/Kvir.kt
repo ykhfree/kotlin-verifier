@@ -430,6 +430,9 @@ enum class DispositionKind(
     FREE_SOURCE("free-source"),
     RACY_READ("racy-read"),
     CELL("cell"),
+
+    /** A declaration the tool reads the module structure from: module object, state, sidecar class, field, defaults. */
+    STRUCTURE("structure"),
     NOT_MODELED("not-modeled"),
     UNSUPPORTED("unsupported"),
 }
@@ -443,6 +446,16 @@ data class Disposition(
 )
 
 enum class DiagnosticKind { UNSUPPORTED, ASSUMPTION, INFO }
+
+/**
+ * True if the module verdict cannot be PROVEN (W12, U3): an action is unsupported, or the ledger or a module
+ * diagnostic reports something unsupported. The verdict is then INCOMPLETE unless Silicon finds a failure.
+ */
+val Module.incomplete: Boolean
+    get() =
+        (operations.map { it.action } + strayActions).any { it.status is Status.Unsupported } ||
+            ledger.any { it.kind == DispositionKind.UNSUPPORTED } ||
+            diagnostics.any { it.kind == DiagnosticKind.UNSUPPORTED }
 
 data class Diagnostic(
     val id: String,
