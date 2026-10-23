@@ -6,6 +6,10 @@ import kv.frontend.ResolveOutcome
 import kv.kvir.Module
 import kv.kvir.checkWellFormed
 import kv.lower.bindGhosts
+import kv.verify.Report
+import kv.verify.Silicon
+import kv.verify.SiliconBudget
+import kv.verify.verify
 import kv.sidecar.Sidecar
 import java.io.File
 import kotlin.test.assertEquals
@@ -83,6 +87,12 @@ class Workspace(
     fun lower(variant: String): Pair<Module, Sidecar> = lowerChecked(resolve(variant))
 
     fun emit(variant: String): Emitted = lower(variant).let { (m, s) -> emitBound(m, s) }
+
+    /** Lowers, emits to [dir]/[variant].vpr, runs Silicon with [budget] and reports. */
+    fun verify(
+        variant: String,
+        budget: SiliconBudget = SiliconBudget(),
+    ): Report = lower(variant).let { (m, s) -> verify(m, s, File(dir, "$variant.vpr"), Silicon.defaultHome(), budget) }
 
     private fun replaceOnce(
         f: File,

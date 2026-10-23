@@ -10,6 +10,12 @@ import kv.kvir.incomplete
 import kv.kvir.printModule
 import kv.lower.bindGhosts
 import kv.sidecar.SidecarException
+import kv.verify.ModuleVerdict
+import kv.verify.Silicon
+import kv.verify.SiliconBudget
+import kv.verify.SiliconMissing
+import kv.verify.render
+import kv.verify.verify
 import java.io.File
 import java.io.PrintStream
 import kotlin.system.exitProcess
@@ -24,6 +30,11 @@ private const val USAGE = """usage:
   kv emit --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] SIDECAR.kv
       As lower, then writes the Viper program (to stdout without --out). With --out, also writes the position
       table to FILE.vpr.positions. Exit 1 if a rule is broken or the sidecar cannot be emitted.
+  kv verify --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] [--viper-home DIR]
+            [--assert-timeout MS] [--wall-seconds N] SIDECAR.kv
+      As emit, then runs Silicon once and prints the report (DESIGN-v0.md 5.8). VIPER_HOME or --viper-home names a
+      Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
+      --wall-seconds (default 300). Exit 0 if the module is PROVEN, 1 otherwise.
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
@@ -50,6 +61,7 @@ fun runCli(
         "resolve" -> resolve(options, out, err)
         "lower" -> lower(options, out, err)
         "emit" -> emit(options, out, err)
+        "verify" -> verify(options, out, err)
         else -> {
             err.println(USAGE)
             2
@@ -173,6 +185,27 @@ private fun emit(
     return 0
 }
 
+private fun verify(
+    options: Options,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    val (outcome, code) = resolved("verify", options, err)
+    val module = outcome?.module ?: return code
+    val vpr = options.out ?: File.createTempFile("kv-", ".vpr")
+    val budget = SiliconBudget(options.assertTimeoutMs ?: 20_000, options.assertTimeoutMs ?: 20_000, options.wallSeconds ?: 300)
+    val report =
+        try {
+            verify(module, outcome.sidecar!!, vpr, options.viperHome ?: Silicon.defaultHome(), budget)
+        } catch (e: SiliconMissing) {
+            err.println("kv: ${e.message}")
+            return 1
+        }
+    out.print(report.render())
+    out.println("Viper program: ${vpr.path}")
+    return if (report.verdict == ModuleVerdict.PROVEN) 0 else 1
+}
+
 private fun format(site: ComputeSite): String {
     val lambda = site.lambda?.let { "${it.line}:${it.col}" } ?: "none"
     return "${site.pos} ${site.receiver ?: "?"}.compute class=${site.inClass ?: "-"} fun=${site.inFunction ?: "-"} lambda=$lambda"
@@ -188,6 +221,9 @@ private class Options(
     val kotlincArgs: List<String>,
     val files: List<File>,
     val out: File?,
+    val viperHome: File?,
+    val assertTimeoutMs: Int?,
+    val wallSeconds: Long?,
 ) {
     companion object {
         fun parse(args: List<String>): Options {
@@ -196,6 +232,9 @@ private class Options(
             val kotlincArgs = mutableListOf<String>()
             val files = mutableListOf<File>()
             var out: File? = null
+            var viperHome: File? = null
+            var assertTimeoutMs: Int? = null
+            var wallSeconds: Long? = null
             val it = args.iterator()
             while (it.hasNext()) {
                 when (val arg = it.next()) {
@@ -203,10 +242,13 @@ private class Options(
                     "--classpath" -> classpath = value(it, arg).split(File.pathSeparator).filter { p -> p.isNotEmpty() }.map(::File)
                     "--kotlinc" -> kotlincArgs += value(it, arg).split(Regex("\\s+")).filter { a -> a.isNotEmpty() }
                     "--out" -> out = File(value(it, arg))
+                    "--viper-home" -> viperHome = File(value(it, arg))
+                    "--assert-timeout" -> assertTimeoutMs = value(it, arg).toIntOrNull() ?: throw UsageError("--assert-timeout needs a number of milliseconds")
+                    "--wall-seconds" -> wallSeconds = value(it, arg).toLongOrNull() ?: throw UsageError("--wall-seconds needs a number of seconds")
                     else -> if (arg.startsWith("--")) throw UsageError("unknown option $arg") else files += File(arg)
                 }
             }
-            return Options(root, classpath, kotlincArgs, files, out)
+            return Options(root, classpath, kotlincArgs, files, out, viperHome, assertTimeoutMs, wallSeconds)
         }
 
         private fun value(
