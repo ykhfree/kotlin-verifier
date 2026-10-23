@@ -2,6 +2,10 @@ package kv.cli
 
 import kv.frontend.ComputeSite
 import kv.frontend.Frontend
+import kv.frontend.ResolveOutcome
+import kv.kvir.checkWellFormed
+import kv.kvir.incomplete
+import kv.kvir.printModule
 import java.io.File
 import java.io.PrintStream
 import kotlin.system.exitProcess
@@ -11,6 +15,8 @@ private const val USAGE = """usage:
       Compiles the files and lists every ConcurrentHashMap.compute call (one candidate action each).
   kv resolve --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
       Checks the sidecar, compiles its source files (relative to DIR) and binds its Kotlin names to FIR symbols.
+  kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
+      As resolve, then prints the module in KVIR and checks W1-W14. Exit 1 if a rule is broken.
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
@@ -35,6 +41,7 @@ fun runCli(
     return when (command) {
         "discover" -> discover(options, out, err)
         "resolve" -> resolve(options, out, err)
+        "lower" -> lower(options, out, err)
         else -> {
             err.println(USAGE)
             2
@@ -61,26 +68,37 @@ private fun discover(
     return 0
 }
 
-private fun resolve(
+/** Runs [Frontend.resolve] for `resolve` and `lower`; null after reporting a usage error, a compile error or sidecar errors. */
+private fun resolved(
+    command: String,
     options: Options,
-    out: PrintStream,
     err: PrintStream,
-): Int {
+): Pair<ResolveOutcome?, Int> {
     val root = options.root
     if (root == null || options.files.size != 1) {
-        err.println("kv: resolve needs --root DIR and one sidecar file")
-        return 2
+        err.println("kv: $command needs --root DIR and one sidecar file")
+        return null to 2
     }
     val outcome = Frontend.resolve(options.files.single(), root, options.classpath, options.kotlincArgs)
     outcome.compileMessages?.let {
         err.print(it)
         err.println("kv: compilation failed")
-        return 1
+        return null to 1
     }
     if (outcome.errors.isNotEmpty()) {
         outcome.errors.forEach { err.println(it) }
-        return 1
+        return null to 1
     }
+    return outcome to 0
+}
+
+private fun resolve(
+    options: Options,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    val (outcome, code) = resolved("resolve", options, err)
+    outcome ?: return code
     val resolution = outcome.resolution!!
     resolution.bindings.forEach { b ->
         val where = b.kotlinPos?.let { "@${it.file.substringAfterLast('/')}:${it.line}:${it.col}" } ?: "(library)"
@@ -88,6 +106,20 @@ private fun resolve(
     }
     resolution.unsupported.forEach { out.println("unsupported operation ${it.operation} (${it.at}): ${it.reason}") }
     return 0
+}
+
+private fun lower(
+    options: Options,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    val (outcome, code) = resolved("lower", options, err)
+    val module = outcome?.module ?: return code
+    out.print(printModule(module))
+    val violations = checkWellFormed(module)
+    violations.forEach { err.println("kv: $it") }
+    out.println("module ${if (module.incomplete) "INCOMPLETE (unsupported parts above)" else "complete"}; W1-W14: ${violations.size} violation(s)")
+    return if (violations.isEmpty()) 0 else 1
 }
 
 private fun format(site: ComputeSite): String {

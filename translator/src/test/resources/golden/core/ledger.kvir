@@ -1,0 +1,57 @@
+ledger: 479 FIR nodes, 270 in the ledger, 209 translated
+  0-5 not-modeled property log                                    @33:1
+  6 not-modeled class KeyLocalLock                                @35:1
+  7-9 not-modeled constructor of KeyLocalLock                     @35:19
+  10-11 free-source property lockTimeoutMillis                    @35:20
+  12 structure class LockInfo                                     @40:5
+  13-21 structure constructor of LockInfo                         @40:27
+  22-23 structure field permits: property semaphore               @41:9
+  24-25 structure field expiresAt: property expiresAt             @46:9
+  26-27 structure field isHeld: property isHeld                   @53:9
+  28-29 structure field token: property token                     @62:9
+  30 structure module object Companion                            @65:5
+  31-32 not-modeled constructor of Companion                      @65:5
+  33-34 structure state m: property lockMap                       @67:9
+  35-37 structure state seq: property tokenCounter                @70:9
+  38-39 not-modeled property sharedScheduler                      @73:9
+  48-77 not-modeled fun getOrCreateScheduler                      @79:9
+  78-104 not-modeled fun createScheduler                          @88:9
+  105-115 not-modeled fun startMonitoring                         @97:9
+  116-118 free-source val now = System.currentTimeMillis()        @101:21
+  119 not-modeled fun startMonitoring                             @97:9
+  120-122 racy-read lockMap.size                                  @102:34
+  123 not-modeled fun startMonitoring                             @97:9
+  124-126 racy-read lockMap.keys                                  @108:21
+  127-128 not-modeled fun startMonitoring                         @97:9
+  129 free-source param key                                       @108:44
+  130 not-modeled fun startMonitoring                             @97:9
+  134 free-source key of sweep#109: key                           @109:41
+  179 not-modeled fun startMonitoring                             @97:9
+  180-182 racy-read lockMap.size                                  @126:33
+  183-211 not-modeled fun startMonitoring                         @97:9
+  212-259 not-modeled init                                        @137:9
+  260-263 not-modeled init                                        @156:5
+  264-267 not-modeled fun tryLock                                 @163:5
+  268-272 free-source val completeKey = buildLockKey(key, lockType) @167:9
+  273-274 free-source val now = nowToEpochTime()                  @168:9
+  275-277 cell val acquiredToken = AtomicReference<String?>(null) @169:9
+  281 free-source key of tryLock#173: completeKey                 @173:25
+  391 cell return acquiredToken.get()                             @214:9
+  392-393 cell acquiredToken.get()                                @214:16
+  394-396 not-modeled fun unLock                                  @217:5
+  397 free-source param token                                     @220:9
+  398 not-modeled fun unLock                                      @217:5
+  399-403 free-source val completeKey = buildLockKey(key, lockType) @222:9
+  404-406 cell val released = AtomicBoolean(false)                @223:9
+  410 free-source key of unLock#229: completeKey                  @229:25
+  450-451 not-modeled fun unLock                                  @217:5
+  452-453 cell released.get()                                     @243:14
+  454-458 not-modeled fun unLock                                  @217:5
+  459 cell return released.get()                                  @246:9
+  460-461 cell released.get()                                     @246:16
+  462-473 not-modeled fun buildLockKey                            @249:5
+  474-478 not-modeled fun shutdown                                @254:5
+diagnostics
+  A76 ASSUMPTION Long unbounded: tokenCounter.incrementAndGet()   @76:52
+  A190 ASSUMPTION Long unbounded: now + lockTimeoutMillis         @190:42
+  A206 ASSUMPTION Long unbounded: now + lockTimeoutMillis         @206:54
