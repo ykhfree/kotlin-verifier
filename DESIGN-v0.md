@@ -1124,6 +1124,7 @@ L3 연결 자리 (v0에서는 구현하지 않음):
 | reactor 질문 2 | 모양 검사는 모든 `fun` 연산에 적용한다: compute를 감싼 람다는 "본문 전체인 `fromCallable` 하나"만 허용한다. 전에는 `forEach { compute }` 같은 코드를 받아 함수 호출 한 번이 action을 여러 번 돌릴 수 있었다 (1.1의 "연산당 action 1개"와 어긋남). `synchronized(lock) { compute }` 같은 안전한 감싸기도 v0에서는 UNSUPPORTED다 |
 | reactor 질문 3 | 출처 인용을 받아들인다: Maven Central의 3.7.19 sources jar(게시된 .sha1과 같음; 전송 무결성만 확인), 캐시 binary의 javap(같은 CAS 뒤 `call()`, null이면 `onComplete`), 캐시의 3.6.7·3.8.0 sources(같은 Javadoc 문장)로 교차 확인했다 |
 | reactor 질문 5, 6 | `REACTOR_variant` 주석의 위치를 113:53, 115:49로 고친다 (주석이라 gate와 무관). ledger의 `fromCallable` 틀은 `not-modeled fun tryLock`으로 둔다. 셀 규칙 2.5의 2를 넓힌다: 셀을 선언한 함수나 람다(`fromCallable` 아래에서는 함수 자리)는 그 셀을 읽어도 된다 |
+| reviewed 지문 (사용자 결정) | 모든 `reviewed` 메모는 검토한 텍스트의 SHA-256 앞 16자리를 함께 적는다: `reviewed "<메모>" sha256 "<hex>"`. 대상은 trusted fun이면 그 Kotlin 함수의 본문 소스 텍스트, 발급 규칙과 허용 조건이면 sidecar의 그 절 텍스트다. 도구가 다시 계산해서 다르면 sidecar 오류(`stale-review`, 종료 코드 4)이고, 메시지에 새 지문을 싣는다. 이유: AI가 검토된 함수 본문이나 허용 조건을 고치면 옛 서명이 조용히 남는다. 기존 메모 7개의 지문은 오늘 검토한 텍스트 그대로에서 계산한다 (req-shield `2e792d2`, 절 텍스트는 검토 뒤 바뀌지 않음) |
 
 ## 부록 A. 실험 재현
 

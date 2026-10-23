@@ -3,8 +3,8 @@
 Normalization (DESIGN-v0.md 7, M5 acceptance test 2):
 1. `//` comments are removed. A `/*` comment is an input error.
 2. The text is split into tokens. Whitespace and line breaks do not count.
-3. Inside each method, every position-suffixed local (`<name>__<line>`, `<name>__<line>_<col>`, `cond_<line>_<col>`,
-   `n_<line>_<col>` with an optional letter suffix) is renamed to `_v1`, `_v2`, ... by first occurrence.
+3. Inside each method, every position-suffixed local (`<name>__<line>`, `<name>__<line>_<col>`, and
+   `cond_`, `n_`, `cur_`, `r_`, `v_` + `<line>_<col>` with an optional letter suffix) is renamed to `_v1`, `_v2`, ... by first occurrence.
    Distinct names stay distinct. The core variant needs this: its locals carry core line numbers.
 Statement order is not normalized.
 
@@ -22,7 +22,7 @@ def fail(msg):
 
 
 TOKEN = re.compile(r"\s*(<==>|==>|--\*|==|!=|<=|>=|&&|\|\||:=|::|\+\+|[A-Za-z_$][A-Za-z0-9_$]*|\d+|\S)")
-LOCAL = re.compile(r"^(?:[A-Za-z]\w*__\d+(?:_\d+)?|(?:cond|n)_\d+_\d+[a-z]?)$")
+LOCAL = re.compile(r"^(?:[A-Za-z]\w*__\d+(?:_\d+)?|(?:cond|n|cur|r|v)_\d+_\d+[a-z]?)$")
 # Tokens that start a new line in the printed form, so that a diff points at one statement.
 LINE_START = {"domain", "function", "axiom", "define", "field", "method", "requires", "ensures", "var", "if",
               "else", "assert", "inhale", "exhale", "}"}
