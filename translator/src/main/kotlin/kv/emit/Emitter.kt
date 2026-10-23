@@ -70,11 +70,15 @@ import kv.sidecar.Vexpr
 /**
  * KVIR + sidecar -> Viper text (DESIGN-v0.md section 5), with the position table of 5.7.
  * Only supported actions are emitted. Throws [SidecarException] for a sidecar that v0 cannot emit.
+ * With [reach], the program is the branch reachability clone of 5.4 item 4 (M9): the action methods keep their
+ * preconditions and bodies, lose their postconditions, and start each branch with `refute false`; init, lemmas and
+ * the probe are left out.
  */
 fun emitViper(
     module: Module,
     sidecar: Sidecar,
-): Emitted = Emitter(module, sidecar).run()
+    reach: Boolean = false,
+): Emitted = Emitter(module, sidecar, reach).run()
 
 /** What kind of value a free value is, for comments and reports (DESIGN-v0.md 2.12). */
 internal fun Origin.kind(): String =
@@ -148,10 +152,12 @@ private class VprWriter {
 private class Emitter(
     private val m: Module,
     private val s: Sidecar,
+    private val reach: Boolean,
 ) {
     private val w = VprWriter()
     private val methods = mutableListOf<EmittedMethod>()
     private val warnings = mutableListOf<String>()
+    private val branches = mutableListOf<BranchProbe>()
     private val anchor = s.modules.single().pos
 
     private val templates = m.types.filter { it.template != null }.map { it.name }.toSet()
@@ -190,14 +196,16 @@ private class Emitter(
         domains()
         fields()
         macros()
-        init()
+        if (!reach) init()
         m.operations.filter { it.action.status == Status.Supported }.forEach { op ->
             action(op.action, op, s.operations.single { it.name.text == op.name })
         }
         m.strayActions.filter { it.status == Status.Supported }.forEach(::stray)
-        s.properties.filter { it.kind == PropertyKind.LEMMA }.forEach(::lemma)
-        s.probes.forEach(::probe)
-        return Emitted(w.text, w.ranges.toList(), methods.toList(), warnings.toList())
+        if (!reach) {
+            s.properties.filter { it.kind == PropertyKind.LEMMA }.forEach(::lemma)
+            s.probes.forEach(::probe)
+        }
+        return Emitted(w.text, w.ranges.toList(), methods.toList(), warnings.toList(), branches.toList())
     }
 
     // ---- types and names ----
@@ -225,6 +233,10 @@ private class Emitter(
         w.comment("Sidecar: ${s.file}")
         w.comment("Sources: ${s.sources.joinToString { it.path }}")
         w.comment("Assumptions are not checked by Silicon: see the 'Assumptions' part of the kv verify report.")
+        if (reach) {
+            w.comment("Branch reachability clone (DESIGN-v0.md 5.4 item 4): the action methods without postconditions, with")
+            w.comment("`refute false` at the start of each branch. A refute that holds marks an unreachable branch (INFO only).")
+        }
         w.put("\n")
     }
 
@@ -393,15 +405,17 @@ private class Emitter(
             val returns = op.result?.let { " returns (${it.local.name}: ${vtype(it.local.type)})" } ?: ""
             w.line("method ${op.name}($params)$returns")
             requires(a)
-            ensuresInvariant()
-            allowances(decl, op)
-            decl.items.filterIsInstance<EnsuresItem>().forEach { e ->
-                w.put("  ensures ")
-                sidecarExpr(e.expr, e.id.text)
-                w.put("\n")
+            if (!reach) {
+                ensuresInvariant()
+                allowances(decl, op)
+                decl.items.filterIsInstance<EnsuresItem>().forEach { e ->
+                    w.put("  ensures ")
+                    sidecarExpr(e.expr, e.id.text)
+                    w.put("\n")
+                }
             }
             w.line("{")
-            Body(a).run(op)
+            Body(a, op.name).run(op)
             w.put("}")
         }
     }
@@ -518,10 +532,12 @@ private class Emitter(
         method(name, MethodKind.STRAY, "stray action ${a.id}", a.pos) {
             w.line("method $name(S: Ref, ${a.key.local.name}: ${vtype(a.key.local.type)})")
             w.line("requires MI(S)", Source.Generated("MI"), 2)
-            ensuresInvariant()
-            allowances(null, null)
+            if (!reach) {
+                ensuresInvariant()
+                allowances(null, null)
+            }
             w.line("{")
-            Body(a).run(null)
+            Body(a, "stray action ${a.id}").run(null)
             w.put("}")
         }
     }
@@ -529,9 +545,25 @@ private class Emitter(
     /** The body of one action method: the template of DESIGN-v0.md 5.2 around the lowered statements. */
     private inner class Body(
         private val a: Action,
+        /** The action's name in reports: the operation name, or `stray action <id>`. */
+        private val label: String,
     ) {
         private val declared = mutableSetOf<String>()
         private val named = a.free.filter { it.sidecarName != null }.map { it.local }.toSet()
+
+        /** The locals the action's code reads: a model operation whose out is not read is no branch (M9). */
+        private val read = a.body.walk().flatMap { it.exprs() }.flatMap { it.walk() }.filterIsInstance<Var>().map { it.local }.toSet()
+
+        /** In the reachability clone, the `refute false` that opens branch [what] of the construct at [pos]. */
+        private fun probe(
+            pos: Pos,
+            what: String,
+            indent: Int,
+        ) {
+            if (!reach) return
+            branches += BranchProbe(w.line, label, pos, what)
+            w.line("refute false", Source.Kotlin(pos), indent, "branch reachability: $what ${at(pos)}")
+        }
 
         fun run(op: Operation?) {
             val e = a.entry.name
@@ -618,9 +650,12 @@ private class Emitter(
                 is Nondet -> nondet(s, indent)
                 is If -> {
                     w.line("if (${expr(s.cond)}) {", src, indent)
+                    probe(s.pos, "if-then", indent + 2)
                     stmts(s.then, indent + 2)
+                    // An if without else has no else branch to probe; its fall-through is the code after it.
                     if (s.els.isNotEmpty()) {
                         w.line("} else {", indent = indent)
+                        probe(s.pos, "if-else", indent + 2)
                         stmts(s.els, indent + 2)
                     }
                     w.line("}", indent = indent)
@@ -657,14 +692,24 @@ private class Emitter(
                 }
             }
 
-            /** `out := guard` and `if (out) { update }`; without an out, `if (guard) { update }`. */
+            /**
+             * `out := guard` and `if (out) { update }`; without an out, `if (guard) { update }`. In the reachability
+             * clone, an operation whose result the code reads is a branch: it succeeds or fails.
+             */
             fun guarded(
                 guard: String,
                 update: String,
             ) {
                 val o = s.out
                 out(guard)
-                w.line("if (${o?.name ?: guard}) { $update }", src, indent)
+                if (!reach || o == null || o !in read) return w.line("if (${o?.name ?: guard}) { $update }", src, indent)
+                val name = s.op.substringAfterLast('.')
+                w.line("if (${o.name}) {", src, indent)
+                probe(s.pos, "$name succeeds", indent + 2)
+                w.line(update, src, indent + 2)
+                w.line("} else {", indent = indent)
+                probe(s.pos, "$name fails", indent + 2)
+                w.line("}", indent = indent)
             }
             when (s.op) {
                 "jdk.AtomicBoolean.compareAndSet" -> guarded("$target == ${expr(s.args[0])}", "$target := ${expr(s.args[1])}")

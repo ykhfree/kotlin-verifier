@@ -69,12 +69,27 @@ data class EmittedMethod(
     val range: VprRange,
 )
 
-/** The Viper text, its position table and its methods. [warnings] are for the report (DESIGN-v0.md 5.4). */
+/**
+ * One `refute false` of the branch reachability program (DESIGN-v0.md 5.4 item 4, M9) at Viper line [line]: the
+ * branch [what] of the Kotlin construct at [pos] in action [action].
+ */
+data class BranchProbe(
+    val line: Int,
+    val action: String,
+    val pos: Pos,
+    val what: String,
+)
+
+/**
+ * The Viper text, its position table and its methods. [warnings] are for the report (DESIGN-v0.md 5.4). [branches]
+ * are the refute probes of a reachability program, empty in the verified program.
+ */
 data class Emitted(
     val text: String,
     val ranges: List<Mapped>,
     val methods: List<EmittedMethod>,
     val warnings: List<String>,
+    val branches: List<BranchProbe> = emptyList(),
 ) {
     /** The innermost range that contains the Viper position (DESIGN-v0.md 5.7 step 2), or null. */
     fun sourceAt(
