@@ -1,0 +1,120 @@
+// Design experiment for DESIGN-B.md (protocol B: the per-method ReqShield cache). Hand-written, not tool output.
+// It shows what the extended emitter would produce from req-shield core-spring ReqShieldAspect.kt plus the
+// sidecar in DESIGN-B.md section 6.1:
+// - the module is one ReqShieldAspect instance (S = this), and its state is the instance field reqShieldMap;
+// - computeIfAbsent is one atomic action; its mapping function calls the trusted fresh factory createReqShield;
+// - the factory may throw: then it creates nothing, and the action leaves the mapping unestablished;
+// - each object a fresh factory returns joins S.created and records the action key in gFor (tool bookkeeping);
+// - `set-once P_stable: m` is checked in every action.
+// No ghost state is bound to a code point or to a library call other than the fresh factory itself.
+// Kotlin positions (line:col) refer to core-spring/.../aspect/ReqShieldAspect.kt at req-shield commit 2e792d2.
+
+// ---- Abstract types (sidecar: types) ----
+domain MethodKey {}  // java.lang.reflect.Method; == stands for Method.equals (opaque)
+
+// ---- Module state: one ReqShieldAspect<T> instance (sidecar: module) ----
+field m: Map[MethodKey, Ref]  // reqShieldMap @83:5 (FIR position: the KDoc start; the declaration is line 84)
+field created: Set[Ref]       // tool ghost: every object a fresh trusted fun returned
+
+// ---- Shield = ReqShield<T>: no modeled fields (sidecar: class Shield) ----
+field gFor: MethodKey         // tool ghost: the action key of the operation that created the object
+
+define has(S, qk) (qk in domain(S.m) && S.m[qk] != null)
+
+// ---- Tool-generated: permissions and ownership ----
+define MI_PERMS(S) (
+  acc(S.m) && acc(S.created) &&
+  (forall qr: Ref :: { qr in S.created } qr in S.created ==> acc(qr.gFor))
+)
+
+// Ownership: every map value is an object the module created, and no two keys share one.
+define MI_OWN(S) (
+  (forall qk: MethodKey :: { S.m[qk] } has(S, qk) ==> S.m[qk] in S.created) &&
+  (forall qk1: MethodKey, qk2: MethodKey :: { S.m[qk1], S.m[qk2] }
+     has(S, qk1) && has(S, qk2) && qk1 != qk2 ==> S.m[qk1] != S.m[qk2])
+)
+
+// ---- Sidecar: set-once P_stable: m. A mapped key keeps its value (every action) ----
+define P_stable(S) (
+  forall qk: MethodKey :: { qk in domain(S.m) } { S.m[qk] }
+    old(has(S, qk)) ==> has(S, qk) && S.m[qk] == old(S.m[qk])
+)
+
+// ---- Sidecar: invariant P_once. At most one created object per method ----
+define P_once(S) (
+  forall qr1: Ref, qr2: Ref :: { qr1 in S.created, qr2 in S.created }
+    qr1 in S.created && qr2 in S.created && qr1.gFor == qr2.gFor ==> qr1 == qr2
+)
+
+// @HOLE-BEGIN MI_INV (sidecar hole, split on top-level &&; one ensures per part)
+// Every created object is the value the map holds for the method it was created for.
+define MI_INV_1(S) ((forall qr: Ref :: { qr in S.created } qr in S.created ==>
+     has(S, qr.gFor) && S.m[qr.gFor] == qr))
+// @HOLE-END MI_INV
+define MI_INV(S) (MI_INV_1(S))
+
+define MI(S) (MI_PERMS(S) && MI_OWN(S) && P_once(S) && MI_INV(S))
+
+// Empty module, as after the ReqShieldAspect constructor.
+method init() returns (S: Ref)
+  ensures MI(S)
+  ensures S.m == Map[MethodKey, Ref]()
+{
+  S := new(m, created)
+  S.m := Map[MethodKey, Ref]()  // ConcurrentHashMap() @84:33
+  S.created := Set[Ref]()
+}
+
+// Action getOrCreate: reqShieldMap.computeIfAbsent @112:9, operation ReqShieldAspect.getOrCreateReqShield @111:5.
+//   k      <- getTargetMethod(joinPoint) @112:38 (computed outside the action)
+//   thrown <- createReqShield(joinPoint) @113:13 (trusted fresh factory; it may throw, and then creates nothing)
+method getOrCreate(S: Ref, k: MethodKey, thrown: Bool) returns (res: Ref, exc: Bool)
+  requires MI(S)
+  ensures MI_PERMS(S)
+  ensures MI_OWN(S)
+  ensures P_stable(S)
+  ensures P_once(S)
+  ensures MI_INV_1(S)
+  // P_same: a call that returns gets the object the map holds for its method.
+  ensures !exc ==> res != null && has(S, k) && S.m[k] == res
+  // progress_ok (checked by probe): when the factory does not throw, the call returns.
+  ensures !thrown ==> !exc
+{
+  exc := false
+  var cur_112_9: Ref := has(S, k) ? S.m[k] : null  // computeIfAbsent: the current value of k, if any
+  if (cur_112_9 == null) {
+    // mapping function { createReqShield(joinPoint) } @112:66, run because k is absent
+    if (thrown) {
+      exc := true                                    // rethrown; the mapping is left unestablished
+    } else {
+      var r_113_13: Ref := new(gFor)                 // createReqShield(joinPoint) @113:13: a fresh object
+      S.created := S.created union Set(r_113_13)
+      r_113_13.gFor := k
+      S.m := S.m[k := r_113_13]                      // non-null result: entered into the map
+      res := r_113_13
+    }
+  } else {
+    res := cur_112_9                                 // k is present: the function is not invoked
+  }
+}
+
+// Sidecar: probe scenario. MI is satisfiable from init, and the operation is reachable and not inert.
+method probe(k1: MethodKey, k2: MethodKey)
+  requires k1 != k2
+{
+  var S: Ref
+  S := init()
+  var r1: Ref
+  var e1: Bool
+  r1, e1 := getOrCreate(S, k1, false)
+  assert !e1 && r1 != null
+  var r2: Ref
+  var e2: Bool
+  r2, e2 := getOrCreate(S, k1, false) // the same method again: the same object
+  assert !e2 && r2 == r1
+  var r3: Ref
+  var e3: Bool
+  r3, e3 := getOrCreate(S, k2, false) // another method: its own object
+  assert has(S, k1) && S.m[k1] == r1  // k1 keeps its object
+  assert !e3 && r3 != r1
+}
