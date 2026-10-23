@@ -116,7 +116,8 @@ sealed interface SiliconOutcome {
 
 private val SUCCESS = Regex("""^Silicon finished verification successfully""", RegexOption.MULTILINE)
 private val SUMMARY = Regex("""^Silicon found (\d+) errors?""", RegexOption.MULTILINE)
-private val ERROR_LINE = Regex("""^\s*\[(\d+)] (.*)\(([^()@]*)@(\d+)\.(\d+)--(\d+)\.(\d+)\)\s*$""")
+// With 10 or more errors, Silicon pads the index: `[ 0]` ... `[ 9]`, `[10]`.
+private val ERROR_LINE = Regex("""^\s*\[\s*(\d+)] (.*)\(([^()@]*)@(\d+)\.(\d+)--(\d+)\.(\d+)\)\s*$""")
 private val REASON = Regex("""^Potential prover incompleteness: (.*)$""")
 private val JAVA_EXCEPTION = Regex("""^(Exception in thread .*|[a-z][\w$]*(\.[\w$]+)+(Exception|Error)\b.*|\s+at [\w$.<>]+\(.*\))$""", RegexOption.MULTILINE)
 private val ABORTED = Regex("""\baborted\b""", RegexOption.IGNORE_CASE)

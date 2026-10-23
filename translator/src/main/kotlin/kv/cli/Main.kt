@@ -10,6 +10,8 @@ import kv.kvir.incomplete
 import kv.kvir.printModule
 import kv.lower.bindGhosts
 import kv.sidecar.SidecarException
+import kv.sidecar.checkHoleEdit
+import kv.sidecar.holeSkeleton
 import kv.verify.ModuleVerdict
 import kv.verify.Silicon
 import kv.verify.SiliconBudget
@@ -36,6 +38,12 @@ private const val USAGE = """usage:
       Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
       --wall-seconds (default 300). Exit 0 PROVEN, 1 FAILED, 2 usage error, 3 INCOMPLETE, 4 ERROR (a compile
       error, a sidecar error, a W1-W14 violation, a missing Silicon or an abnormal Silicon run).
+  kv hole skeleton SIDECAR.kv OUT.kv
+      Writes a copy of SIDECAR.kv (the file that holds `hole MI_INV`) whose hole is `true` (M7).
+  kv hole check BEFORE.kv AFTER.kv
+      Accepts AFTER only if it equals BEFORE outside the hole text and its hole has no forbidden word (assume,
+      inhale, exhale, refute, method, function, predicate, axiom, domain, field, import). Exit 0 accepted,
+      1 rejected (each reason with its AFTER.kv line and column).
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
@@ -52,6 +60,7 @@ fun runCli(
     err: PrintStream,
 ): Int {
     val command = args.firstOrNull()
+    if (command == "hole") return hole(args.drop(1), out, err)
     val options =
         try {
             Options.parse(args.drop(1))
@@ -218,6 +227,43 @@ private fun verify(
     out.print(report.render())
     out.println("Viper program: ${vpr.path}")
     return verdictExit(report.verdict)
+}
+
+/** `kv hole skeleton SIDECAR.kv OUT.kv` and `kv hole check BEFORE.kv AFTER.kv` (DESIGN-v0.md 7 M7, 8.3). */
+private fun hole(
+    args: List<String>,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    val sub = args.firstOrNull()
+    val files = args.drop(1).map(::File)
+    if (sub !in setOf("skeleton", "check") || files.size != 2) {
+        err.println("kv: hole needs 'skeleton SIDECAR.kv OUT.kv' or 'check BEFORE.kv AFTER.kv'")
+        err.println(USAGE)
+        return 2
+    }
+    val (a, b) = files
+    val inputs = if (sub == "skeleton") listOf(a) else files
+    inputs.firstOrNull { !it.isFile }?.let {
+        err.println("kv: no file ${it.path}")
+        return 2
+    }
+    return try {
+        if (sub == "skeleton") {
+            b.absoluteFile.parentFile.mkdirs()
+            b.writeText(holeSkeleton(a.path, a.readText()))
+            out.println("kv: wrote ${b.path}: ${a.path} with hole MI_INV = true")
+            0
+        } else {
+            val errors = checkHoleEdit(a.path, a.readText(), b.path, b.readText())
+            errors.forEach { err.println(it) }
+            if (errors.isEmpty()) out.println("kv: hole check OK: ${b.path} changes only the hole MI_INV of ${a.path}") else err.println("kv: hole check REJECTED: ${b.path}")
+            if (errors.isEmpty()) 0 else 1
+        }
+    } catch (e: SidecarException) {
+        e.errors.forEach { err.println(it) }
+        1
+    }
 }
 
 private fun format(site: ComputeSite): String {
