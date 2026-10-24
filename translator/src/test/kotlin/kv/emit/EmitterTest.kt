@@ -233,6 +233,25 @@ class EmitterTest {
         )
     }
 
+    /**
+     * The program [p] emitted without the hole ensures of [without] is [full] without exactly those lines and with
+     * the property check comments. [conjuncts] is the number of hole conjuncts.
+     */
+    private fun assertOnlyHoleGone(
+        full: Emitted,
+        p: Emitted,
+        without: Set<String>,
+        conjuncts: Int,
+    ) {
+        val ranges = full.methods.filter { it.label in without }.map { it.range.line..it.range.endLine }
+        val removed = full.text.lines().filterIndexed { i, l -> ranges.any { i + 1 in it } && l.trim().startsWith("ensures MI_INV_") }
+        assertEquals(without.size * conjuncts, removed.size, "$removed")
+        val expected = full.text.lines().filterIndexed { i, l -> !(ranges.any { i + 1 in it } && l.trim().startsWith("ensures MI_INV_")) }
+        val comments = p.text.lines().filter { it.startsWith("// Property check (pass 2): ") || it == "  // property check (pass 2): the hole ensures MI_INV_i are left out" }
+        assertEquals(1 + without.size, comments.size, p.text)
+        assertEquals(expected, p.text.lines() - comments.toSet(), "only the hole ensures of $without are gone")
+    }
+
     @Test
     fun `the property check program leaves out only the hole ensures of the named actions, a stray action included`() {
         val f = LockFixture("if (e != null) result.set(e.token)\ne", members = "    fun drop(k: String) {\n        lockMap.compute(k) { _, _ -> null }\n    }", operations = ISSUING)
@@ -241,15 +260,12 @@ class EmitterTest {
         val full = emitViper(bound, s)
         val stray = full.methods.single { it.kind == MethodKind.STRAY }.label
         for (without in listOf(setOf("run"), setOf(stray), setOf("run", stray))) {
-            val p = emitViper(bound, s, withoutHole = without)
-            val ranges = full.methods.filter { it.label in without }.map { it.range.line..it.range.endLine }
-            val removed = full.text.lines().filterIndexed { i, l -> ranges.any { i + 1 in it } && l.trim().startsWith("ensures MI_INV_") }
-            assertEquals(without.size, removed.size, "the fixture hole has one conjunct: $removed")
-            val expected = full.text.lines().filterIndexed { i, l -> !(ranges.any { i + 1 in it } && l.trim().startsWith("ensures MI_INV_")) }
-            val comments = p.text.lines().filter { it.startsWith("// Property check (pass 2): ") || it == "  // property check (pass 2): the hole ensures MI_INV_i are left out" }
-            assertEquals(1 + without.size, comments.size, p.text)
-            assertEquals(expected, p.text.lines() - comments.toSet(), "only the hole ensures of $without are gone")
+            assertOnlyHoleGone(full, emitViper(bound, s, withoutHole = without), without, 1)
         }
+        // KeyLocalLock: five hole conjuncts, and operations with sidecar ensures and allowance clauses that stay.
+        val (m, ks) = lowerReqShield("coroutine")
+        val kbound = bindGhosts(m, ks)
+        assertOnlyHoleGone(emitViper(kbound, ks), emitViper(kbound, ks, withoutHole = setOf("tryLock", "unLock")), setOf("tryLock", "unLock"), 5)
     }
 
     @Test
