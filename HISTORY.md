@@ -216,3 +216,12 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - T-sonnet-4는 `LockInfo`를 companion object 안에 두었다.
   - 프로토콜 이탈: T-opus-2는 "다른 agent 금지"를 어기고 advisor(더 강한 모델)에 한 번 물었다. 블라인드는 유지된다(advisor는 그 agent의 대화만 봄). 다만 "opus 단독"이 아니므로 결과에 따로 표시한다.
   - 생성 agent에는 사용자의 전역 CLAUDE.md(한국어 응답, 개념 줄이기 규칙)가 함께 적용된다. 실제 팀 환경과 같은 조건으로 본다.
+- 3단계 (`0828853`, 측정):
+  - 유사도: 0.22-0.37, T-opus-1만 0.57. 거의 같은 것(0.9 이상)은 없다. 예측 7은 틀렸다.
+  - 단위 테스트: 틀 구현 12개 모두 14/14 (shim). 자유 3개는 shim이 private companion 때문에 컴파일되지 않았다.
+  - 도구: 틀 구현 12개 중 끝까지 검증된 것은 0이다.
+    - 묶기: 4개는 `LockInfo` 위치가 달라 실패했다. 결과 뒤 `class` 묶기 수정을 더해 묶었다 (`AI-CODE.md` 변경 기록).
+    - 범위 밖: 4개가 `kotlinx.coroutines.sync.Semaphore`를 써서 범위 밖이다.
+    - tryLock: 묶인 8개 모두 INCOMPLETE다. 주로 `lockMap.size.toLong()`(v0는 Int의 `+`, `-`만 모델링). 그 밖에 값으로 쓴 if, helper 호출, `Semaphore` 필드 직접 접근이 있다.
+    - sweep: 6개가 FAILED (property)다. 만료 판정이 `>=`(`expiresAt <= now`)이기 때문이다. 서명된 P3a는 `now > gLease`(엄격)다.
+- 다음: 판정자 3명의 결과를 기다린다 (블라인드, 실행 중).
