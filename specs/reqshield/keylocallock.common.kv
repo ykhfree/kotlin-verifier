@@ -67,7 +67,9 @@ operation tryLock = fun KeyLocalLock.tryLock {
   unbacked_only_if P3b: !old(has(S, k)) && rej && limit != 0
   reviewed "ykhfree 2026-10-23: README Local lock map size: at the cap a new key is handed a permit that no map entry backs" sha256 "23aa1de7c7b2dde4"
   ensures progress_free: !old(has(S, k)) && !rej ==> res != NULL && tok(res).gBacked
-  ensures progress_live: old(has(S, k)) && now <= old(S.m[k].expiresAt) ==> res == NULL
+  ensures progress_live: old(has(S, k)) && old(S.m[k].isHeld) && now <= old(S.m[k].expiresAt) ==> res == NULL
+  ensures cap_unbacked: !old(has(S, k)) && rej ==> res != NULL && !tok(res).gBacked && !has(S, k)
+  ensures expired_takeover: old(has(S, k)) && now > old(S.m[k].expiresAt) ==> res != NULL && tok(res).gBacked
 }
 
 operation unLock = fun KeyLocalLock.unLock {
