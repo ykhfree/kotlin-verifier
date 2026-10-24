@@ -225,3 +225,13 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
     - tryLock: 묶인 8개 모두 INCOMPLETE다. 주로 `lockMap.size.toLong()`(v0는 Int의 `+`, `-`만 모델링). 그 밖에 값으로 쓴 if, helper 호출, `Semaphore` 필드 직접 접근이 있다.
     - sweep: 6개가 FAILED (property)다. 만료 판정이 `>=`(`expiresAt <= now`)이기 때문이다. 서명된 P3a는 `now > gLease`(엄격)다.
 - 다음: 판정자 3명의 결과를 기다린다 (블라인드, 실행 중).
+- 4단계 판정 (판정자 3명, 블라인드): 틀 구현 12개 모두 "결함 (sidecar 성질)"이다.
+  - 공통 결함은 만료 경계 `>=`다. 서명된 P3a는 `now > gLease`다.
+  - T-haiku-3과 T-sonnet-3에는 unLock 결함도 있다.
+  - overflow는 도구의 `Long` 가정 밖이다.
+- 대조 (`AI-CODE.md` 10절):
+  - 도구가 판정을 낸 action 11개는 모두 정답과 맞다 (검출 6, 맞은 PROVEN 5, 놓침 0, 오경보 0).
+  - 그러나 tryLock은 모두 UNSUPPORTED이고, 4개 구현은 범위 밖이다.
+  - 그래서 정답이 찾은 결함 중 다수를 도구가 판정하지 못했다.
+- hole 단계는 생략했다. 도구의 FAILED 6개가 모두 실제 위반으로 확인되었기 때문이다 (변경 기록).
+- 가장 큰 결과는 범위다. 지금 도구는 AI 코드 12개 중 하나도 끝까지 검증하지 못했다. 원인은 `Int.toLong`, kotlinx `Semaphore`, helper 호출 등이다.
