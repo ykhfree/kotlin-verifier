@@ -173,3 +173,49 @@ RACY는 도구의 고유한 주장("action 밖의 읽기는 임의 값")을 겨�
   - `G_cap` probe에서 원본은 증명되고, RACY-04는 실패한다.
 
 README 인용 3개는 quote-check로 원문을 확인했다.
+
+### 9.5 재측정 (2026-10-24, sidecar 변경과 pass 2 뒤)
+
+바뀐 것은 두 가지다.
+- sidecar (`57c36eb`): `progress_live`를 좁히고 `cap_unbacked`와 `expired_takeover`를 더했다.
+- 도구 (`5ff2b62`): 불변식 조각만 실패한 action은 그 조각을 뺀 두 번째 Silicon 실행(pass 2)으로 성질을 확인한다. 보고는 "FAILED (property)"와 "FAILED (invariant only)"로 나눈다.
+
+결과 파일: `mutation/rerun/` (results.jsonl, summary.md, compare.md; `e0f5d00`).
+
+**판정 변화 (측정):**
+- 판정이 바뀐 변이는 15개다. 모두 PROVEN에서 FAILED로 바뀌었고, 반대 방향은 없다.
+  - `expired_takeover`: RACY-02, BOOL-01, MOP-01 (각 세 변형)
+  - `cap_unbacked`: RACY-04, SDL-08 (각 세 변형)
+- 집계:
+  - FAILED 129 → 144, PROVEN 67 → 52 ("모델 바뀜" 60 → 45).
+  - 하위 상태 (action 단위): property 108, invariant only 36, property check ERROR 0.
+- 1차에서 hole 조각만 보고된 56개는 invariant only 36과 property 20으로 나뉘었다. 이것은 판정 변화가 아니라 보고의 세분화다. compare.md의 "바뀐 변이 74개"는 판정 변화 15개와 이 세분화를 함께 센 수다.
+- pass 2 Silicon 실행은 53회다. wall clock은 898 s에서 1417 s로 늘었다. pass 2 한 번은 최대 63 s 걸렸다.
+
+**예측 대조 (변경 기록의 예측 1-6):**
+
+| 예측 | 대조 | 설명 |
+|---|---|---|
+| 1 | 맞음 | MOP-01 ×2, core RACY-02가 `expired_takeover`로 FAILED다. 예측 밖의 reactor MOP-01, 세 변형의 BOOL-01도 같다 |
+| 2 | 맞음 | RACY-04 ×3, coroutine SDL-08이 `cap_unbacked`로 FAILED다. core·reactor SDL-08도 같다 |
+| 3 | 맞음 | coroutine RACY-09, reactor RACY-08은 PROVEN이다 |
+| 4 | 안 맞음 | coroutine RET-11만 invariant only다. RACY-03 ×3과 reactor SDL-02는 pass 2에서 `expired_takeover` 위반으로 property가 됐다 |
+| 5 | 맞음 | RACY-06 ×3은 `progress_owner` 위반이다 |
+| 6 | 맞음 | core·reactor AOR-03, coroutine SDL-06이 invariant only로 보고됐다. 손으로 고른 SB3(진짜 결함)도 세 변형 모두 invariant only다 |
+
+**예측 4가 틀린 이유:**
+- 예측을 등록할 때 메인 세션은 새 성질 `expired_takeover`가 이 변이들의 동작을 덮는다는 점을 보지 못했다.
+- reactor SDL-02는 만료 takeover에서 `release()`를 지운다. 그래서 permit이 0으로 남아 획득에 실패하고, 만료된 lock을 넘겨받지 못한다.
+  - 판정자 B는 이 동작을 옛 sidecar 기준으로 "오경보이자 명세의 빈틈(key가 최대 약 1 s 막힘)"으로 판정했다.
+  - 새 성질이 그 빈틈을 메웠고, 이제는 위반으로 검출된다.
+- RACY-03은 takeover 뒤의 `tryAcquire()` 앞에 경쟁 읽기 조건을 넣는다. 다음 interleaving에서 만료된 lock을 넘겨받지 못한다 (메인 세션 분석, 판정자가 확인하지는 않음):
+  1. 우리 스레드의 읽기가 아직 없는 entry를 본다.
+  2. 다른 스레드가 오래 멈춘 뒤, 이미 지난 만료 시각으로 entry를 만든다.
+  3. 우리 스레드의 compute가 그 entry를 해제하지만 획득을 건너뛴다.
+
+**주의:** "invariant only"는 무해하다는 뜻이 아니다. SB3, AOR-03, SDL-06은 다음 단계에서 P3a를 깨는 진짜 결함인데 이 하위 상태로 보고된다. 보고 문구는 이 점을 직접 말한다 ("A property may still break in a later step").
+
+**메인 세션 확인:**
+- 테스트 408개 통과, gate 4개 exit 0, 손으로 고른 변이 33회와 30회 불일치 0.
+- `rerun/results.jsonl`을 직접 집계했고, 판정 변화 목록을 1차와 비교해 뽑았다.
+- reactor SDL-02와 coroutine RET-11의 보고서 원문을 읽었다.
