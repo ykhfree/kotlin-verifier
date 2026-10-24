@@ -667,6 +667,23 @@ feature-developer가 순서대로 구현한다. 마일스톤은 수락 테스트
 | 8 | `use kotlin.collections.getOrPut` 하나로 충분하다. 보고서의 신뢰 모델 목록에 getOrPut의 inline 본문 가정(부록 B 6)을 싣는다 |
 | 9 | `createReqShield` 초안 메모 3개는 B 끝에 사용자 서명을 받는다. 지문(B6)은 함수 본문에 묶이므로 메모 문장과 무관하다 |
 
+### 9.5 2차 구현 뒤 결정 (2026-10-24)
+
+메인 세션 확인: 테스트 375개, gate 4개 exit 0 (aspect core-spring, KeyLocalLock 3종), `mutantsReqShield` 33회 불일치 0, `mutantsAspect` 30회 불일치 0 (세 모듈의 판정과 의무가 같다). specs/의 변경은 `sha256` 접미사 10개뿐이고 메모 문장은 그대로다. 지문 3개(`nowToEpochTime`, tryLock `issue`, unLock P3a)를 따로 계산해 같음을 확인했다. `createReqShield` 세 본문과 세 `ReqShield` 클래스(초기화식, `init` 없음)를 원문으로 읽었다.
+
+| 질문 | 결정 |
+|---|---|
+| 1 | 메인 세션이 `spike/aspect/mutants.py`의 M2, M4, M7에 질문 5의 raise 경로를 넣었다 (`d6cdcd9`). M2의 key 인자도 fresh 뒤에 실행되므로 M2가 셋째다. 판정 줄은 그대로이고, 손 모델의 실패 의무가 도구와 같다. `GateTest`는 이제 아홉 변이를 그대로 비교한다 (옛 `mutants.py`로는 M2에서 실패함을 확인) |
+| 2 | 측정한 처음 보고 의무를 기대값으로 받아들인다. 7.2절 "깨지는 의무 전체"의 부분집합이다 |
+| 3 | 그대로 둔다. 원본에는 질문 5 raise가 없어 `progress_ok`가 성립한다. fresh와 action 사이에 모델 밖 호출이 있는 코드에서는 `MI_INV_1` 실패가 진짜 결함(버려진 객체)이다 |
+| 4 | 보수적 해석을 유지한다. slf4j 호출은 sidecar가 `use slf4j.Logger`를 선언할 때만 모델 안이다 |
+| 5 | 라이브러리 trusted fun의 소스를 `--root` 아래 `src/main/kotlin/<package>`에서 찾는 규칙을 받아들인다. 문법은 바꾸지 않는다 |
+| 6 | 바꾼다: trusted fun의 지문 단위는 첫 modifier부터 선언 끝까지다 (KDoc과 annotation 제외). 이유: `private`를 넓히면 감사 밖의 코드가 이 함수로 객체를 만들 수 있고, 그 생성은 `P_once`가 세지 못한다 (부록 B 7). 공개 범위 변경은 재검토를 요구해야 한다 |
+| 7 | 받아들인다. 지문은 텍스트의 지문이고, 메모는 절마다 따로 붙는다 |
+| 8 | 지금은 필요 없다. 필요해지면 메인 세션이 `vpr_normalize.py`의 `LOCAL`에 `out`을 더한다 |
+| 9 | 사용자 서명을 요청한다 |
+| 다른 점 1-10 | 받아들인다: sidecar가 `exc`를 쓰면 raise가 없어도 `exc`를 둔다, 읽지 않는 put/remove 결과는 `var cur`를 만들지 않는다, raise 뒤 구간은 `if (!exc)`로 감싼다, instance 모듈의 M9는 KVIR `if` 분기만 probe한다, 보고서 추가 줄 |
+
 ## 부록 A. 재현
 
 1. 목표 모델: `spike/silicon.sh spike/aspect/target.vpr` (`TIMES=1`이면 메서드별 시간).
