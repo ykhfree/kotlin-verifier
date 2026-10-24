@@ -375,6 +375,8 @@ def final_verdict(rec):
     hole = rec.get("hole")
     if not hole:
         return "FAILED (hole pending)"
+    if hole["outcome"] == "skipped":
+        return "FAILED (%s)" % aggregate_sub(tool["sub_status"])
     if hole["outcome"] == "PROVEN":
         return "PROVEN (new hole)"
     return "FAILED (%s)" % hole["last_sub_status"]
@@ -1009,6 +1011,18 @@ def cmd_hole_outcome(env, args):
 
 # ---- judges and summary ----
 
+def cmd_hole_skip(env, args):
+    """Records that the hole stage of a FAILED template implementation was skipped, with the reason (AI-CODE.md
+    change log). The final verdict is then the tool's sub-status."""
+    rec = record(env, args.id)
+    if rec.get("kind") != "template" or (rec.get("tool") or {}).get("verdict") != "FAILED":
+        print("%s: only a FAILED template implementation has a hole stage to skip" % args.id)
+        return 1
+    update(env, args.id, hole={"outcome": "skipped", "calls": 0, "reason": args.reason})
+    print("%s: hole stage skipped" % args.id)
+    return 0
+
+
 def cmd_judge(env, args):
     record(env, args.id)
     update(env, args.id, judge={"verdict": args.verdict, "note": args.note})
@@ -1037,6 +1051,8 @@ def tool_text(r):
 
 def hole_text(r):
     h = r.get("hole")
+    if h and h["outcome"] == "skipped":
+        return "skipped: %s" % h["reason"]
     return "-" if not h else "%s, %d call(s)" % (h["outcome"], h["calls"])
 
 
@@ -1152,6 +1168,9 @@ def main():
     p = sub.add_parser("hole-outcome")
     p.add_argument("id")
     p.add_argument("--report", help="a file with the hole writer's final report")
+    p = sub.add_parser("hole-skip")
+    p.add_argument("id")
+    p.add_argument("--reason", required=True)
     p = sub.add_parser("judge")
     p.add_argument("id")
     p.add_argument("verdict", choices=JUDGE_VERDICTS)
@@ -1159,7 +1178,7 @@ def main():
     sub.add_parser("summary")
     args = ap.parse_args()
     commands = {"sandbox": cmd_sandbox, "collect": cmd_collect, "similarity": cmd_similarity, "tests": cmd_tests, "tool": cmd_tool,
-                "hole-task": cmd_hole_task, "hole-outcome": cmd_hole_outcome, "judge": cmd_judge, "summary": cmd_summary}
+                "hole-task": cmd_hole_task, "hole-outcome": cmd_hole_outcome, "hole-skip": cmd_hole_skip, "judge": cmd_judge, "summary": cmd_summary}
     try:
         if args.command == "similarity" and args.pair:
             return cmd_similarity(None, args)

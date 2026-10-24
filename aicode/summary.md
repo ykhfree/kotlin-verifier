@@ -7,15 +7,15 @@
 | ID | 모델 | 종류 | 컴파일 | compile.sh 호출 | 유사도 | 테스트 | 도구 (처음) | 묶기 이름 바꿈 | hole | 최종 | 판정자 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | T-haiku-1 | haiku | template | 예 | 1 | 0.230 | 14/14 (shim) | INCOMPLETE | 1 | - | out of scope | defect-property |
-| T-haiku-2 | haiku | template | 예 | 2 | 0.233 | 14/14 (shim) | FAILED (property) | 0 | - | FAILED (hole pending) | defect-property |
+| T-haiku-2 | haiku | template | 예 | 2 | 0.233 | 14/14 (shim) | FAILED (property) | 0 | skipped: the blind judges confirmed the sweep P3a violation the tool reported; no hole proves a real violation (AI-CODE.md change log) | FAILED (property) | defect-property |
 | T-haiku-3 | haiku | template | 예 | 1 | 0.221 | 14/14 (shim) | INCOMPLETE | 1 | - | out of scope | defect-property |
-| T-haiku-4 | haiku | template | 예 | 1 | 0.217 | 14/14 (shim) | FAILED (property) | 1 | - | FAILED (hole pending) | defect-property |
-| T-sonnet-1 | sonnet | template | 예 | 1 | 0.317 | 14/14 (shim) | FAILED (property) | 0 | - | FAILED (hole pending) | defect-property |
+| T-haiku-4 | haiku | template | 예 | 1 | 0.217 | 14/14 (shim) | FAILED (property) | 1 | skipped: the blind judges confirmed the sweep P3a violation the tool reported; no hole proves a real violation (AI-CODE.md change log) | FAILED (property) | defect-property |
+| T-sonnet-1 | sonnet | template | 예 | 1 | 0.317 | 14/14 (shim) | FAILED (property) | 0 | skipped: the blind judges confirmed the sweep P3a violation the tool reported; no hole proves a real violation (AI-CODE.md change log) | FAILED (property) | defect-property |
 | T-sonnet-2 | sonnet | template | 예 | 1 | 0.331 | 14/14 (shim) | binding failure | 0 | - | binding failure | defect-property |
-| T-sonnet-3 | sonnet | template | 예 | 1 | 0.317 | 14/14 (shim) | FAILED (property) | 0 | - | FAILED (hole pending) | defect-property |
-| T-sonnet-4 | sonnet | template | 예 | 1 | 0.292 | 14/14 (shim) | FAILED (property) | 1 | - | FAILED (hole pending) | defect-property |
+| T-sonnet-3 | sonnet | template | 예 | 1 | 0.317 | 14/14 (shim) | FAILED (property) | 0 | skipped: the blind judges confirmed the sweep P3a violation the tool reported; no hole proves a real violation (AI-CODE.md change log) | FAILED (property) | defect-property |
+| T-sonnet-4 | sonnet | template | 예 | 1 | 0.292 | 14/14 (shim) | FAILED (property) | 1 | skipped: the blind judges confirmed the sweep P3a violation the tool reported; no hole proves a real violation (AI-CODE.md change log) | FAILED (property) | defect-property |
 | T-opus-1 | opus | template | 예 | 3 | 0.569 | 14/14 (shim) | binding failure | 0 | - | binding failure | defect-property |
-| T-opus-2 | opus | template | 예 | 1 | 0.374 | 14/14 (shim) | FAILED (property) | 0 | - | FAILED (hole pending) | defect-property |
+| T-opus-2 | opus | template | 예 | 1 | 0.374 | 14/14 (shim) | FAILED (property) | 0 | skipped: the blind judges confirmed the sweep P3a violation the tool reported; no hole proves a real violation (AI-CODE.md change log) | FAILED (property) | defect-property |
 | T-opus-3 | opus | template | 예 | 3 | 0.362 | 14/14 (shim) | binding failure | 0 | - | binding failure | defect-property |
 | T-opus-4 | opus | template | 예 | 2 | 0.348 | 14/14 (shim) | binding failure | 0 | - | binding failure | defect-property |
 | F-sonnet-1 | sonnet | free | 예 | 1 | 0.329 | test compile failed | binding failure | 0 | - | binding failure | - |
@@ -49,7 +49,7 @@
 
 | 정답 \ 도구 최종 | PROVEN | FAILED (property) | FAILED (invariant only) | FAILED (pending) |
 |---|---|---|---|---|
-| 결함 (sidecar 성질) | - | - | - | T-haiku-2, T-haiku-4, T-sonnet-1, T-sonnet-3, T-sonnet-4, T-opus-2 |
+| 결함 (sidecar 성질) | - | T-haiku-2, T-haiku-4, T-sonnet-1, T-sonnet-3, T-sonnet-4, T-opus-2 | - | - |
 | 결함 (sidecar 밖) | - | - | - | - |
 | 정상 | - | - | - | - |
 | 미결 | - | - | - | - |
