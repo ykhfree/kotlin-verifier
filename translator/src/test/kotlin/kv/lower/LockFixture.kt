@@ -4,6 +4,7 @@ import kv.Harness
 import kv.ReqShield
 import kv.emit.emitViper
 import kv.frontend.Frontend
+import kv.frontend.LoweredFir
 import kv.kvir.Action
 import kv.kvir.DiagnosticKind
 import kv.kvir.GhostKind
@@ -132,15 +133,19 @@ data class LockFixture(
 
     /**
      * Compiles the fixture under [dir] and lowers it. The sidecar must pass its checks and resolve. An incomplete
-     * module also goes through the rest of the pipeline ([assertIncompleteThroughPipeline]).
+     * module also goes through the rest of the pipeline ([assertIncompleteThroughPipeline]). [onLowered] reads the
+     * FIR after the lowering.
      */
-    fun lower(dir: File): Module {
+    fun lower(
+        dir: File,
+        onLowered: ((LoweredFir) -> Unit)? = null,
+    ): Module {
         val sidecarFile = File(dir, "Lock.kv").apply { writeText(sidecar) }
         val parsed = parseSidecar(sidecarFile.path, sidecar)
         assertEquals(emptyList(), checkSidecar(parsed), "fixture sidecar")
         val sources = (mapOf("Lock.kt" to kotlin) + otherFiles).map { (name, text) -> File(dir, name).apply { writeText(text) } }
         // The library trusted funs of the fixtures come from req-shield's support module: their sources are there (B6).
-        val result = Frontend.run(sources, listOf(Harness.stdlib) + ReqShield.classpath, emptyList(), parsed, ReqShield.dir)
+        val result = Frontend.run(sources, listOf(Harness.stdlib) + ReqShield.classpath, emptyList(), parsed, ReqShield.dir, onLowered = onLowered)
         if (!result.compiled) fail("fixture did not compile:\n${result.messages}\n$kotlin")
         assertEquals(emptyList(), result.sidecarErrors, "fixture sidecar resolves")
         val m = result.module ?: fail("no module")

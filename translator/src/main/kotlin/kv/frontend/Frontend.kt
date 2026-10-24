@@ -36,6 +36,20 @@ data class FrontendResult(
     val module: Module?,
 )
 
+/**
+ * The FIR that the module lowering read, and the module it made. Valid only inside the [Frontend.run] callback that
+ * receives it, while the compiler session runs (kv mutation-sites reads it there).
+ */
+class LoweredFir(
+    val sidecar: Sidecar,
+    val resolver: SidecarResolver,
+    /** The module file. */
+    val file: FirFile,
+    /** Every source file of the run, the module file included. */
+    val sources: List<FirFile>,
+    val module: Module,
+)
+
 /** Input and output of one compiler run. The plugin finds it by id, so it must run in this JVM. */
 class FrontendSession(
     /** A sidecar that passed [kv.sidecar.checkSidecar]; null to only discover map action calls. */
@@ -44,6 +58,10 @@ class FrontendSession(
     private val sourceCount: Int,
     /** The req-shield checkout, where the resolver finds the source of a library trusted fun (B6). */
     private val reviewRoot: File? = null,
+    /** Called with each analyzed source file, while its FIR is valid. */
+    private val onFile: ((FirFile) -> Unit)? = null,
+    /** Called once after the module is lowered without errors, while the FIR is valid. */
+    private val onLowered: ((LoweredFir) -> Unit)? = null,
 ) {
     private val sites = Collections.synchronizedList(mutableListOf<ActionSite>())
     private val errors = Collections.synchronizedList(mutableListOf<SidecarError>())
@@ -65,6 +83,7 @@ class FrontendSession(
         file: FirFile,
         firSession: FirSession,
     ) {
+        onFile?.invoke(file)
         val all = findActions(file)
         sites += all.map { it.site }
         if (sidecar == null) return
@@ -96,7 +115,9 @@ class FrontendSession(
             kvir = lowerModule(sidecar, resolver, res, file, seen.map { it.first }, found, moduleClass)
         } catch (e: SidecarException) {
             errors += e.errors
+            return
         }
+        onLowered?.invoke(LoweredFir(sidecar, resolver, file, seen.map { it.first }, kvir!!))
     }
 
     internal fun result(
@@ -140,7 +161,8 @@ object Frontend {
      * Compiles [sources] against [classpath] and returns what the plugin found.
      * [classpath] must hold a Kotlin stdlib: the compiler does not add one.
      * [kotlincArgs] are extra compiler flags, e.g. `-language-version 2.0`. [reviewRoot] is where the source of a
-     * library trusted fun is found, to check its reviewed fingerprint (B6).
+     * library trusted fun is found, to check its reviewed fingerprint (B6). [onFile] and [onLowered] read the FIR
+     * while it is valid (see [FrontendSession]).
      */
     fun run(
         sources: List<File>,
@@ -148,9 +170,11 @@ object Frontend {
         kotlincArgs: List<String> = emptyList(),
         sidecar: Sidecar? = null,
         reviewRoot: File? = null,
+        onFile: ((FirFile) -> Unit)? = null,
+        onLowered: ((LoweredFir) -> Unit)? = null,
     ): FrontendResult {
         val id = UUID.randomUUID().toString()
-        val session = FrontendSession(sidecar, sources.size, reviewRoot)
+        val session = FrontendSession(sidecar, sources.size, reviewRoot, onFile, onLowered)
         sessions[id] = session
         val classesDir = Files.createTempDirectory("kv-classes").toFile()
         try {
@@ -176,12 +200,14 @@ object Frontend {
     /**
      * Loads and checks [sidecarFile], compiles the `source` files it names (relative to [root]), binds its Kotlin
      * names to FIR symbols, and lowers the module to KVIR. Stops at the first stage that reports errors.
+     * [onLowered] reads the FIR after the lowering (see [FrontendSession]).
      */
     fun resolve(
         sidecarFile: File,
         root: File,
         classpath: List<File>,
         kotlincArgs: List<String> = emptyList(),
+        onLowered: ((LoweredFir) -> Unit)? = null,
     ): ResolveOutcome {
         val sidecar =
             try {
@@ -195,7 +221,7 @@ object Frontend {
         val files = sidecar.sources.associateWith { kotlinFiles(File(root, it.path)) }
         val missing = files.filterValues { it.isEmpty() }.keys
         if (missing.isNotEmpty()) return ResolveOutcome(missing.map { SidecarError(it.pos, "missing-source-file", "no file or .kt files under ${File(root, it.path)}") }, null, null, null, sidecar)
-        val result = run(files.values.flatten().distinct(), classpath, kotlincArgs, sidecar, root)
+        val result = run(files.values.flatten().distinct(), classpath, kotlincArgs, sidecar, root, onLowered = onLowered)
         if (!result.compiled) return ResolveOutcome(emptyList(), result.messages, null, null, sidecar)
         val ok = result.sidecarErrors.isEmpty()
         return ResolveOutcome(result.sidecarErrors, null, result.resolution.takeIf { ok }, result.module.takeIf { ok }, sidecar)

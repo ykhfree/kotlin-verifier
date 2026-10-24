@@ -16,6 +16,20 @@ import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.fir.declarations.FirRegularClass
 
 /**
+ * The [FirIndex] of the audited files: the module file [file], and every other file of [sources] if a state field is
+ * internal (DESIGN-B.md 2.1 rule 6). Its node numbers are the ones the module's ledger uses.
+ */
+internal fun auditIndex(
+    resolver: SidecarResolver,
+    file: FirFile,
+    sources: List<FirFile>,
+): FirIndex {
+    val internal = resolver.states.values.any { it.resolvedStatus.visibility == Visibilities.Internal }
+    val others = if (internal) sources.filter { it !== file }.sortedBy { it.sourceFile?.path ?: it.name } else emptyList()
+    return FirIndex(file, others)
+}
+
+/**
  * FIR to KVIR for the module of a resolved sidecar (DESIGN-v0.md 2.1 steps 2-7, DESIGN-B.md 5.3): each map call on a
  * state map is an action of its sidecar operation or a stray action; every other node of the audited files goes to
  * the ledger. The audited files are the module file [file], and every file of [sources] if a state field is internal
@@ -32,9 +46,7 @@ internal fun lowerModule(
     computes: List<FoundAction>,
     moduleClass: FirRegularClass,
 ): Module {
-    val internal = resolver.states.values.any { it.resolvedStatus.visibility == Visibilities.Internal }
-    val others = if (internal) sources.filter { it !== file }.sortedBy { it.sourceFile?.path ?: it.name } else emptyList()
-    val ctx = ModuleContext(sidecar, resolver, FirIndex(file, others), moduleClass)
+    val ctx = ModuleContext(sidecar, resolver, auditIndex(resolver, file, sources), moduleClass)
     checkTrustedBodies(ctx, resolver.operationFunctions).takeIf { it.isNotEmpty() }?.let { throw SidecarException(it) }
     val maps = computes.associateWith { ctx.stateRead(it.receiver) as? MapVar }
     // DESIGN-B.md 5.3 rule 2: a map call whose receiver is not a sidecar state map is no action; the ledger has it.

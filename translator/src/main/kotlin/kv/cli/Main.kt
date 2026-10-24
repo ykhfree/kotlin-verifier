@@ -4,11 +4,18 @@ import kv.frontend.ActionSite
 import kv.frontend.Frontend
 import kv.emit.Emitted
 import kv.emit.emitViper
+import kv.frontend.LoweredFir
 import kv.frontend.ResolveOutcome
 import kv.kvir.checkWellFormed
 import kv.kvir.incomplete
 import kv.kvir.printModule
 import kv.lower.bindGhosts
+import kv.mutation.LibraryTrusted
+import kv.mutation.SiteList
+import kv.mutation.librarySites
+import kv.mutation.moduleSites
+import kv.mutation.properties
+import kv.mutation.sitesJson
 import kv.sidecar.SidecarException
 import kv.sidecar.checkHoleEdit
 import kv.sidecar.holeSkeleton
@@ -39,6 +46,10 @@ private const val USAGE = """usage:
       Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
       --wall-seconds (default 300). Exit 0 PROVEN, 1 FAILED, 2 usage error, 3 INCOMPLETE, 4 ERROR (a compile
       error, a sidecar error, a W1-W16 violation, a missing Silicon or an abnormal Silicon run).
+  kv mutation-sites --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
+      As lower, then prints as JSON every mutation site of MUTATION.md 2 and 3 (the module's operations, their
+      action lambdas, the helpers they call, the reviewed trusted fun bodies): the operator, the source range, the
+      exact edits, the ledger kind of the mutated node, and the sidecar properties. Exit 1 on an error.
   kv hole skeleton SIDECAR.kv OUT.kv
       Writes a copy of SIDECAR.kv (the file that holds `hole MI_INV`) whose hole is `true` (M7).
   kv hole check BEFORE.kv AFTER.kv
@@ -76,6 +87,7 @@ fun runCli(
         "lower" -> lower(options, out, err)
         "emit" -> emit(options, out, err)
         "verify" -> verify(options, out, err)
+        "mutation-sites" -> mutationSites(options, out, err)
         else -> {
             err.println(USAGE)
             2
@@ -102,18 +114,22 @@ private fun discover(
     return 0
 }
 
-/** Runs [Frontend.resolve] for `resolve` and `lower`; null after reporting a usage error, a compile error or sidecar errors. */
+/**
+ * Runs [Frontend.resolve] for the commands that take a sidecar; null after reporting a usage error, a compile error or
+ * sidecar errors. [onLowered] reads the FIR after the lowering.
+ */
 private fun resolved(
     command: String,
     options: Options,
     err: PrintStream,
+    onLowered: ((LoweredFir) -> Unit)? = null,
 ): Pair<ResolveOutcome?, Int> {
     val root = options.root
     if (root == null || options.files.size != 1) {
         err.println("kv: $command needs --root DIR and one sidecar file")
         return null to 2
     }
-    val outcome = Frontend.resolve(options.files.single(), root, options.classpath, options.kotlincArgs)
+    val outcome = Frontend.resolve(options.files.single(), root, options.classpath, options.kotlincArgs, onLowered)
     outcome.compileMessages?.let {
         err.print(it)
         err.println("kv: compilation failed")
@@ -228,6 +244,30 @@ private fun verify(
     out.print(report.render())
     out.println("Viper program: ${vpr.path}")
     return verdictExit(report.verdict)
+}
+
+/** `kv mutation-sites`: the sites of the module file, then those of each library trusted fun, compiled on its own. */
+private fun mutationSites(
+    options: Options,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    var found: Pair<SiteList, List<LibraryTrusted>>? = null
+    val (outcome, code) = resolved("mutation-sites", options, err) { found = moduleSites(it, options.root!!) }
+    outcome ?: return code
+    val (module, library) = found ?: run {
+        err.println("kv: the module was not lowered")
+        return 1
+    }
+    val uses = outcome.sidecar!!.uses.map { it.model.text }.toSet()
+    val lists = listOf(module) + library.map { librarySites(it, uses, options.classpath, options.kotlincArgs) }
+    val problems = lists.flatMap { it.problems }
+    if (problems.isNotEmpty()) {
+        problems.forEach { err.println("kv: mutation site: $it") }
+        return 1
+    }
+    out.print(sitesJson(outcome.module!!.id, options.files.single(), options.root!!, lists.flatMap { it.sites }, properties(outcome.sidecar)))
+    return 0
 }
 
 /** `kv hole skeleton SIDECAR.kv OUT.kv` and `kv hole check BEFORE.kv AFTER.kv` (DESIGN-v0.md 7 M7, 8.3). */

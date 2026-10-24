@@ -149,14 +149,7 @@ internal class ModuleContext(
     fun calleeOf(e: FirQualifiedAccessExpression): FirCallableSymbol<*>? = e.calleeReference.toResolvedCallableSymbol()?.unwrapSubstitutionOverrides()
 
     /** The model entries of [sym], matched by owner, name and parameter types. */
-    fun entriesOf(sym: FirCallableSymbol<*>): List<Entry> {
-        val id = sym.callableId ?: return emptyList()
-        val owner = id.classId?.asString() ?: return emptyList()
-        // K2 names a constructor after its class; the table names every constructor `<init>`.
-        val name = if (sym is FirConstructorSymbol) "<init>" else id.callableName.asString()
-        val params = (sym as? FirFunctionSymbol<*>)?.valueParameterSymbols?.map { it.resolvedReturnType.lowerBoundIfFlexible().classId?.asString() }.orEmpty()
-        return TrustedModels.lookup(owner, name, params)
-    }
+    fun entriesOf(sym: FirCallableSymbol<*>): List<Entry> = modelEntries(sym)
 
     fun entriesOf(e: FirQualifiedAccessExpression): List<Entry> = calleeOf(e)?.let(::entriesOf).orEmpty()
 
@@ -556,6 +549,16 @@ internal class ModuleContext(
 
     /** The Kotlin type of [v] (a variable declaration). */
     fun typeOf(v: FirVariable): ConeKotlinType = v.returnTypeRef.coneType
+}
+
+/** The trusted model entries of [sym], matched by owner, name and parameter types. */
+internal fun modelEntries(sym: FirCallableSymbol<*>): List<Entry> {
+    val id = sym.callableId ?: return emptyList()
+    val owner = id.classId?.asString() ?: return emptyList()
+    // K2 names a constructor after its class; the table names every constructor `<init>`.
+    val name = if (sym is FirConstructorSymbol) "<init>" else id.callableName.asString()
+    val params = (sym as? FirFunctionSymbol<*>)?.valueParameterSymbols?.map { it.resolvedReturnType.lowerBoundIfFlexible().classId?.asString() }.orEmpty()
+    return TrustedModels.lookup(owner, name, params)
 }
 
 /** [e] without its smart casts. */

@@ -202,6 +202,9 @@ class Positions(
 
     fun of(source: KtSourceElement?): Pos? = source?.let { at(it, it.startOffset) }
 
+    /** Position of the character offset [offset] of the file. */
+    fun ofOffset(offset: Int): Pos? = lines?.getLineAndColumnByOffset(offset)?.let { (line, col) -> Pos(path, line + 1, col + 1) }
+
     /** Position of a declaration: where its code starts, after the KDoc and comments its source range includes. */
     fun ofDeclaration(source: KtSourceElement?): Pos? {
         if (source == null) return null
