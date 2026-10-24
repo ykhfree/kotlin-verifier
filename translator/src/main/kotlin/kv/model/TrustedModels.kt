@@ -25,6 +25,9 @@ enum class Role {
 
     /** reactor Mono.fromCallable: its lambda is the body of a `fun` operation (DESIGN-v0.md 8.3). */
     OPERATION_BODY,
+
+    /** An exact conversion of a Kotlin number: the value of its receiver. It needs no `use`, like `+` and `-`. */
+    CONVERSION,
 }
 
 /** The value a model operation returns. */
@@ -103,7 +106,10 @@ object TrustedModels {
             Entry("jdk.ConcurrentHashMap.racyRead", CHM, "containsKey", null, Role.RACY_READ),
             Entry("jdk.ConcurrentHashMap.racyRead", CHM, "keys", null, Role.RACY_READ),
             Entry("jdk.ConcurrentHashMap.racyRead", CHM, "keySet", null, Role.RACY_READ),
-            Entry("jdk.ConcurrentHashMap.racyRead", CHM, "size", null, Role.RACY_READ),
+            // size: outside every action a racy read; inside an action an arbitrary Int with no contract, as
+            //   mappingCount. Corretto 21.0.10 src.zip ConcurrentHashMap.java:909-913 "public int size() {" "long n =
+            //   sumCount();" "return ((n < 0L) ? 0 :" "(n > (long)Integer.MAX_VALUE) ? Integer.MAX_VALUE :" "(int)n);"
+            Entry("jdk.ConcurrentHashMap.racyRead", CHM, "size", null, Role.NONDET, Returns.LONG),
             Entry("jdk.ConcurrentHashMap.racyRead", CHM, "isEmpty", null, Role.RACY_READ),
             // Semaphore: permits := arg0; tryAcquire = permits > 0 ? { permits -= 1; true } : false; release: permits += 1.
             Entry("jdk.Semaphore", SEMAPHORE, "<init>", listOf(INT), Role.CTOR),
@@ -127,6 +133,10 @@ object TrustedModels {
             Entry(CELL, ATOMIC_BOOLEAN, "set", listOf(BOOLEAN), Role.OP),
             Entry(CELL, ATOMIC_BOOLEAN, "get", emptyList(), Role.OP, Returns.BOOL),
             Entry("jdk.System.currentTimeMillis", "java/lang/System", "currentTimeMillis", emptyList(), Role.CLOCK, Returns.LONG),
+            // Int.toLong: v0 models Int and Long as mathematical integers (DESIGN-v0.md 2.8), so the exact conversion is
+            //   the identity. stdlib 2.0.21 sources jar, jvmMain/kotlin/Primitives.kt:1128 "Converts this [Int] value to
+            //   [Long]."; 1130 "The resulting `Long` value represents the same numerical value as this `Int`."
+            Entry("kotlin.Int.toLong", INT, "toLong", emptyList(), Role.CONVERSION, Returns.LONG),
             // model reactor.Mono.fromCallable
             //   match   reactor.core.publisher.Mono.fromCallable(java.util.concurrent.Callable)
             //   role    operation body: the whole body of a `fun` operation is this one call, as an expression body or
@@ -161,8 +171,8 @@ object TrustedModels {
             "java.lang.reflect.Method" to "JDK 21 Method.java:361-364",
         )
 
-    /** Names a sidecar may `use`. */
-    val builtIn: Set<String> = entries.map { it.model }.toSet()
+    /** Names a sidecar may `use`; a conversion needs no `use`. */
+    val builtIn: Set<String> = entries.filter { it.role != Role.CONVERSION }.map { it.model }.toSet()
 
     /** Operations the models treat as unbounded Long arithmetic: each needs an ASSUMPTION diagnostic (W13). */
     val unboundedLongOps: Set<String> = entries.filter { it.unbounded }.map { it.op }.toSet()

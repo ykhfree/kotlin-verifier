@@ -771,6 +771,8 @@ internal class ActionLowering(
             // A local of the operation function that the section did not lower (DESIGN-B.md 2.6).
             return unsupported("read of ${sym.name}", "the operation section did not translate the declaration of ${sym.name}", e)
         }
+        // A model property inside an action, e.g. `lockMap.size`: an arbitrary value, as `mappingCount()` is.
+        if (!section) ctx.entriesOf(e).firstOrNull { it.role == Role.NONDET }?.let { return nondet(e, it) }
         val field = ctx.fieldOf(sym)
         return when {
             sym is FirValueParameterSymbol || sym is FirPropertySymbol && sym.isLocal -> captured(sym, e)
@@ -949,10 +951,10 @@ internal class ActionLowering(
         val id = sym.callableId
         val owner = id?.classId?.asString()
         val name = id?.callableName?.asString()
-        if (owner in setOf("kotlin/Long", "kotlin/Int")) return arithmetic(c, owner!!.removePrefix("kotlin/"), name!!)
+        val entries = ctx.entriesOf(sym)
+        if (owner in setOf("kotlin/Long", "kotlin/Int") && entries.isEmpty()) return arithmetic(c, owner!!.removePrefix("kotlin/"), name!!)
         if (owner == "kotlin/Boolean" && name == "not") return expr(c.dispatchReceiver ?: c.explicitReceiver!!)?.let { Not(it, pos) }
         ctx.constructedClass(sym)?.let { cls -> return newObject(c, cls) { type -> temp("new", type, pos) } }
-        val entries = ctx.entriesOf(sym)
         if (entries.isNotEmpty()) return modelCall(c, entries, valueUsed)
         (sym as? FirNamedFunctionSymbol)?.let { f -> ctx.trusted[f]?.let { return trustedCall(c, it, valueUsed) } }
         (sym as? FirNamedFunctionSymbol)?.let { f -> ctx.index.functions[f]?.let { return inline(c, it, valueUsed) } }
@@ -1035,7 +1037,7 @@ internal class ActionLowering(
 
     private fun useCheck(
         entry: Entry,
-        c: FirFunctionCall,
+        c: FirElement,
         inAction: Boolean = true,
     ): Boolean {
         if (entry.model in ctx.uses) return true
@@ -1049,21 +1051,14 @@ internal class ActionLowering(
         entries: List<Entry>,
         valueUsed: Boolean,
     ): Expr? {
-        val pos = ctx.posOf(c)
         val first = entries.first()
         return when (first.role) {
             Role.ACTION -> unsupported("nested compute", "an action does not access its map except through its entry (DESIGN-v0.md 4.3)", c)
             Role.RACY_READ -> unsupported("map read ${first.name} inside an action", "inside an action the map is read only through compute's entry (DESIGN-v0.md 4.3)", c)
             Role.CTOR -> unsupported("new ${first.owner.substringAfterLast('/')}", "a ${first.model} object is modeled only as a flattened field of a new object or as a cell", c)
-            Role.NONDET, Role.CLOCK -> {
-                if (!useCheck(first, c)) return null
-                if (first.role == Role.NONDET && ctx.stateRead(c.dispatchReceiver) == null) return unsupported("${first.name} on ${sourceText(c)}", "not the module map", c)
-                markAll(c.dispatchReceiver)
-                val n = temp("n", KType.IntT, pos)
-                out += Nondet(listOf(n), first.model, pos)
-                Var(n, pos)
-            }
+            Role.NONDET, Role.CLOCK -> nondet(c, first)
             Role.OPERATION_BODY -> unsupported("${first.model} inside an action", "a Mono.fromCallable lambda is the body of an operation function, not a value inside an action (DESIGN-v0.md 8.3)", c)
+            Role.CONVERSION -> expr(c.dispatchReceiver ?: c.explicitReceiver ?: return null)
             Role.NO_EFFECT -> {
                 if (!useCheck(first, c)) return null
                 markAll(c.dispatchReceiver)
@@ -1072,6 +1067,20 @@ internal class ActionLowering(
             }
             Role.OP -> operation(c, entries)
         }
+    }
+
+    /** A model value with no contract: a clock read, or a NONDET call or property of the module map, e.g. `lockMap.size`. */
+    private fun nondet(
+        e: FirQualifiedAccessExpression,
+        entry: Entry,
+    ): Expr? {
+        if (!useCheck(entry, e)) return null
+        if (entry.role == Role.NONDET && ctx.stateRead(e.dispatchReceiver) == null) return unsupported("${entry.name} on ${sourceText(e)}", "not the module map", e)
+        markAll(e.dispatchReceiver)
+        val pos = ctx.posOf(e)
+        val n = temp("n", KType.IntT, pos)
+        out += Nondet(listOf(n), entry.model, pos)
+        return Var(n, pos)
     }
 
     /** An argument of a call with no effect: it must be pure; its value is not translated (DESIGN-v0.md 2.3, 2.13 rule 3). */
