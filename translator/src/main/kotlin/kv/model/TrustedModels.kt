@@ -163,9 +163,9 @@ object TrustedModels {
             Entry(CELL, ATOMIC_BOOLEAN, "set", listOf(BOOLEAN), Role.OP),
             Entry(CELL, ATOMIC_BOOLEAN, "get", emptyList(), Role.OP, Returns.BOOL),
             Entry("jdk.System.currentTimeMillis", "java/lang/System", "currentTimeMillis", emptyList(), Role.CLOCK, Returns.LONG),
-            // Int.toLong: v0 models Int and Long as mathematical integers (DESIGN-v0.md 2.8), so the exact conversion is
-            //   the identity. stdlib 2.0.21 sources jar, jvmMain/kotlin/Primitives.kt:1128 "Converts this [Int] value to
-            //   [Long]."; 1130 "The resulting `Long` value represents the same numerical value as this `Int`."
+            // Int.toLong: v0 lowers Long (DESIGN-v0.md 2.8) and Int to Viper Int, a mathematical integer, so the exact
+            //   conversion is the identity. stdlib 2.0.21 sources jar, jvmMain/kotlin/Primitives.kt:1128 "Converts this
+            //   [Int] value to [Long]."; 1130 "The resulting `Long` value represents the same numerical value as this `Int`."
             Entry("kotlin.Int.toLong", INT, "toLong", emptyList(), Role.CONVERSION, Returns.LONG),
             // model reactor.Mono.fromCallable
             //   match   reactor.core.publisher.Mono.fromCallable(java.util.concurrent.Callable)
