@@ -65,6 +65,8 @@ PROVEN_SAMPLE_SEED = 20261025
 FAILED_SAMPLE_SIZE = 10
 JUDGE_CAP = 30
 
+# kv lower: an UNSUPPORTED diagnostic, or an unsupported ledger entry, each ending with its position.
+LOWER_UNSUPPORTED = re.compile(r"(?m)^\s+(?:U\d+_\d+ UNSUPPORTED|\d+(?:-\d+)? unsupported) (.+?) @\d+:\d+$")
 FREE_VALUE = re.compile(r"(\S+) <- (.+?) \d+:\d+ \(([^)]*)\)(?:, |$)")
 
 
@@ -93,6 +95,7 @@ class Mutant:
         self.verified = False  # this mutant's kv verify ran
         self.shared_from = None  # id of the mutant whose kv verify gives this one's verdict ("original" for the original)
         self.shared_from_mutant = None
+        self.lower = None  # (exit code, stdout, stderr) of kv lower on a mutant whose verdict is shared
 
 
 def run(args, command, timeout=None):
@@ -212,6 +215,22 @@ def verify_jobs(modules):
     return jobs, first
 
 
+def lower(args, mu):
+    """kv lower on a mutant that shares a verdict: its own completeness and unsupported constructs, without Silicon."""
+    m = mu.module
+    mu.lower = run(args, [args.kv, "lower", "--root", mu.root, "--classpath", m.classpath, "--kotlinc", args.kotlinc, m.sidecar])
+
+
+def own_lowering(mu):
+    """"INCOMPLETE" or "complete" from the mutant's own kv lower, and its unsupported constructs; None without one."""
+    if mu.lower is None:
+        return None, []
+    out = mu.lower[1]
+    state = "INCOMPLETE" if "\nmodule INCOMPLETE" in "\n" + out else "complete" if "\nmodule complete" in "\n" + out else "unknown"
+    constructs = [m.group(1) for m in LOWER_UNSUPPORTED.finditer(out)]
+    return state, constructs
+
+
 def silicon_ran(mu):
     """True if the kv verify run reached Silicon: its report's first line gives Silicon's time."""
     return bool(mu.verified and mu.report[1] and "(Silicon " in mu.report[1].splitlines()[0])
@@ -320,7 +339,7 @@ def records(modules):
                 "edits": s["edits"], "compiled": mu.compiled, "verdict": None, "failing": [],
                 "model_hash": mu.hash, "model_identical": None if mu.hash is None else mu.hash == m.original.hash,
                 "ledger": s["ledger"], "facts": s["facts"], "tags": [], "class": None, "message": None,
-                "silicon_run": silicon_ran(mu), "shared_from": mu.shared_from,
+                "silicon_run": silicon_ran(mu), "shared_from": mu.shared_from, "own_lowering": None, "dedupe_conflict": False,
             }
             if mu.compiled:
                 report = (mu.shared_from_mutant or mu).report
@@ -331,6 +350,14 @@ def records(modules):
                     r["message"] = relative(mu.shared_from_mutant or mu, report_message(report))
                 elif r["verdict"] == "INCOMPLETE":
                     r["message"] = relative(mu.shared_from_mutant or mu, unsupported(report[1]))
+                # A shared verdict comes from another copy's lowering; this copy's own lowering may differ (an
+                # unsupported part is not emitted, so two lowerings can make one model). The verdict stays shared.
+                state, constructs = own_lowering(mu)
+                if state is not None:
+                    r["own_lowering"] = state
+                    r["dedupe_conflict"] = (r["verdict"] == "PROVEN" and state != "complete") or (r["verdict"] == "INCOMPLETE" and state != "INCOMPLETE")
+                    if r["verdict"] == "INCOMPLETE" and constructs:
+                        r["message"] = relative(mu, "; ".join(constructs))
             else:
                 r["message"] = relative(mu, mu.emit_message)[-2000:]
             r["tags"] = tags(mu)
@@ -444,7 +471,11 @@ def write_summary(args, modules, recs, items, notes, stats):
     L += ["- 측정: %s, wall clock %.0f s, 병렬 %d." % (time.strftime("%Y-%m-%d"), stats["seconds"], args.jobs),
           "- 원본 판정: " + ", ".join("%s %s" % (m.name, verdict_of(m.original.report)) for m in modules) + ".",
           "- 변이 %d개, 사산 %d개, 모델이 있는 변이 %d개. Silicon 실행 %d회 (원본 %d회, 새 해시 %d회). 중복 제거로 아낀 Silicon 실행: %d회."
-          % (len(recs), sum(not r["compiled"] for r in recs), stats["with_model"], stats["silicon"], len(modules), stats["new_hashes"], stats["saved"]), ""]
+          % (len(recs), sum(not r["compiled"] for r in recs), stats["with_model"], stats["silicon"], len(modules), stats["new_hashes"], stats["saved"])]
+    shared = [r for r in recs if r["own_lowering"] is not None]
+    conflicts = [r for r in shared if r["dedupe_conflict"]]
+    L += ["- 중복 제거 검사: 판정을 함께 쓴 변이 %d개를 각자 `kv lower`로 다시 낮췄다 (Silicon 없음). 완결성이 함께 쓴 판정과 어긋나는 변이: %d개%s."
+          % (len(shared), len(conflicts), "".join("\n  - %s: 함께 쓴 판정 %s (%s에서), 자기 lowering %s" % (r["id"], r["verdict"], r["shared_from"], r["own_lowering"]) for r in conflicts)), ""]
     L += ["## 1. 모듈별·규칙별 변이 수, 사산 수, 판정 분포", "",
           "| 모듈 | 규칙 | 변이 | 사산 | PROVEN (모델 동일) | PROVEN (모델 바뀜) | FAILED | ERROR | INCOMPLETE |", "|---|---|---|---|---|---|---|---|---|"]
     for m in modules:
@@ -568,6 +599,8 @@ def main():
                     if rep is not mu:
                         mu.shared_from_mutant = rep
                         mu.shared_from = "original" if rep is m.original else rep.id
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            list(pool.map(lambda mu: lower(args, mu), [mu for m in modules for mu in m.sites if mu.shared_from_mutant]))
         recs = records(modules)
         os.makedirs(args.results, exist_ok=True)
         with open(os.path.join(args.results, "results.jsonl"), "w") as f:

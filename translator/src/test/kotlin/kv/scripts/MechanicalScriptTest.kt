@@ -150,10 +150,12 @@ class MechanicalScriptTest {
                     "emit BOOL-01" to Response(vpr = other),
                     "verify ROR-01" to Response(1, report("FAILED", listOf(p3a))),
                     "verify BOOL-01" to proven,
+                    "lower NEG-01" to Response(out = "module complete; W1-W16: 0 violation(s)\n"),
                 ),
             )
         assertEquals(0, exit, out)
         assertEquals(listOf("verify BOOL-01", "verify ROR-01", "verify original"), calls.filter { it.startsWith("verify") }.sorted(), "one verify per hash")
+        assertEquals(listOf("lower NEG-01"), calls.filter { it.startsWith("lower") }, "only a mutant that shares a verdict is lowered again")
         val r = results()
         assertEquals(r.getValue("keylocallock.coroutine/ROR-01")["model_hash"], r.getValue("keylocallock.coroutine/NEG-01")["model_hash"])
         assertEquals("\"FAILED\"", r.getValue("keylocallock.coroutine/NEG-01")["verdict"])
@@ -210,6 +212,34 @@ class MechanicalScriptTest {
         assertTrue("| keylocallock.coroutine | ROR | 1 | 1 | 0 | 0 | 0 | 0 | 0 |" in summary(), summary())
         assertTrue("- 서명이 막음 (stale-review): 0개.\n- 도구 결함 후보: 0개." in summary(), summary())
         assertTrue("규칙별 사산 수: ROR 1, COR 0, NEG 0, BOOL 1," in summary(), summary())
+    }
+
+    @Test
+    fun `a shared verdict keeps the mutant's own unsupported construct, and a completeness conflict is reported`() {
+        val incomplete = program("  res := existing__155 + 11\n")
+        val lowered = "  U156_17 UNSUPPORTED value of type kotlin.Nothing in action tryLock#155 at KeyLocalLock.kt:156:17: the type is not part of the model @156:17\nmodule INCOMPLETE (unsupported parts above); W1-W16: 0 violation(s)\n"
+        val (exit, out, calls) =
+            run(
+                listOf(Site("SDL", "existing.semaphore.release()", ""), Site("RET", "            existing\n", "            null\n"), Site("BOOL", "compareAndSet(true", "compareAndSet(false")),
+                mapOf(
+                    "emit SDL-01" to Response(vpr = incomplete),
+                    "verify SDL-01" to Response(3, report("INCOMPLETE", tail = listOf("Unsupported: tryLock KeyLocalLock.kt:155:9; probe"))),
+                    "emit RET-01" to Response(vpr = incomplete),
+                    "lower RET-01" to Response(out = lowered),
+                    // The original's model, but this copy's own lowering is INCOMPLETE.
+                    "emit BOOL-01" to Response(vpr = original),
+                    "lower BOOL-01" to Response(out = lowered),
+                ),
+            )
+        assertEquals(0, exit, out)
+        assertEquals(listOf("lower BOOL-01", "lower RET-01"), calls.filter { it.startsWith("lower") }.sorted())
+        val r = results()
+        assertEquals("\"tryLock KeyLocalLock.kt:155:9; probe\"", r.getValue("keylocallock.coroutine/SDL-01")["message"])
+        val ret = r.getValue("keylocallock.coroutine/RET-01")
+        assertEquals(listOf("\"INCOMPLETE\"", "\"value of type kotlin.Nothing in action tryLock#155 at KeyLocalLock.kt:156:17: the type is not part of the model\"", "false"), listOf(ret["verdict"], ret["message"], ret["dedupe_conflict"]))
+        val bool = r.getValue("keylocallock.coroutine/BOOL-01")
+        assertEquals(listOf("\"PROVEN\"", "\"INCOMPLETE\"", "true"), listOf(bool["verdict"], bool["own_lowering"], bool["dedupe_conflict"]))
+        assertTrue("완결성이 함께 쓴 판정과 어긋나는 변이: 1개\n  - keylocallock.coroutine/BOOL-01: 함께 쓴 판정 PROVEN (original에서), 자기 lowering INCOMPLETE." in summary(), summary())
     }
 
     @Test
