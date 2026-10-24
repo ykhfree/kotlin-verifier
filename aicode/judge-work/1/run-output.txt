@@ -1,0 +1,116 @@
+=== T-haiku-1 ===
+PASS | progress_free/P1a_entry | S1.a A.tryLock now=t0 | required: token; entry carries it; expiresAt=t0+1000 | observed: token=local-1 entryToken=local-1 expiresAt-t0=1000
+PASS | progress_live | S1.b B.tryLock now=t0+999 | required: null | observed: null
+FAIL | progress_live | S1.c B.tryLock now=t0+1000 (= expiresAt = gLease(A)) | required: null | observed: local-3 (entry token after: local-3)
+FAIL | P3a(tryLock) | S1.d A.unLock(tA) right after S1.c | required: true: A's acquisition may end only when now > gLease(A) | observed: false
+PASS | INV-E/P2 | S1: all live entries | required: permits==0, isHeld, token!=null | observed: ok (1 entries)
+PASS | expired_takeover | S2.a B.tryLock now=t0+1001 | required: token, backed | observed: local-5 entryToken=local-5
+PASS | P1/P3a(unLock) | S2.b stale A.unLock(tA) after takeover | required: false; B's entry stays | observed: false entryToken=local-5
+PASS | progress_owner/P1 | S2.c B.unLock(tB) | required: true; entry removed | observed: true entry=null
+PASS | P2 | S2.d permits of the released entry | required: 0..1 | observed: 1
+PASS | INV-E/P2 | S2: all live entries | required: permits==0, isHeld, token!=null | observed: ok (0 entries)
+PASS | probe | S3.a t1=tryLock; t2=tryLock; unLock(t1); unLock(t1) | required: t1!=null, t2==null, true, false | observed: t1=local-6 t2=null ok=true ok2=false
+PASS | P2 | S3.b permits after one release | required: 0..1 | observed: 1
+PASS | P1 | S3.c token of key x used on key y | required: false | observed: false
+PASS | P1 | S3.d forged token string | required: false | observed: false
+PASS | INV-E/P2 | S3: all live entries | required: permits==0, isHeld, token!=null | observed: ok (2 entries)
+PASS | P3c/progress_live | S4.a 16 threads x 300 rounds, same key, same now | required: exactly 1 token per round | observed: rounds with !=1 token: 0
+PASS | P3c/expired_takeover | S4.b 16 threads take over one expired entry x 300 | required: exactly 1 token per round | observed: rounds with !=1 token: 0
+PASS | P1/P3c | S4.c stale A.unLock races B.takeover x 300 | required: B always ends up owning the entry | observed: rounds where B lost its entry: 0 (A released first in 299 rounds)
+PASS | INV-E/P2 | S4: all live entries | required: permits==0, isHeld, token!=null | observed: ok (900 entries)
+PASS | progress_free | S5.a first key under cap 1 | required: token, backed | observed: local-10510 entryToken=local-10510
+PASS | cap_unbacked/P3b | S5.b new key c2 at cap | required: token; no entry for c2; map size 1 | observed: local-10511 entry(c2)=null size=1
+PASS | P1 | S5.c unLock(c2, unbacked token) | required: false | observed: false
+PASS | progress_live | S5.d live existing key c1 at cap | required: null; cap not consulted | observed: null capCalls=0
+PASS | expired_takeover | S5.e expired existing key c1 at cap | required: token, backed; cap not consulted | observed: local-10513 entryToken=local-10513 capCalls=0
+PASS | INV-E/P2 | S5: all live entries | required: permits==0, isHeld, token!=null | observed: ok (1 entries)
+FAIL | P3a(math Int lease) | S7 lockTimeoutMillis=Long.MAX_VALUE, B one ms after A | required: null: gLease(A)=t0+MAX (unbounded Int) has not passed | observed: B=local-10515; A's expiresAt=-9223370244003571476 (wrapped); A's entry present just before B=true
+FAIL | progress_live | S8 lockTimeoutMillis=0, A then B at the same now | required: B gets null (now <= expiresAt) | observed: A=local-10516 B=local-10517
+FAIL | P3a(sweep) | S6 monitor vs real clock, 2600 entries with consecutive expiresAt | required: no entry removed while clock <= expiresAt (min gap >= 1) | observed: removed=2600/2600, boundary witnesses=1, min(c2-expiresAt)=0; e.g. entry with expiresAt=1792851206242 already gone when clock read 1792851206242
+=== T-sonnet-2 ===
+PASS | progress_free/P1a_entry | S1.a A.tryLock now=t0 | required: token; entry carries it; expiresAt=t0+1000 | observed: token=local-1 entryToken=local-1 expiresAt-t0=1000
+PASS | progress_live | S1.b B.tryLock now=t0+999 | required: null | observed: null
+FAIL | progress_live | S1.c B.tryLock now=t0+1000 (= expiresAt = gLease(A)) | required: null | observed: local-2 (entry token after: local-2)
+FAIL | P3a(tryLock) | S1.d A.unLock(tA) right after S1.c | required: true: A's acquisition may end only when now > gLease(A) | observed: false
+PASS | INV-E/P2 | S1: all live entries | required: permits==0, isHeld, token!=null | observed: ok (1 entries)
+PASS | expired_takeover | S2.a B.tryLock now=t0+1001 | required: token, backed | observed: local-4 entryToken=local-4
+PASS | P1/P3a(unLock) | S2.b stale A.unLock(tA) after takeover | required: false; B's entry stays | observed: false entryToken=local-4
+PASS | progress_owner/P1 | S2.c B.unLock(tB) | required: true; entry removed | observed: true entry=null
+PASS | P2 | S2.d permits of the released entry | required: 0..1 | observed: 1
+PASS | INV-E/P2 | S2: all live entries | required: permits==0, isHeld, token!=null | observed: ok (0 entries)
+PASS | probe | S3.a t1=tryLock; t2=tryLock; unLock(t1); unLock(t1) | required: t1!=null, t2==null, true, false | observed: t1=local-5 t2=null ok=true ok2=false
+PASS | P2 | S3.b permits after one release | required: 0..1 | observed: 1
+PASS | P1 | S3.c token of key x used on key y | required: false | observed: false
+PASS | P1 | S3.d forged token string | required: false | observed: false
+PASS | INV-E/P2 | S3: all live entries | required: permits==0, isHeld, token!=null | observed: ok (2 entries)
+PASS | P3c/progress_live | S4.a 16 threads x 300 rounds, same key, same now | required: exactly 1 token per round | observed: rounds with !=1 token: 0
+PASS | P3c/expired_takeover | S4.b 16 threads take over one expired entry x 300 | required: exactly 1 token per round | observed: rounds with !=1 token: 0
+PASS | P1/P3c | S4.c stale A.unLock races B.takeover x 300 | required: B always ends up owning the entry | observed: rounds where B lost its entry: 0 (A released first in 291 rounds)
+PASS | INV-E/P2 | S4: all live entries | required: permits==0, isHeld, token!=null | observed: ok (900 entries)
+PASS | progress_free | S5.a first key under cap 1 | required: token, backed | observed: local-1508 entryToken=local-1508
+PASS | cap_unbacked/P3b | S5.b new key c2 at cap | required: token; no entry for c2; map size 1 | observed: local-1509 entry(c2)=null size=1
+PASS | P1 | S5.c unLock(c2, unbacked token) | required: false | observed: false
+PASS | progress_live | S5.d live existing key c1 at cap | required: null; cap not consulted | observed: null capCalls=0
+PASS | expired_takeover | S5.e expired existing key c1 at cap | required: token, backed; cap not consulted | observed: local-1510 entryToken=local-1510 capCalls=0
+PASS | INV-E/P2 | S5: all live entries | required: permits==0, isHeld, token!=null | observed: ok (1 entries)
+FAIL | P3a(math Int lease) | S7 lockTimeoutMillis=Long.MAX_VALUE, B one ms after A | required: null: gLease(A)=t0+MAX (unbounded Int) has not passed | observed: B=local-1512; A's expiresAt=-9223370244003566184 (wrapped); A's entry present just before B=true
+FAIL | progress_live | S8 lockTimeoutMillis=0, A then B at the same now | required: B gets null (now <= expiresAt) | observed: A=local-1513 B=local-1514
+FAIL | P3a(sweep) | S6 monitor vs real clock, 2600 entries with consecutive expiresAt | required: no entry removed while clock <= expiresAt (min gap >= 1) | observed: removed=2600/2600, boundary witnesses=2, min(c2-expiresAt)=0; e.g. entry with expiresAt=1792851210534 already gone when clock read 1792851210534
+=== T-opus-3 ===
+PASS | progress_free/P1a_entry | S1.a A.tryLock now=t0 | required: token; entry carries it; expiresAt=t0+1000 | observed: token=local-1 entryToken=local-1 expiresAt-t0=1000
+PASS | progress_live | S1.b B.tryLock now=t0+999 | required: null | observed: null
+FAIL | progress_live | S1.c B.tryLock now=t0+1000 (= expiresAt = gLease(A)) | required: null | observed: local-2 (entry token after: local-2)
+FAIL | P3a(tryLock) | S1.d A.unLock(tA) right after S1.c | required: true: A's acquisition may end only when now > gLease(A) | observed: false
+PASS | INV-E/P2 | S1: all live entries | required: permits==0, isHeld, token!=null | observed: ok (1 entries)
+PASS | expired_takeover | S2.a B.tryLock now=t0+1001 | required: token, backed | observed: local-4 entryToken=local-4
+PASS | P1/P3a(unLock) | S2.b stale A.unLock(tA) after takeover | required: false; B's entry stays | observed: false entryToken=local-4
+PASS | progress_owner/P1 | S2.c B.unLock(tB) | required: true; entry removed | observed: true entry=null
+PASS | P2 | S2.d permits of the released entry | required: 0..1 | observed: 1
+PASS | INV-E/P2 | S2: all live entries | required: permits==0, isHeld, token!=null | observed: ok (0 entries)
+PASS | probe | S3.a t1=tryLock; t2=tryLock; unLock(t1); unLock(t1) | required: t1!=null, t2==null, true, false | observed: t1=local-5 t2=null ok=true ok2=false
+PASS | P2 | S3.b permits after one release | required: 0..1 | observed: 1
+PASS | P1 | S3.c token of key x used on key y | required: false | observed: false
+PASS | P1 | S3.d forged token string | required: false | observed: false
+PASS | INV-E/P2 | S3: all live entries | required: permits==0, isHeld, token!=null | observed: ok (2 entries)
+PASS | P3c/progress_live | S4.a 16 threads x 300 rounds, same key, same now | required: exactly 1 token per round | observed: rounds with !=1 token: 0
+PASS | P3c/expired_takeover | S4.b 16 threads take over one expired entry x 300 | required: exactly 1 token per round | observed: rounds with !=1 token: 0
+PASS | P1/P3c | S4.c stale A.unLock races B.takeover x 300 | required: B always ends up owning the entry | observed: rounds where B lost its entry: 0 (A released first in 296 rounds)
+PASS | INV-E/P2 | S4: all live entries | required: permits==0, isHeld, token!=null | observed: ok (900 entries)
+PASS | progress_free | S5.a first key under cap 1 | required: token, backed | observed: local-1508 entryToken=local-1508
+PASS | cap_unbacked/P3b | S5.b new key c2 at cap | required: token; no entry for c2; map size 1 | observed: local-1509 entry(c2)=null size=1
+PASS | P1 | S5.c unLock(c2, unbacked token) | required: false | observed: false
+PASS | progress_live | S5.d live existing key c1 at cap | required: null; cap not consulted | observed: null capCalls=0
+PASS | expired_takeover | S5.e expired existing key c1 at cap | required: token, backed; cap not consulted | observed: local-1510 entryToken=local-1510 capCalls=0
+PASS | INV-E/P2 | S5: all live entries | required: permits==0, isHeld, token!=null | observed: ok (1 entries)
+FAIL | P3a(math Int lease) | S7 lockTimeoutMillis=Long.MAX_VALUE, B one ms after A | required: null: gLease(A)=t0+MAX (unbounded Int) has not passed | observed: B=local-1512; A's expiresAt=-9223370244003560863 (wrapped); A's entry present just before B=true
+FAIL | progress_live | S8 lockTimeoutMillis=0, A then B at the same now | required: B gets null (now <= expiresAt) | observed: A=local-1513 B=local-1514
+FAIL | P3a(sweep) | S6 monitor vs real clock, 2600 entries with consecutive expiresAt | required: no entry removed while clock <= expiresAt (min gap >= 1) | observed: removed=2600/2600, boundary witnesses=2, min(c2-expiresAt)=0; e.g. entry with expiresAt=1792851215869 already gone when clock read 1792851215869
+=== T-haiku-4 ===
+PASS | progress_free/P1a_entry | S1.a A.tryLock now=t0 | required: token; entry carries it; expiresAt=t0+1000 | observed: token=local-1 entryToken=local-1 expiresAt-t0=1000
+PASS | progress_live | S1.b B.tryLock now=t0+999 | required: null | observed: null
+FAIL | progress_live | S1.c B.tryLock now=t0+1000 (= expiresAt = gLease(A)) | required: null | observed: local-3 (entry token after: local-3)
+FAIL | P3a(tryLock) | S1.d A.unLock(tA) right after S1.c | required: true: A's acquisition may end only when now > gLease(A) | observed: false
+PASS | INV-E/P2 | S1: all live entries | required: permits==0, isHeld, token!=null | observed: ok (1 entries)
+PASS | expired_takeover | S2.a B.tryLock now=t0+1001 | required: token, backed | observed: local-5 entryToken=local-5
+PASS | P1/P3a(unLock) | S2.b stale A.unLock(tA) after takeover | required: false; B's entry stays | observed: false entryToken=local-5
+PASS | progress_owner/P1 | S2.c B.unLock(tB) | required: true; entry removed | observed: true entry=null
+PASS | P2 | S2.d permits of the released entry | required: 0..1 | observed: 0
+PASS | INV-E/P2 | S2: all live entries | required: permits==0, isHeld, token!=null | observed: ok (0 entries)
+PASS | probe | S3.a t1=tryLock; t2=tryLock; unLock(t1); unLock(t1) | required: t1!=null, t2==null, true, false | observed: t1=local-6 t2=null ok=true ok2=false
+PASS | P2 | S3.b permits after one release | required: 0..1 | observed: 0
+PASS | P1 | S3.c token of key x used on key y | required: false | observed: false
+PASS | P1 | S3.d forged token string | required: false | observed: false
+PASS | INV-E/P2 | S3: all live entries | required: permits==0, isHeld, token!=null | observed: ok (2 entries)
+PASS | P3c/progress_live | S4.a 16 threads x 300 rounds, same key, same now | required: exactly 1 token per round | observed: rounds with !=1 token: 0
+PASS | P3c/expired_takeover | S4.b 16 threads take over one expired entry x 300 | required: exactly 1 token per round | observed: rounds with !=1 token: 0
+PASS | P1/P3c | S4.c stale A.unLock races B.takeover x 300 | required: B always ends up owning the entry | observed: rounds where B lost its entry: 0 (A released first in 295 rounds)
+PASS | INV-E/P2 | S4: all live entries | required: permits==0, isHeld, token!=null | observed: ok (900 entries)
+PASS | progress_free | S5.a first key under cap 1 | required: token, backed | observed: local-10510 entryToken=local-10510
+PASS | cap_unbacked/P3b | S5.b new key c2 at cap | required: token; no entry for c2; map size 1 | observed: local-10511 entry(c2)=null size=1
+PASS | P1 | S5.c unLock(c2, unbacked token) | required: false | observed: false
+PASS | progress_live | S5.d live existing key c1 at cap | required: null; cap not consulted | observed: null capCalls=0
+PASS | expired_takeover | S5.e expired existing key c1 at cap | required: token, backed; cap not consulted | observed: local-10513 entryToken=local-10513 capCalls=0
+PASS | INV-E/P2 | S5: all live entries | required: permits==0, isHeld, token!=null | observed: ok (1 entries)
+FAIL | P3a(math Int lease) | S7 lockTimeoutMillis=Long.MAX_VALUE, B one ms after A | required: null: gLease(A)=t0+MAX (unbounded Int) has not passed | observed: B=local-10515; A's expiresAt=-9223370244003555394 (wrapped); A's entry present just before B=true
+FAIL | progress_live | S8 lockTimeoutMillis=0, A then B at the same now | required: B gets null (now <= expiresAt) | observed: A=local-10516 B=local-10517
+FAIL | P3a(sweep) | S6 monitor vs real clock, 2600 entries with consecutive expiresAt | required: no entry removed while clock <= expiresAt (min gap >= 1) | observed: removed=2600/2600, boundary witnesses=1, min(c2-expiresAt)=0; e.g. entry with expiresAt=1792851222326 already gone when clock read 1792851222326

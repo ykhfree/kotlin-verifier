@@ -1,0 +1,88 @@
+== T-opus-1
+S0 cap: maxEntries=2, map size=2 before new key B
+   new key B: tryLock#1=local-3 entryAfter=absent; tryLock#2=local-4; unLock(B, tryLock#1 token)=false
+   live key A (holder local-1): tryLock=null
+   expired key C (holder local-2, entry present before call=true): tryLock=local-5 entryAfter={token=local-5, expiresAt=1792851217876, isHeld=true, permits=0}
+S1 probe: t1=local-6 entry={token=local-6, expiresAt=1792851277871, isHeld=true, permits=0}; t2=null; unLock(t1)=true entry=absent; unLock(t1) again=false
+S7 forged: unLock(unissued)=false, unLock(UPDATE, t1)=false, unLock(local-0)=false, entry={token=local-7, expiresAt=1792851277873, isHeld=true, permits=0}; owner unLock=true
+INV-E (after S0, S1, S7): entries=0, violations=[]
+S2 tryLock with now == expiresAt-1 == 1792851217980 (holder t1=local-8 present and held, attempt 1):
+   second tryLock=null, entry after={token=local-8, expiresAt=1792851217981, isHeld=true, permits=0}, unLock(t1) afterwards=true
+S2 tryLock with now == expiresAt == 1792851218087 (holder t1=local-9 present and held, attempt 1):
+   second tryLock=local-10, entry after={token=local-10, expiresAt=1792851218187, isHeld=true, permits=0}, unLock(t1) afterwards=false
+S4b owner unLock with now == expiresAt == 1792851218188: result=true, entry after=absent
+S5: no callable sweep function (the monitor body is inline in init)
+S5: no callable sweep function (the monitor body is inline in init)
+S3 tryLock with now > expiresAt (entry present): t1=local-14 -> tryLock=local-15 entry={token=local-15, expiresAt=1792851218430, isHeld=true, permits=0}
+   unLock(stale t1)=false entry={token=local-15, expiresAt=1792851218430, isHeld=true, permits=0}; unLock(new token)=true
+S4 owner unLock with now > expiresAt, entry present {token=local-16, expiresAt=1792851218432, isHeld=true, permits=0}: result=true, entry after=absent
+S9 lockTimeoutMillis=0, two tryLock calls within millisecond 1792851218434: t1=local-17, t2=local-18
+S6 stress (8 threads x 20000 tryLock, timeout 60 s): acquisitions=32605, maxConcurrentHolders=1, ownerReleaseFailures=0, staleTokenReleases=0
+S10 background monitor: unreleased entry of local-32624 (timeout 10 ms) dropped after 344 ms
+INV-E (end): entries=0, violations=[]
+== T-haiku-2
+S0 cap: maxEntries=2, map size=2 before new key B
+   new key B: tryLock#1=local-3 entryAfter=absent; tryLock#2=local-4; unLock(B, tryLock#1 token)=false
+   live key A (holder local-1): tryLock=null
+   expired key C (holder local-2, entry present before call=true): tryLock=local-6 entryAfter={token=local-6, expiresAt=1792851221376, isHeld=true, permits=0}
+S1 probe: t1=local-7 entry={token=local-7, expiresAt=1792851281371, isHeld=true, permits=0}; t2=null; unLock(t1)=true entry=absent; unLock(t1) again=false
+S7 forged: unLock(unissued)=false, unLock(UPDATE, t1)=false, unLock(local-0)=false, entry={token=local-9, expiresAt=1792851281373, isHeld=true, permits=0}; owner unLock=true
+INV-E (after S0, S1, S7): entries=0, violations=[]
+S2 tryLock with now == expiresAt-1 == 1792851221480 (holder t1=local-10 present and held, attempt 1):
+   second tryLock=null, entry after={token=local-10, expiresAt=1792851221481, isHeld=true, permits=0}, unLock(t1) afterwards=true
+S2 tryLock with now == expiresAt == 1792851221587 (holder t1=local-12 present and held, attempt 1):
+   second tryLock=local-13, entry after={token=local-13, expiresAt=1792851221687, isHeld=true, permits=0}, unLock(t1) afterwards=false
+S4b owner unLock with now == expiresAt == 1792851221687: result=true, entry after=absent
+S5 sweep pass with now == expiresAt-1 == 1792851221887 (entry carried t1=local-16): entry after={token=local-16, expiresAt=1792851221888, isHeld=true, permits=0}
+S5 sweep pass with now == expiresAt == 1792851221988 (entry carried t1=local-17): entry after=absent
+S3 tryLock with now > expiresAt (entry present): t1=local-18 -> tryLock=local-19 entry={token=local-19, expiresAt=1792851222030, isHeld=true, permits=0}
+   unLock(stale t1)=false entry={token=local-19, expiresAt=1792851222030, isHeld=true, permits=0}; unLock(new token)=true
+S4 owner unLock with now > expiresAt, entry present {token=local-20, expiresAt=1792851222032, isHeld=true, permits=0}: result=true, entry after=absent
+S9 lockTimeoutMillis=0, two tryLock calls within millisecond 1792851222034: t1=local-21, t2=local-22
+S6 stress (8 threads x 20000 tryLock, timeout 60 s): acquisitions=19157, maxConcurrentHolders=1, ownerReleaseFailures=0, staleTokenReleases=0
+S10 background monitor: unreleased entry of local-160023 (timeout 10 ms) dropped after 244 ms
+INV-E (end): entries=0, violations=[]
+== T-sonnet-3
+S0 cap: maxEntries=2, map size=2 before new key B
+   new key B: tryLock#1=local-3 entryAfter=absent; tryLock#2=local-4; unLock(B, tryLock#1 token)=false
+   live key A (holder local-1): tryLock=null
+   expired key C (holder local-2, entry present before call=true): tryLock=local-5 entryAfter={token=local-5, expiresAt=1792851224730, isHeld=true, permits=0}
+S1 probe: t1=local-6 entry={token=local-6, expiresAt=1792851284724, isHeld=true, permits=0}; t2=null; unLock(t1)=true entry=absent; unLock(t1) again=false
+S7 forged: unLock(unissued)=false, unLock(UPDATE, t1)=false, unLock(local-0)=false, entry={token=local-7, expiresAt=1792851284726, isHeld=true, permits=0}; owner unLock=true
+INV-E (after S0, S1, S7): entries=0, violations=[]
+S2 tryLock with now == expiresAt-1 == 1792851224832 (holder t1=local-8 present and held, attempt 1):
+   second tryLock=null, entry after={token=local-8, expiresAt=1792851224833, isHeld=true, permits=0}, unLock(t1) afterwards=true
+S2 tryLock with now == expiresAt == 1792851224938 (holder t1=local-9 present and held, attempt 1):
+   second tryLock=local-10, entry after={token=local-10, expiresAt=1792851225038, isHeld=true, permits=0}, unLock(t1) afterwards=false
+S4b owner unLock with now == expiresAt == 1792851225038: result=false, entry after=absent
+S5 sweep pass with now == expiresAt-1 == 1792851225138 (entry carried t1=local-12): entry after={token=local-12, expiresAt=1792851225139, isHeld=true, permits=0}
+S5 sweep pass with now == expiresAt == 1792851225239 (entry carried t1=local-13): entry after=absent
+S3 tryLock with now > expiresAt (entry present): t1=local-14 -> tryLock=local-15 entry={token=local-15, expiresAt=1792851225281, isHeld=true, permits=0}
+   unLock(stale t1)=false entry={token=local-15, expiresAt=1792851225281, isHeld=true, permits=0}; unLock(new token)=true
+S4 owner unLock with now > expiresAt, entry present {token=local-16, expiresAt=1792851225282, isHeld=true, permits=0}: result=false, entry after=absent
+S9 lockTimeoutMillis=0, two tryLock calls within millisecond 1792851225284: t1=local-17, t2=local-18
+S6 stress (8 threads x 20000 tryLock, timeout 60 s): acquisitions=17112, maxConcurrentHolders=1, ownerReleaseFailures=0, staleTokenReleases=0
+S10 background monitor: unreleased entry of local-17131 (timeout 10 ms) dropped after 350 ms
+INV-E (end): entries=0, violations=[]
+== T-opus-4
+S0 cap: maxEntries=2, map size=2 before new key B
+   new key B: tryLock#1=local-3 entryAfter=absent; tryLock#2=local-4; unLock(B, tryLock#1 token)=false
+   live key A (holder local-1): tryLock=null
+   expired key C (holder local-2, entry present before call=true): tryLock=local-5 entryAfter={token=local-5, expiresAt=1792851228115, isHeld=true, permits=0}
+S1 probe: t1=local-6 entry={token=local-6, expiresAt=1792851288110, isHeld=true, permits=0}; t2=null; unLock(t1)=true entry=absent; unLock(t1) again=false
+S7 forged: unLock(unissued)=false, unLock(UPDATE, t1)=false, unLock(local-0)=false, entry={token=local-7, expiresAt=1792851288112, isHeld=true, permits=0}; owner unLock=true
+INV-E (after S0, S1, S7): entries=0, violations=[]
+S2 tryLock with now == expiresAt-1 == 1792851228218 (holder t1=local-8 present and held, attempt 1):
+   second tryLock=null, entry after={token=local-8, expiresAt=1792851228219, isHeld=true, permits=0}, unLock(t1) afterwards=true
+S2 tryLock with now == expiresAt == 1792851228324 (holder t1=local-9 present and held, attempt 1):
+   second tryLock=local-10, entry after={token=local-10, expiresAt=1792851228424, isHeld=true, permits=0}, unLock(t1) afterwards=false
+S4b owner unLock with now == expiresAt == 1792851228424: result=true, entry after=absent
+S5 sweep pass with now == expiresAt-1 == 1792851228524 (entry carried t1=local-12): entry after={token=local-12, expiresAt=1792851228525, isHeld=true, permits=0}
+S5 sweep pass with now == expiresAt == 1792851228625 (entry carried t1=local-13): entry after=absent
+S3 tryLock with now > expiresAt (entry present): t1=local-14 -> tryLock=local-15 entry={token=local-15, expiresAt=1792851228667, isHeld=true, permits=0}
+   unLock(stale t1)=false entry={token=local-15, expiresAt=1792851228667, isHeld=true, permits=0}; unLock(new token)=true
+S4 owner unLock with now > expiresAt, entry present {token=local-16, expiresAt=1792851228668, isHeld=true, permits=0}: result=true, entry after=absent
+S9 lockTimeoutMillis=0, two tryLock calls within millisecond 1792851228670: t1=local-17, t2=local-18
+S6 stress (8 threads x 20000 tryLock, timeout 60 s): acquisitions=30994, maxConcurrentHolders=1, ownerReleaseFailures=0, staleTokenReleases=0
+S10 background monitor: unreleased entry of local-31013 (timeout 10 ms) dropped after 351 ms
+INV-E (end): entries=0, violations=[]

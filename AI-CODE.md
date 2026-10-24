@@ -183,4 +183,71 @@ req-shield는 공개 저장소다. 그래서 원래 구현이 학습 자료에 �
   3. 단위 테스트는 `--shim`으로 돌린다. 이 옵션은 테스트 소스에 아무 일도 하지 않는 확장 함수 `stopMonitoring()`, `cancel()`을 넣는다. `KeyLocalLockTest`가 이 두 멤버를 부르는데 명세 묶음에는 없기 때문이다 (측정: 두 멤버가 없으면 14개 모두 컴파일 실패). 위험: AI의 monitor가 테스트 사이에 멈추지 않아 드물게 결과가 흔들릴 수 있다. 자유 구현은 리플렉션으로 `lockMap`을 읽는 테스트(405행)에서 실패할 수 있다.
   4. hole 작성자용 TASK.md: "FAILED (property)"는 현재 hole이 허용하는 상태에서의 실패이고, 그 상태를 배제하는 hole이면 사라질 수 있다고 적는다.
 - 2026-10-24, 도구 1차 결과 뒤 (판정 전): 6.1의 묶기 수정에 `class NAME KNAME`을 더했다 (sidecar의 `class LockInfo = X`의 Kotlin 이름만 바꿈). 이유: RULES.md가 `LockInfo`의 위치(클래스 안, companion 안, 파일 최상위)를 정하지 않았다. 그래서 4개 구현(T-haiku-1, T-haiku-3, T-haiku-4, T-sonnet-4)의 묶기가 실패했다. 이것은 성질이나 조건이 아니라 묶기용 이름이므로 6.1의 취지 안이다. 다만 미리 등록한 목록에는 없었으므로 결과 뒤 변경으로 적는다. 바꾼 구현은 `aicode/impl/<ID>/bindings.txt`에 있고, `binding_adaptations`로 센다.
+- 2026-10-24, 판정 뒤: 6.3의 hole 다시 쓰기 단계를 생략했다. 이유: 도구가 FAILED를 낸 action은 6개 구현의 sweep이다. 판정자가 그 6개 모두에서 같은 성질(sweep의 P3a, 경계 `>=`)의 실제 위반을 실행으로 확인했다. hole을 다시 쓰면 "낡은 hole 때문에 생긴 실패"를 가려낼 수 있지만, 실제 위반은 어떤 hole로도 증명되지 않는다 (6.4). 나머지 실패한 모듈은 tryLock이 UNSUPPORTED라서 hole로 PROVEN이 될 수 없다.
+
+## 10. 결과 (2026-10-24, 1차: 지금 도구 그대로)
+
+결과 파일: `aicode/results.jsonl`, `aicode/summary.md`, 판정 `aicode/judgments-{1,2,3}.md`, 판정자 증거 `aicode/judge-work/`.
+
+### 10.1 정답 (판정자 3명, 블라인드)
+
+- 틀 구현 12개 모두 "결함 (sidecar 성질)"이다.
+- **공통 결함 (12개):** 만료 판정이 `>=`(`expiresAt <= now`)다.
+  - 정확히 만료 시각과 같은 1 ms에 tryLock이 아직 유효한 lock을 넘겨받는다 (P3a, progress_live).
+  - monitor도 그 순간 entry를 지운다 (sweep의 P3a).
+  - SPEC.md의 "once `lockTimeoutMillis` has passed"는 경계를 정하지 않는다. 경계를 정한 것은 서명된 sidecar(`now > gLease`)다.
+  - 판정자들은 단일 스레드 재현, 실제 시계 재현, `>`로 고친 대조군으로 확인했다.
+- **추가 결함:**
+  - T-haiku-3: unLock이 만료된 자기 entry를 풀지 않는다 (progress_owner).
+  - T-sonnet-3: 만료 뒤 unLock이 entry를 지우면서 `false`를 돌려준다 (progress_owner, unLock의 P3a).
+- **도구의 모델 밖 결함:** 여러 구현에서 `now + lockTimeoutMillis`가 `Long` 범위를 넘으면 lock이 곧바로 만료된다. 도구는 `Long`을 넘치지 않는 정수로 가정하고(보고서의 Assumptions), 이 경로를 보지 못한다. T-opus-2는 포화로 막았다.
+- **성립하는 성질:** 12개 모두 상호 배제(경쟁 부하 시험에서 겹친 보유자 0), P1, P1a, P3b, P3c, P2, cap_unbacked, expired_takeover는 성립한다.
+- req-shield 단위 테스트는 12개 모두 14/14 통과다. 테스트는 이 경계 결함을 잡지 못한다.
+
+### 10.2 도구 판정과 정답의 대조 (action 단위)
+
+| 도구의 action 판정 | 개수 | 대조 |
+|---|---|---|
+| FAILED (property) | 6 (sweep: T-haiku-2, T-haiku-4, T-sonnet-1, T-sonnet-3, T-sonnet-4, T-opus-2) | 6개 모두 정답과 같다 (검출). 오경보 0 |
+| PROVEN | 5 (unLock: T-haiku-2, T-haiku-4, T-sonnet-1, T-sonnet-4, T-opus-2) | 5개 모두 정답도 unLock이 성질을 지킨다고 본다. 놓침 0 |
+| UNSUPPORTED | 13 | tryLock 8개 전부, T-haiku-1과 T-haiku-3의 unLock과 sweep, T-sonnet-3의 unLock |
+| 범위 밖 | 4개 구현 (12 action) | `kotlinx.coroutines.sync.Semaphore` (T-sonnet-2, T-opus-1, T-opus-3, T-opus-4) |
+
+- 도구가 판정을 낸 action 11개는 모두 정답과 맞다: 검출 6, 맞은 PROVEN 5, 놓침 0, 오경보 0.
+- 그러나 정답이 찾은 결함 중 다음은 도구가 판정하지 못했다.
+  - tryLock의 경계 결함 (12개 전부): UNSUPPORTED 또는 범위 밖.
+  - T-sonnet-3의 unLock 결함: UNSUPPORTED.
+  - overflow: 모델 밖.
+- 모듈 단위로는 PROVEN 0, FAILED 6, INCOMPLETE 2, 범위 밖 4다.
+
+### 10.3 범위 (가장 큰 결과)
+
+지금 도구는 AI가 쓴 틀 구현 12개 중 하나도 끝까지 검증하지 못했다. 원인은 다음과 같다.
+
+| 원인 | 구현 수 | 성격 |
+|---|---|---|
+| `lockMap.size.toLong()` (v0는 Int의 `+`, `-`만) | 묶인 8개 모두 (tryLock) | 도구의 부분집합이 좁음 |
+| `kotlinx.coroutines.sync.Semaphore` | 4 | 신뢰 모델 없음. RULES.md가 패키지를 정하지 않음 |
+| `LockInfo`의 위치 (companion 안, 파일 최상위) | 4 | RULES.md가 정하지 않음. 묶기 수정으로 해결 |
+| 다른 객체의 helper 호출, `Semaphore` 필드 직접 접근, safe call `?.`, 값으로 쓴 if, compute 밖의 `tokenSequence` 증가 | 여러 개 | 도구의 부분집합이 좁음 |
+
+자유 구현 3개는 모두 그대로는 묶이지 않는다. 상태 이름, 클래스, 구조가 다르다 (예측 6과 같음).
+
+### 10.4 예측 대조 (8절)
+
+| 예측 | 대조 |
+|---|---|
+| 1. 12개 중 8개 이상 컴파일 | 맞음 (12/12, 자유 3/3) |
+| 2. 적어도 1개에 sidecar 성질 결함 | 맞음 (12/12) |
+| 3. 놓침 0 | 맞음 (판정이 난 action 기준). 다만 도구가 판정하지 못한 결함이 많다 |
+| 4. 정상 구현의 일부는 hole을 다시 써도 실패 | 해당 없음 (정상 구현 0) |
+| 5. 예측된 오경보 종류 | 빠른 경로는 틀 구현에 없었다. INCOMPLETE 원인은 예측과 다르다: 주로 `Int.toLong`, helper 호출 |
+| 6. 자유 구현은 그대로 묶이지 않음 | 맞음 (3/3) |
+| 7. 일부는 원본과 유사도가 높음 | 틀림 (0.22-0.57, 0.9 이상 0개) |
+
+### 10.5 기록할 이탈
+
+- T-opus-2의 생성자는 advisor를 한 번 썼다 (블라인드는 유지).
+- 판정자 3은 허용 범위보다 넓게 DESIGN-v0.md를 읽었다. 그 범위에 원래 코드의 조건문 한 줄이 있었다. 판정의 근거는 sidecar 원문이었다.
+- 생성 agent에는 사용자의 전역 CLAUDE.md가 함께 적용되었다.
 

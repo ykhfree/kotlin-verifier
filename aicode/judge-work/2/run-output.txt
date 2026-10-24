@@ -1,0 +1,273 @@
+=== T-sonnet-1 ===
+S5 sidecar probe (fake clock, lockTimeoutMillis = 100)
+  t1=local-1 t2=null unLock(t1)=true unLock(t1) again=false; no entry; released LockInfo permits=1
+    probe: OK
+S1 tryLock at now == expiresAt (fake clock, lockTimeoutMillis = 100)
+  now=base     tryLock -> local-2; entry{token=local-2, expiresAt=base+100, isHeld=true, permits=0}
+  now=base+99  tryLock -> null   [progress_live requires null: OK]
+  now=base+100 tryLock -> local-3; entry{token=local-3, expiresAt=base+200, isHeld=true, permits=0}
+    progress_live (old has, isHeld, now <= old expiresAt ==> res == NULL): VIOLATION
+    P3a tryLock (t1 may end only if now > gLease(t1) = base+100): VIOLATION
+S1r tryLock twice in one millisecond (real clock, lockTimeoutMillis = 0)
+  attempt=0 both calls read now=r0: t1=local-4 t2=local-5; entry{token=local-5, expiresAt=base+0, isHeld=true, permits=0}
+    progress_live (now <= expiresAt ==> null): VIOLATION
+S1r5 second tryLock exactly 5 ms after the first (real clock, lockTimeoutMillis = 5)
+  attempt=0 t1=local-6 (now=r0), t2=local-7 (now=r0+5); entry{token=local-7, expiresAt=base+10, isHeld=true, permits=0}
+    progress_live (now <= expiresAt ==> null): VIOLATION
+S2 sweep at now == expiresAt (system clock for the sweep, lockTimeoutMillis = 100)
+  attempt=1 tryLock -> local-9, entry{token=local-9, expiresAt=base+0, isHeld=true, permits=0}; sweep read now=r0; after: no entry
+    P3a sweep (removal needs now > gLease = r0): VIOLATION
+S2r sweep in the same millisecond as tryLock (real clock only, lockTimeoutMillis = 0)
+  attempt=1 tryLock -> local-11 and sweep both read now=r0 (expiresAt = gLease = r0); after: no entry
+    P3a sweep (removal needs now > gLease = r0): VIOLATION
+S2c sweep strictly after expiry and strictly before it (system clock)
+  expired entry after sweep: no entry  [sweep may remove: removed=true]
+  live entry after sweep: entry{token=local-13, expiresAt=base+10100, isHeld=true, permits=0}  [must stay: OK]
+S3 owner unLock at and after the lease end (fake clock, lockTimeoutMillis = 100)
+  tryLock at base -> local-14; unLock(t1) at base+99 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-15; unLock(t1) at base+100 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-16; unLock(t1) at base+101 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-17; unLock(t1) at base+500 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+S3r owner unLock in the same millisecond as tryLock (real clock only, lockTimeoutMillis = 0)
+  attempt=0 tryLock -> local-18, unLock(t1) -> true, both at now=r0; after: no entry
+    progress_owner: OK
+S4 lockTimeoutMillis = Long.MAX_VALUE (fake clock)
+  now=base   tryLock -> local-19; entry{token=local-19, expiresAt=-9223370243993396141, isHeld=true, permits=0}   (gLease = base + Long.MAX_VALUE)
+  now=base+1 tryLock -> local-20; entry{token=local-20, expiresAt=-9223370243993396140, isHeld=true, permits=0}
+    P3a tryLock (t1 may end only if now > gLease(t1)): VIOLATION
+  now=base+2 unLock(current holder local-20) -> true   [progress_owner: OK]
+S4r lockTimeoutMillis = Long.MAX_VALUE (real clock): two tryLock calls back to back
+  t1=local-21 t2=local-22; entry{token=local-22, expiresAt=-9223370244003396141, isHeld=true, permits=0}
+S4n clock before 1970 (fake clock = -1000, lockTimeoutMillis = 100): informative only
+  tryLock -> local-23; entry{token=local-23, expiresAt=-900, isHeld=true, permits=0}   (gLease = -900)
+  now=-800 tryLock -> local-24; entry{token=local-24, expiresAt=-700, isHeld=true, permits=0}
+S6 cap path (LocalLockLimit.maxEntries = 1, fake clock, lockTimeoutMillis = 100)
+  tryLock(k1) -> local-25; k1 entry{token=local-25, expiresAt=base+100, isHeld=true, permits=0}   [progress_free: OK]
+  tryLock(k2) -> local-26; k2 no entry   [cap_unbacked: OK]
+  tryLock(k2) again -> local-27; k2 no entry   [cap_unbacked: OK]
+  unLock(k2, local-26) -> false   [KDoc false when not held: OK]
+  tryLock(k1) while live -> null   [progress_live: OK]
+  now=base+101 tryLock(k1) on expired entry, map full -> local-28; entry{token=local-28, expiresAt=base+201, isHeld=true, permits=0}   [expired_takeover: OK]
+S7 stale and forged tokens after a takeover (fake clock, lockTimeoutMillis = 100)
+  t1=local-29 at base; tryLock at base+101 -> local-30   [expired_takeover: OK]
+  unLock(t1) -> false   [P1: OK]; entry{token=local-30, expiresAt=base+201, isHeld=true, permits=0}
+  unLock(local-999999999) -> false   [P1: OK]
+  unLock(t2) -> true   [progress_owner: OK]; no entry   [P1 !has: OK]
+S8 mutual exclusion stress (real clock, lockTimeoutMillis = 60000, 8 threads x 20000 rounds)
+  acquired=51933 overlap=0 failedOwnerRelease=0 staleRelease=0 mapSize=0
+S9 the real monitor removes an expired entry (real clock, lockTimeoutMillis = 200)
+  tryLock -> local-51964; after 2.6 s: no entry
+S10 interrupt the thread named req-shield-local-lock-monitor, then check the monitor still sweeps
+  monitor threads by that name: 1
+  alive after interrupt: [true]
+  tryLock -> local-51965; after 2.6 s: no entry
+=== T-opus-2 ===
+S5 sidecar probe (fake clock, lockTimeoutMillis = 100)
+  t1=local-1 t2=null unLock(t1)=true unLock(t1) again=false; no entry; released LockInfo permits=0
+    probe: OK
+S1 tryLock at now == expiresAt (fake clock, lockTimeoutMillis = 100)
+  now=base     tryLock -> local-2; entry{token=local-2, expiresAt=base+100, isHeld=true, permits=0}
+  now=base+99  tryLock -> null   [progress_live requires null: OK]
+  now=base+100 tryLock -> local-3; entry{token=local-3, expiresAt=base+200, isHeld=true, permits=0}
+    progress_live (old has, isHeld, now <= old expiresAt ==> res == NULL): VIOLATION
+    P3a tryLock (t1 may end only if now > gLease(t1) = base+100): VIOLATION
+S1r tryLock twice in one millisecond (real clock, lockTimeoutMillis = 0)
+  attempt=0 both calls read now=r0: t1=local-4 t2=local-5; entry{token=local-5, expiresAt=base+0, isHeld=true, permits=0}
+    progress_live (now <= expiresAt ==> null): VIOLATION
+S1r5 second tryLock exactly 5 ms after the first (real clock, lockTimeoutMillis = 5)
+  attempt=0 t1=local-6 (now=r0), t2=local-7 (now=r0+5); entry{token=local-7, expiresAt=base+10, isHeld=true, permits=0}
+    progress_live (now <= expiresAt ==> null): VIOLATION
+S2 sweep at now == expiresAt (system clock for the sweep, lockTimeoutMillis = 100)
+  attempt=1 tryLock -> local-9, entry{token=local-9, expiresAt=base+0, isHeld=true, permits=0}; sweep read now=r0; after: no entry
+    P3a sweep (removal needs now > gLease = r0): VIOLATION
+S2r sweep in the same millisecond as tryLock (real clock only, lockTimeoutMillis = 0)
+  attempt=0 tryLock -> local-10 and sweep both read now=r0 (expiresAt = gLease = r0); after: no entry
+    P3a sweep (removal needs now > gLease = r0): VIOLATION
+S2c sweep strictly after expiry and strictly before it (system clock)
+  expired entry after sweep: no entry  [sweep may remove: removed=true]
+  live entry after sweep: entry{token=local-12, expiresAt=base+10100, isHeld=true, permits=0}  [must stay: OK]
+S3 owner unLock at and after the lease end (fake clock, lockTimeoutMillis = 100)
+  tryLock at base -> local-13; unLock(t1) at base+99 -> true; after: no entry; released LockInfo permits=0
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-14; unLock(t1) at base+100 -> true; after: no entry; released LockInfo permits=0
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-15; unLock(t1) at base+101 -> true; after: no entry; released LockInfo permits=0
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-16; unLock(t1) at base+500 -> true; after: no entry; released LockInfo permits=0
+    progress_owner (old has && old token == t ==> res): OK
+S3r owner unLock in the same millisecond as tryLock (real clock only, lockTimeoutMillis = 0)
+  attempt=0 tryLock -> local-17, unLock(t1) -> true, both at now=r0; after: no entry
+    progress_owner: OK
+S4 lockTimeoutMillis = Long.MAX_VALUE (fake clock)
+  now=base   tryLock -> local-18; entry{token=local-18, expiresAt=9223372036854775807, isHeld=true, permits=0}   (gLease = base + Long.MAX_VALUE)
+  now=base+1 tryLock -> null; entry{token=local-18, expiresAt=9223372036854775807, isHeld=true, permits=0}
+    P3a tryLock (t1 may end only if now > gLease(t1)): OK
+  now=base+2 unLock(current holder local-18) -> true   [progress_owner: OK]
+S4r lockTimeoutMillis = Long.MAX_VALUE (real clock): two tryLock calls back to back
+  t1=local-19 t2=null; entry{token=local-19, expiresAt=9223372036854775807, isHeld=true, permits=0}
+S4n clock before 1970 (fake clock = -1000, lockTimeoutMillis = 100): informative only
+  tryLock -> local-20; entry{token=local-20, expiresAt=9223372036854775807, isHeld=true, permits=0}   (gLease = -900)
+  now=-800 tryLock -> null; entry{token=local-20, expiresAt=9223372036854775807, isHeld=true, permits=0}
+S6 cap path (LocalLockLimit.maxEntries = 1, fake clock, lockTimeoutMillis = 100)
+  tryLock(k1) -> local-21; k1 entry{token=local-21, expiresAt=base+100, isHeld=true, permits=0}   [progress_free: OK]
+  tryLock(k2) -> local-22; k2 no entry   [cap_unbacked: OK]
+  tryLock(k2) again -> local-23; k2 no entry   [cap_unbacked: OK]
+  unLock(k2, local-22) -> false   [KDoc false when not held: OK]
+  tryLock(k1) while live -> null   [progress_live: OK]
+  now=base+101 tryLock(k1) on expired entry, map full -> local-24; entry{token=local-24, expiresAt=base+201, isHeld=true, permits=0}   [expired_takeover: OK]
+S7 stale and forged tokens after a takeover (fake clock, lockTimeoutMillis = 100)
+  t1=local-25 at base; tryLock at base+101 -> local-26   [expired_takeover: OK]
+  unLock(t1) -> false   [P1: OK]; entry{token=local-26, expiresAt=base+201, isHeld=true, permits=0}
+  unLock(local-999999999) -> false   [P1: OK]
+  unLock(t2) -> true   [progress_owner: OK]; no entry   [P1 !has: OK]
+S8 mutual exclusion stress (real clock, lockTimeoutMillis = 60000, 8 threads x 20000 rounds)
+  acquired=36555 overlap=0 failedOwnerRelease=0 staleRelease=0 mapSize=0
+S9 the real monitor removes an expired entry (real clock, lockTimeoutMillis = 200)
+  tryLock -> local-36582; after 2.6 s: no entry
+S10 interrupt the thread named req-shield-local-lock-monitor, then check the monitor still sweeps
+  monitor threads by that name: 0
+  alive after interrupt: []
+  tryLock -> local-36583; after 2.6 s: no entry
+=== T-haiku-3 ===
+S5 sidecar probe (fake clock, lockTimeoutMillis = 100)
+  t1=local-1 t2=null unLock(t1)=true unLock(t1) again=false; no entry; released LockInfo permits=1
+    probe: OK
+S1 tryLock at now == expiresAt (fake clock, lockTimeoutMillis = 100)
+  now=base     tryLock -> local-2; entry{token=local-2, expiresAt=base+100, isHeld=true, permits=0}
+  now=base+99  tryLock -> null   [progress_live requires null: OK]
+  now=base+100 tryLock -> local-3; entry{token=local-3, expiresAt=base+200, isHeld=true, permits=0}
+    progress_live (old has, isHeld, now <= old expiresAt ==> res == NULL): VIOLATION
+    P3a tryLock (t1 may end only if now > gLease(t1) = base+100): VIOLATION
+S1r tryLock twice in one millisecond (real clock, lockTimeoutMillis = 0)
+  attempt=0 both calls read now=r0: t1=local-4 t2=local-5; entry{token=local-5, expiresAt=base+0, isHeld=true, permits=0}
+    progress_live (now <= expiresAt ==> null): VIOLATION
+S1r5 second tryLock exactly 5 ms after the first (real clock, lockTimeoutMillis = 5)
+  attempt=0 t1=local-6 (now=r0), t2=local-7 (now=r0+5); entry{token=local-7, expiresAt=base+10, isHeld=true, permits=0}
+    progress_live (now <= expiresAt ==> null): VIOLATION
+S2 sweep at now == expiresAt (system clock for the sweep, lockTimeoutMillis = 100)
+  attempt=1 tryLock -> local-9, entry{token=local-9, expiresAt=base+0, isHeld=true, permits=0}; sweep read now=r0; after: no entry
+    P3a sweep (removal needs now > gLease = r0): VIOLATION
+S2r sweep in the same millisecond as tryLock (real clock only, lockTimeoutMillis = 0)
+  attempt=0 tryLock -> local-10 and sweep both read now=r0 (expiresAt = gLease = r0); after: no entry
+    P3a sweep (removal needs now > gLease = r0): VIOLATION
+S2c sweep strictly after expiry and strictly before it (system clock)
+  expired entry after sweep: no entry  [sweep may remove: removed=true]
+  live entry after sweep: entry{token=local-12, expiresAt=base+10100, isHeld=true, permits=0}  [must stay: OK]
+S3 owner unLock at and after the lease end (fake clock, lockTimeoutMillis = 100)
+  tryLock at base -> local-13; unLock(t1) at base+99 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-14; unLock(t1) at base+100 -> false; after: entry{token=local-14, expiresAt=base+100, isHeld=true, permits=0}; released LockInfo permits=0
+    progress_owner (old has && old token == t ==> res): VIOLATION
+  tryLock at base -> local-15; unLock(t1) at base+101 -> false; after: entry{token=local-15, expiresAt=base+100, isHeld=true, permits=0}; released LockInfo permits=0
+    progress_owner (old has && old token == t ==> res): VIOLATION
+  tryLock at base -> local-16; unLock(t1) at base+500 -> false; after: entry{token=local-16, expiresAt=base+100, isHeld=true, permits=0}; released LockInfo permits=0
+    progress_owner (old has && old token == t ==> res): VIOLATION
+S3r owner unLock in the same millisecond as tryLock (real clock only, lockTimeoutMillis = 0)
+  attempt=0 tryLock -> local-17, unLock(t1) -> false, both at now=r0; after: entry{token=local-17, expiresAt=base+0, isHeld=true, permits=0}
+    progress_owner: VIOLATION
+S4 lockTimeoutMillis = Long.MAX_VALUE (fake clock)
+  now=base   tryLock -> local-18; entry{token=local-18, expiresAt=-9223370243993384543, isHeld=true, permits=0}   (gLease = base + Long.MAX_VALUE)
+  now=base+1 tryLock -> local-19; entry{token=local-19, expiresAt=-9223370243993384542, isHeld=true, permits=0}
+    P3a tryLock (t1 may end only if now > gLease(t1)): VIOLATION
+  now=base+2 unLock(current holder local-19) -> false   [progress_owner: VIOLATION]
+S4r lockTimeoutMillis = Long.MAX_VALUE (real clock): two tryLock calls back to back
+  t1=local-20 t2=local-21; entry{token=local-21, expiresAt=-9223370244003384542, isHeld=true, permits=0}
+S4n clock before 1970 (fake clock = -1000, lockTimeoutMillis = 100): informative only
+  tryLock -> local-22; entry{token=local-22, expiresAt=-900, isHeld=true, permits=0}   (gLease = -900)
+  now=-800 tryLock -> local-23; entry{token=local-23, expiresAt=-700, isHeld=true, permits=0}
+S6 cap path (LocalLockLimit.maxEntries = 1, fake clock, lockTimeoutMillis = 100)
+  tryLock(k1) -> local-24; k1 entry{token=local-24, expiresAt=base+100, isHeld=true, permits=0}   [progress_free: OK]
+  tryLock(k2) -> local-25; k2 no entry   [cap_unbacked: OK]
+  tryLock(k2) again -> local-26; k2 no entry   [cap_unbacked: OK]
+  unLock(k2, local-25) -> false   [KDoc false when not held: OK]
+  tryLock(k1) while live -> null   [progress_live: OK]
+  now=base+101 tryLock(k1) on expired entry, map full -> local-27; entry{token=local-27, expiresAt=base+201, isHeld=true, permits=0}   [expired_takeover: OK]
+S7 stale and forged tokens after a takeover (fake clock, lockTimeoutMillis = 100)
+  t1=local-28 at base; tryLock at base+101 -> local-29   [expired_takeover: OK]
+  unLock(t1) -> false   [P1: OK]; entry{token=local-29, expiresAt=base+201, isHeld=true, permits=0}
+  unLock(local-999999999) -> false   [P1: OK]
+  unLock(t2) -> true   [progress_owner: OK]; no entry   [P1 !has: OK]
+S8 mutual exclusion stress (real clock, lockTimeoutMillis = 60000, 8 threads x 20000 rounds)
+  acquired=43943 overlap=0 failedOwnerRelease=0 staleRelease=0 mapSize=0
+S9 the real monitor removes an expired entry (real clock, lockTimeoutMillis = 200)
+  tryLock -> local-43973; after 2.6 s: no entry
+S10 interrupt the thread named req-shield-local-lock-monitor, then check the monitor still sweeps
+  monitor threads by that name: 1
+Exception in thread "req-shield-local-lock-monitor" java.lang.InterruptedException: sleep interrupted
+	at java.base/java.lang.Thread.sleep0(Native Method)
+	at java.base/java.lang.Thread.sleep(Thread.java:509)
+	at com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock._init_$lambda$5(KeyLocalLock.kt:78)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+  alive after interrupt: [false]
+  tryLock -> local-43974; after 2.6 s: entry{token=local-43974, expiresAt=1792851394385, isHeld=true, permits=0}
+=== T-sonnet-4 ===
+S5 sidecar probe (fake clock, lockTimeoutMillis = 100)
+  t1=local-1 t2=null unLock(t1)=true unLock(t1) again=false; no entry; released LockInfo permits=1
+    probe: OK
+S1 tryLock at now == expiresAt (fake clock, lockTimeoutMillis = 100)
+  now=base     tryLock -> local-2; entry{token=local-2, expiresAt=base+100, isHeld=true, permits=0}
+  now=base+99  tryLock -> null   [progress_live requires null: OK]
+  now=base+100 tryLock -> local-3; entry{token=local-3, expiresAt=base+200, isHeld=true, permits=0}
+    progress_live (old has, isHeld, now <= old expiresAt ==> res == NULL): VIOLATION
+    P3a tryLock (t1 may end only if now > gLease(t1) = base+100): VIOLATION
+S1r tryLock twice in one millisecond (real clock, lockTimeoutMillis = 0)
+  attempt=1 both calls read now=r0: t1=local-6 t2=local-7; entry{token=local-7, expiresAt=base+0, isHeld=true, permits=0}
+    progress_live (now <= expiresAt ==> null): VIOLATION
+S1r5 second tryLock exactly 5 ms after the first (real clock, lockTimeoutMillis = 5)
+  attempt=0 t1=local-8 (now=r0), t2=local-9 (now=r0+5); entry{token=local-9, expiresAt=base+10, isHeld=true, permits=0}
+    progress_live (now <= expiresAt ==> null): VIOLATION
+S2 sweep at now == expiresAt (system clock for the sweep, lockTimeoutMillis = 100)
+  attempt=1 tryLock -> local-11, entry{token=local-11, expiresAt=base+0, isHeld=true, permits=0}; sweep read now=r0; after: no entry
+    P3a sweep (removal needs now > gLease = r0): VIOLATION
+S2r sweep in the same millisecond as tryLock (real clock only, lockTimeoutMillis = 0)
+  attempt=0 tryLock -> local-12 and sweep both read now=r0 (expiresAt = gLease = r0); after: no entry
+    P3a sweep (removal needs now > gLease = r0): VIOLATION
+S2c sweep strictly after expiry and strictly before it (system clock)
+  expired entry after sweep: no entry  [sweep may remove: removed=true]
+  live entry after sweep: entry{token=local-14, expiresAt=base+10100, isHeld=true, permits=0}  [must stay: OK]
+S3 owner unLock at and after the lease end (fake clock, lockTimeoutMillis = 100)
+  tryLock at base -> local-15; unLock(t1) at base+99 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-16; unLock(t1) at base+100 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-17; unLock(t1) at base+101 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+  tryLock at base -> local-18; unLock(t1) at base+500 -> true; after: no entry; released LockInfo permits=1
+    progress_owner (old has && old token == t ==> res): OK
+S3r owner unLock in the same millisecond as tryLock (real clock only, lockTimeoutMillis = 0)
+  attempt=0 tryLock -> local-19, unLock(t1) -> true, both at now=r0; after: no entry
+    progress_owner: OK
+S4 lockTimeoutMillis = Long.MAX_VALUE (fake clock)
+  now=base   tryLock -> local-20; entry{token=local-20, expiresAt=-9223370243993378745, isHeld=true, permits=0}   (gLease = base + Long.MAX_VALUE)
+  now=base+1 tryLock -> local-21; entry{token=local-21, expiresAt=-9223370243993378744, isHeld=true, permits=0}
+    P3a tryLock (t1 may end only if now > gLease(t1)): VIOLATION
+  now=base+2 unLock(current holder local-21) -> true   [progress_owner: OK]
+S4r lockTimeoutMillis = Long.MAX_VALUE (real clock): two tryLock calls back to back
+  t1=local-22 t2=local-23; entry{token=local-23, expiresAt=-9223370244003378745, isHeld=true, permits=0}
+S4n clock before 1970 (fake clock = -1000, lockTimeoutMillis = 100): informative only
+  tryLock -> local-24; entry{token=local-24, expiresAt=-900, isHeld=true, permits=0}   (gLease = -900)
+  now=-800 tryLock -> local-25; entry{token=local-25, expiresAt=-700, isHeld=true, permits=0}
+S6 cap path (LocalLockLimit.maxEntries = 1, fake clock, lockTimeoutMillis = 100)
+  tryLock(k1) -> local-26; k1 entry{token=local-26, expiresAt=base+100, isHeld=true, permits=0}   [progress_free: OK]
+  tryLock(k2) -> local-27; k2 no entry   [cap_unbacked: OK]
+  tryLock(k2) again -> local-28; k2 no entry   [cap_unbacked: OK]
+  unLock(k2, local-27) -> false   [KDoc false when not held: OK]
+  tryLock(k1) while live -> null   [progress_live: OK]
+  now=base+101 tryLock(k1) on expired entry, map full -> local-29; entry{token=local-29, expiresAt=base+201, isHeld=true, permits=0}   [expired_takeover: OK]
+S7 stale and forged tokens after a takeover (fake clock, lockTimeoutMillis = 100)
+  t1=local-30 at base; tryLock at base+101 -> local-31   [expired_takeover: OK]
+  unLock(t1) -> false   [P1: OK]; entry{token=local-31, expiresAt=base+201, isHeld=true, permits=0}
+  unLock(local-999999999) -> false   [P1: OK]
+  unLock(t2) -> true   [progress_owner: OK]; no entry   [P1 !has: OK]
+S8 mutual exclusion stress (real clock, lockTimeoutMillis = 60000, 8 threads x 20000 rounds)
+  acquired=51076 overlap=0 failedOwnerRelease=0 staleRelease=0 mapSize=0
+S9 the real monitor removes an expired entry (real clock, lockTimeoutMillis = 200)
+  tryLock -> local-51108; after 2.6 s: no entry
+S10 interrupt the thread named req-shield-local-lock-monitor, then check the monitor still sweeps
+  monitor threads by that name: 1
+  alive after interrupt: [true]
+  tryLock -> local-51109; after 2.6 s: no entry

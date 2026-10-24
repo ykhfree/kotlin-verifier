@@ -16,3 +16,6 @@ spike/aspect/mutants/
 spike/aspect/mutants.list
 __pycache__/
 mutation/judge-work/*/kotlin/build/
+aicode/judge-work/*/build/
+aicode/judge-work/*/out/
+aicode/judge-work/*/check/out/
