@@ -763,22 +763,24 @@ def cmd_tests(env, args):
 
 LOCAL = r"(free\s+%s(?:\s*:\s*\w+)?\s*=\s*local\s+)(\w+)"
 SOURCE = re.compile(r'^source\s+"([^"]+)"', re.M)
+CLASS = r"(?m)^class\s+%s\s*=\s*([\w.]+)"
 
 
 def read_bindings(path):
     """The binding-name adaptations of AI-CODE.md 6.1, one per line (`#` starts a comment):
         local OPERATION FREE NAME   in operation OPERATION, `free FREE = local X` becomes `free FREE = local NAME`
         source OLD NEW              `source "OLD"` becomes `source "NEW"`
+        class NAME KNAME            `class NAME = X` becomes `class NAME = KNAME` (where the class is declared)
     Nothing else of the sidecar may change (properties, permission clauses, issue rules, the hole)."""
     out = []
     for n, line in enumerate(read(path).splitlines(), 1):
         words = line.split("#", 1)[0].split()
         if not words:
             continue
-        if (words[0] == "local" and len(words) == 4) or (words[0] == "source" and len(words) == 3):
+        if (words[0] == "local" and len(words) == 4) or (words[0] in ("source", "class") and len(words) == 3):
             out.append(words)
         else:
-            raise ScriptError("%s:%d: an adaptation is 'local OPERATION FREE NAME' or 'source OLD NEW': %r" % (path, n, line))
+            raise ScriptError("%s:%d: an adaptation is 'local OPERATION FREE NAME', 'source OLD NEW' or 'class NAME KNAME': %r" % (path, n, line))
     return out
 
 
@@ -803,6 +805,8 @@ def adapt(texts, bindings):
                     block = text[span[0]:span[1]]
                     found = list(re.finditer(LOCAL % re.escape(b[2]), block))
                     hits += [(name, span[0] + f.start(2), span[0] + f.end(2)) for f in found]
+            elif b[0] == "class":
+                hits += [(name, f.start(1), f.end(1)) for f in re.finditer(CLASS % re.escape(b[1]), text)]
             else:
                 hits += [(name, f.start(1), f.end(1)) for f in SOURCE.finditer(text) if f.group(1) == b[1]]
         if len(hits) != 1:

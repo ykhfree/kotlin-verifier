@@ -272,10 +272,20 @@ class AicodeScriptTest {
         // Any other form is refused, and so is an adaptation that matches no `free ... = local` line.
         bindings.writeText("state m = locks\n")
         val (other, otherOut) = aicode("tool", "B")
-        assertTrue(other == 2 && "an adaptation is 'local OPERATION FREE NAME' or 'source OLD NEW'" in otherOut, otherOut)
+        assertTrue(other == 2 && "an adaptation is 'local OPERATION FREE NAME', 'source OLD NEW' or 'class NAME KNAME'" in otherOut, otherOut)
         bindings.writeText("local tryLock rej accepted\n")
         val (none, noneOut) = aicode("tool", "B")
         assertTrue(none == 2 && "matches 0 places" in noneOut, noneOut)
+        // A class adaptation changes only the Kotlin name after `class LockInfo =` (the class's placement).
+        bindings.writeText("class LockInfo LockInfo   # declared in the companion or at top level\n")
+        assertEquals(0, aicode("tool", "B").first)
+        assertEquals("1", field("B", "binding_adaptations"))
+        val placed = common.replace("class LockInfo = KeyLocalLock.LockInfo", "class LockInfo = LockInfo")
+        assertTrue(placed != common)
+        assertEquals(placed, File(work, "tool/B/spec/keylocallock.common.kv").readText())
+        bindings.writeText("class Missing LockInfo\n")
+        val (noClass, noClassOut) = aicode("tool", "B")
+        assertTrue(noClass == 2 && "matches 0 places" in noClassOut, noClassOut)
         // AI-CODE.md 4.2: a free implementation gets no hole stage.
         assertEquals(1, aicode("hole-task", "B").first)
     }
