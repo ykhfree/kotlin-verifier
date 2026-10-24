@@ -42,7 +42,9 @@ private const val USAGE = """usage:
       table to FILE.vpr.positions. Exit 1 if a rule is broken or the sidecar cannot be emitted.
   kv verify --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] [--viper-home DIR]
             [--assert-timeout MS] [--wall-seconds N] SIDECAR.kv
-      As emit, then runs Silicon once and prints the report (DESIGN-v0.md 5.8). VIPER_HOME or --viper-home names a
+      As emit, then runs Silicon once and prints the report (DESIGN-v0.md 5.8). If a FAILED action fails only at
+      hole conjuncts (MI_INV_i), a second Silicon run checks its other ensures without them (the property check):
+      the action is FAILED (property) or FAILED (invariant only). VIPER_HOME or --viper-home names a
       Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
       --wall-seconds (default 300). Exit 0 PROVEN, 1 FAILED, 2 usage error, 3 INCOMPLETE, 4 ERROR (a compile
       error, a sidecar error, a W1-W16 violation, a missing Silicon or an abnormal Silicon run).

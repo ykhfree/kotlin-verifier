@@ -247,9 +247,10 @@ val mutantsAspect by tasks.registering(Exec::class) {
 
 // `./gradlew mechanicalMutants`: the mechanical mutation measurement of MUTATION.md. scripts/mechanical.py lists the
 // mutation sites of the six modules with `kv mutation-sites`, applies each to a temp copy, runs `kv emit`, and runs
-// `kv verify` (Silicon, with its budget) once per normalized model hash. It writes ../mutation/results.jsonl,
-// summary.md and judge/; the copies, models and reports go to build/kv/mechanical. Needs python3 and Silicon.
-// Options: -PmutantJobs=N (parallel runs, default 3), -PmutantModules=keylocallock.core,aspect.webflux (a subset).
+// `kv verify` (Silicon, with its budget) once per normalized model hash. It writes results.jsonl, summary.md and
+// judge/ to ../mutation; the copies, models and reports go to build/kv/mechanical. Needs python3 and Silicon.
+// Options: -PmutantJobs=N (parallel runs, default 3), -PmutantModules=keylocallock.core,aspect.webflux (a subset),
+// -PmutantResults=DIR (another results directory, relative to this project, e.g. for a re-measurement).
 val mechanicalMutants by tasks.registering(Exec::class) {
     group = "kv"
     description = "Runs the MUTATION.md mechanical mutation measurement on the six req-shield modules."
@@ -257,7 +258,7 @@ val mechanicalMutants by tasks.registering(Exec::class) {
     executable = "python3"
     val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
     val work = layout.buildDirectory.dir("kv/mechanical").get().asFile.path
-    val results = layout.projectDirectory.dir("../mutation").asFile.path
+    val results = layout.projectDirectory.dir(providers.gradleProperty("mutantResults").getOrElse("../mutation")).asFile.path
     val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
     val normalizer = layout.projectDirectory.file("../spike/vpr_normalize.py").asFile.path
     val jobs = providers.gradleProperty("mutantJobs").getOrElse("3")

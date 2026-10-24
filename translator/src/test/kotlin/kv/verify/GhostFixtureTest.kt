@@ -61,7 +61,7 @@ class GhostFixtureTest {
         assertTrue(f.error.message.startsWith("Assert might fail"), f.error.message)
         val (line, col) = ws.at("keylocallock.common.kv", "issue res {", "issue")
         assertEquals(line to col, f.at!!.line to f.at!!.col)
-        assertTrue(text.lines().any { "action tryLock" in it && "KeyLocalLock.kt:155:9" in it && it.trimEnd().endsWith("FAILED") }, text)
+        assertTrue(text.lines().any { "action tryLock" in it && "KeyLocalLock.kt:155:9" in it && it.trimEnd().endsWith("FAILED (property)") }, text)
         assertTrue("sidecar issue tryLock: set-once gIssued keylocallock.common.kv:$line:$col" in text, text)
     }
 

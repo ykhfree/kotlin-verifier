@@ -34,6 +34,24 @@ enum class Verdict { PROVEN, FAILED, UNSUPPORTED, ERROR }
 enum class ModuleVerdict { PROVEN, FAILED, INCOMPLETE, ERROR }
 
 /**
+ * Why a FAILED action row failed. It is diagnostic only: the module verdict and the exit code do not read it.
+ * Silicon reports only the first failing postcondition per path, and the hole ensures come before the properties,
+ * so an action whose errors are all at hole conjuncts gets the property check (pass 2) without those ensures.
+ */
+enum class SubStatus(
+    val text: String,
+) {
+    /** A sidecar property or tool obligation fails: in pass 1, or in the property check. */
+    PROPERTY("property"),
+
+    /** Pass 1 failed only at hole conjuncts, and the property check found no error in this action. */
+    INVARIANT_ONLY("invariant only"),
+
+    /** Pass 1 failed only at hole conjuncts, and the property check did not finish normally. */
+    INVARIANT_ONLY_CHECK_ERROR("invariant only; property check ERROR"),
+}
+
+/**
  * One Silicon error mapped to its source (DESIGN-v0.md 5.7): [source] is the innermost range that contains the error
  * start, [at] the sidecar position inside it if the range holds a sidecar expression.
  */
@@ -60,7 +78,11 @@ data class Finding(
     }
 }
 
-/** The verdict of one row of the report: an action, a stray action, init, a lemma or the probe. */
+/**
+ * The verdict of one row of the report: an action, a stray action, init, a lemma or the probe. [findings] are the
+ * pass-1 errors. [sub] says why a FAILED action failed; it is null for other rows, and for a hole-only action until
+ * its property check ran. [pass2] are the property check's errors in this action.
+ */
 data class Row(
     val kind: MethodKind,
     val label: String,
@@ -68,6 +90,18 @@ data class Row(
     val verdict: Verdict,
     val findings: List<Finding>,
     val note: String? = null,
+    val sub: SubStatus? = null,
+    val pass2: List<Finding> = emptyList(),
+)
+
+/**
+ * The property check (pass 2): one Silicon run on the program whose [actions] have no hole ensures. [error] says why
+ * the run did not finish normally, or is null.
+ */
+data class PropertyCheck(
+    val actions: List<String>,
+    val seconds: Double,
+    val error: String?,
 )
 
 data class Report(
@@ -85,7 +119,58 @@ data class Report(
     val seconds: Double?,
     /** The branch reachability check (M9, INFO only); null if it did not run. */
     val reach: Reachability? = null,
+    /** The property check (pass 2); null if it did not run. */
+    val propertyCheck: PropertyCheck? = null,
 )
+
+private val ACTIONS = setOf(MethodKind.ACTION, MethodKind.STRAY)
+
+private val HOLE_ID = Regex("""MI_INV_\d+""")
+
+/** True if the error is at a hole conjunct: its `ensures MI_INV_i(S)` line or its text. */
+private val Finding.atHole: Boolean get() = (source as? Source.Sidecar)?.id?.let(HOLE_ID::matches) == true
+
+private const val OUTSIDE = "Silicon reported errors outside every method"
+
+/** The error lines Silicon printed. */
+private val SiliconOutcome.errorLines: List<SiliconError>
+    get() =
+        when (this) {
+            SiliconOutcome.Verified -> emptyList()
+            is SiliconOutcome.Failed -> errors
+            is SiliconOutcome.Abnormal -> errors
+        }
+
+/** The labels of the FAILED actions whose pass-1 errors are all at hole conjuncts: the actions of the property check. */
+fun Report.holeOnly(): List<String> = rows.filter { it.verdict == Verdict.FAILED && it.kind in ACTIONS && it.findings.all { f -> f.atHole } }.map { it.label }
+
+/**
+ * Adds the property check (pass 2) to a pass-1 report. [emitted] is the program without the hole ensures of
+ * [holeOnly], [outcome] is its Silicon outcome. Each of those actions is PROPERTY if pass 2 has an error in its
+ * method, else INVARIANT_ONLY; each is INVARIANT_ONLY_CHECK_ERROR if the run was abnormal or had an error outside
+ * every method. No verdict changes: each row stays FAILED, so the module stays FAILED.
+ */
+fun Report.withPropertyCheck(
+    emitted: Emitted,
+    outcome: SiliconOutcome,
+    seconds: Double,
+): Report {
+    val actions = holeOnly()
+    val errors = outcome.errorLines
+    val outside = errors.any { emitted.methodAt(it.line) == null }
+    val error = (outcome as? SiliconOutcome.Abnormal)?.reason ?: if (outside) OUTSIDE else null
+    val checked =
+        rows.map { r ->
+            if (r.verdict != Verdict.FAILED || r.label !in actions) return@map r
+            val mine = errors.filter { emitted.methodAt(it.line)?.label == r.label }.map { finding(emitted, it) }
+            when {
+                error != null -> r.copy(sub = SubStatus.INVARIANT_ONLY_CHECK_ERROR)
+                mine.isNotEmpty() -> r.copy(sub = SubStatus.PROPERTY, pass2 = mine)
+                else -> r.copy(sub = SubStatus.INVARIANT_ONLY)
+            }
+        }
+    return copy(rows = checked, propertyCheck = PropertyCheck(actions, seconds, error))
+}
 
 /**
  * Builds the report of DESIGN-v0.md 5.8 from the bound [module], the [emitted] program and Silicon's [outcome].
@@ -99,13 +184,7 @@ fun buildReport(
     outcome: SiliconOutcome,
     seconds: Double?,
 ): Report {
-    val errors =
-        when (outcome) {
-            SiliconOutcome.Verified -> emptyList()
-            is SiliconOutcome.Failed -> outcome.errors
-            is SiliconOutcome.Abnormal -> outcome.errors
-        }
-    val findings = errors.map { e -> e to finding(emitted, e) }
+    val findings = outcome.errorLines.map { e -> e to finding(emitted, e) }
     val abnormal = outcome as? SiliconOutcome.Abnormal
     val rows = mutableListOf<Row>()
     for (method in emitted.methods) {
@@ -116,11 +195,12 @@ fun buildReport(
                 mine.isNotEmpty() -> Verdict.FAILED
                 else -> Verdict.PROVEN
             }
-        rows += Row(method.kind, method.label, method.kotlin, verdict, mine)
+        val sub = SubStatus.PROPERTY.takeIf { verdict == Verdict.FAILED && method.kind in ACTIONS && mine.any { !it.atHole } }
+        rows += Row(method.kind, method.label, method.kotlin, verdict, mine, sub = sub)
     }
     rows += unsupportedRows(module, emitted)
     val outside = findings.filter { (e, _) -> emitted.methodAt(e.line) == null }.map { it.second }
-    val error = abnormal?.reason ?: if (outside.isNotEmpty()) "Silicon reported errors outside every method" else null
+    val error = abnormal?.reason ?: if (outside.isNotEmpty()) OUTSIDE else null
     val verdict =
         when {
             error != null -> ModuleVerdict.ERROR
@@ -182,12 +262,22 @@ fun Report.render(): String {
     val actions = rows.filter { it.kind == MethodKind.ACTION || it.kind == MethodKind.STRAY }
     val width = actions.maxOfOrNull { label(it).length } ?: 0
     for (r in actions) {
-        line("  ${label(r).padEnd(width)}  ${r.kotlin?.let(::at) ?: "-"}   ${r.verdict}")
+        line("  ${label(r).padEnd(width)}  ${r.kotlin?.let(::at) ?: "-"}   ${r.verdict}" + (r.sub?.let { " (${it.text})" } ?: ""))
         r.note?.let { line("      $it") }
         r.findings.forEach { f ->
             line("      ${f.describe()}")
             // DESIGN-B.md 5.5 rule 3: what a failed MI_OWN means, on a line the M8 script does not read as a finding.
             if ((f.source as? Source.Generated)?.what == "MI_OWN") line("        meaning: a map value is not an object this module created, or two keys share one object")
+        }
+        // The property check, on lines the M8 script does not read as pass-1 findings.
+        r.pass2.forEach { line("        pass 2 (property check): ${it.describe()}") }
+        when (r.sub) {
+            SubStatus.INVARIANT_ONLY -> INVARIANT_ONLY.forEach { line("        $it") }
+            SubStatus.INVARIANT_ONLY_CHECK_ERROR -> {
+                line("        ${INVARIANT_ONLY.first()}")
+                line("        property check ERROR: ${propertyCheck?.error}; it is not known whether a sidecar property fails")
+            }
+            else -> {}
         }
     }
     val others = rows.filter { it.kind != MethodKind.ACTION && it.kind != MethodKind.STRAY }
@@ -195,6 +285,10 @@ fun Report.render(): String {
     others.forEach { r ->
         r.note?.let { line("      ${r.label}: $it") }
         r.findings.forEach { line("      ${r.label}: ${it.describe()}") }
+    }
+    propertyCheck?.let { c ->
+        val head = "Property check (pass 2): ${c.actions.joinToString()} without the hole ensures MI_INV_i"
+        line(if (c.error == null) "$head (Silicon %.2f s)".format(c.seconds) else "$head: ERROR: ${c.error}; this run proves nothing")
     }
     if (otherFindings.isNotEmpty()) {
         line("Silicon errors:")
@@ -243,6 +337,15 @@ fun Report.render(): String {
 }
 
 private fun label(r: Row) = if (r.kind == MethodKind.STRAY) r.label else "action ${r.label}"
+
+/** What INVARIANT_ONLY means. It is not harmless: a real defect can fail this way (MUTATION.md change log, item 6). */
+private val INVARIANT_ONLY =
+    listOf(
+        "meaning: this action does not preserve the inductive invariant (the hole MI_INV).",
+        "property check: no sidecar property fails in one step from a state that satisfies the invariant.",
+        "A property may still break in a later step: the code may be wrong, or the hole may be too strong for this code.",
+        "Next: re-derive the hole for this code (kv hole). If no inductive invariant proves the properties, the code is wrong.",
+    )
 
 private fun origin(
     fv: FreeValue,
@@ -299,6 +402,9 @@ private fun Report.specToReview(): String {
  * 5.6-5.8). A sidecar the emitter rejects, or a W1-W14 violation (a tool defect), is ERROR without a Silicon run.
  * Next to it, the branch reachability clone (5.4 item 4, M9) goes to `<vpr>.reach.vpr` and runs at the same time
  * as a second Silicon process; its result is INFO in the report and changes no verdict.
+ * If some FAILED actions failed only at hole conjuncts ([holeOnly]), the property check (pass 2) emits the program
+ * without their hole ensures to `<vpr>.pass2.vpr` and runs Silicon on it once ([withPropertyCheck]). Its budget is
+ * [pass2Budget]; only a test sets it, to force a pass-2 timeout.
  */
 fun verify(
     module: Module,
@@ -306,6 +412,7 @@ fun verify(
     vpr: File,
     home: File = Silicon.defaultHome(),
     budget: SiliconBudget = SiliconBudget(),
+    pass2Budget: SiliconBudget = budget,
 ): Report {
     val (bound, emitted) =
         try {
@@ -325,8 +432,21 @@ fun verify(
     try {
         val cloneRun = pool.submit(Callable { Silicon.run(cloneFile, home, budget) })
         val run = Silicon.run(vpr, home, budget)
-        val reach = reachability(clone, cloneRun.get(), budget)
-        return buildReport(bound, sidecar, emitted, classify(run, budget), run.seconds).copy(reach = reach)
+        val report = buildReport(bound, sidecar, emitted, classify(run, budget), run.seconds)
+        val actions = report.holeOnly()
+        val pass2File = File(vpr.path.removeSuffix(".vpr") + ".pass2.vpr")
+        val checked =
+            if (actions.isEmpty()) {
+                // No property check: a pass-2 program of an earlier run at the same path would mislead.
+                pass2File.delete()
+                report
+            } else {
+                val pass2 = emitViper(bound, sidecar, withoutHole = actions.toSet())
+                pass2File.writeText(pass2.text)
+                val run2 = Silicon.run(pass2File, home, pass2Budget)
+                report.withPropertyCheck(pass2, classify(run2, pass2Budget), run2.seconds)
+            }
+        return checked.copy(reach = reachability(clone, cloneRun.get(), budget))
     } finally {
         pool.shutdownNow()
     }

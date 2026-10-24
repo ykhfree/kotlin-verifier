@@ -112,6 +112,26 @@ class MutantScriptTest {
     }
 
     @Test
+    fun `the sub-status and the property check errors are printed, and only the pass-1 obligations are compared`() {
+        val hole = "Postcondition of unLock might not hold: sidecar MI_INV_1 keylocallock.common.kv:99:3 \"INV-E\""
+        val p1 = "Postcondition of unLock might not hold: sidecar P1 keylocallock.common.kv:78:3"
+        val property = Response(1, report("FAILED", "FAILED (property)", listOf(hole, "  pass 2 (property check): $p1")))
+        val invariantOnly = Response(1, report("FAILED", "FAILED (invariant only)", listOf(hole, "  meaning: this action does not preserve the inductive invariant (the hole MI_INV).")))
+        val checkError = Response(1, report("FAILED", "FAILED (invariant only; property check ERROR)", listOf(hole, "  property check ERROR: timeout; it is not known whether a sidecar property fails")))
+        val responses = mapOf("coroutine-SB1" to property, "core-SB1" to invariantOnly, "reactor-SB1" to checkError)
+        val rows = "coroutine  SB1  FAILED  unLock  MI_INV_1\ncore  SB1  FAILED  unLock  MI_INV_1\nreactor  SB1  FAILED  unLock  MI_INV_1\n"
+        val (exit, out) = run("SB1", rows, responses)
+        assertEquals(0, exit, out)
+        assertTrue(out.lines().any { it.startsWith("coroutine  SB1") && it.endsWith("unLock {MI_INV_1} (property; pass 2 {P1})") }, out)
+        assertTrue(out.lines().any { it.startsWith("core       SB1") && it.endsWith("unLock {MI_INV_1} (invariant only)") }, out)
+        assertTrue(out.lines().any { it.startsWith("reactor    SB1") && it.endsWith("unLock {MI_INV_1} (invariant only; property check ERROR)") }, out)
+        // A pass-2 error is not a failing obligation of the expected table.
+        val (exit2, out2) = run("SB1", rows.replaceFirst("unLock  MI_INV_1", "unLock  MI_INV_1; P1"), responses)
+        assertEquals(1, exit2, out2)
+        assertTrue("MISMATCH: FAILED rows unLock {MI_INV_1}, expected unLock {MI_INV_1, P1}" in out2, out2)
+    }
+
+    @Test
     fun `a PROVEN run where FAILED is expected is a mismatch`() {
         val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to Response(0, report("PROVEN")), "reactor-SB1" to sb1Failed))
         assertEquals(1, exit, out)

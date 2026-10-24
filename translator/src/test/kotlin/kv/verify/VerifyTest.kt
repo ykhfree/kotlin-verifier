@@ -31,6 +31,8 @@ class VerifyTest {
     @Test
     fun `1 - the three generated models verify within the budget, and the reactor report names the fromCallable model`() {
         for (variant in listOf("coroutine", "core", "reactor")) {
+            // A pass-2 program of an earlier run at the same path.
+            File(dir, "$variant.pass2.vpr").writeText("// stale")
             val r = ws.verify(variant)
             val text = r.render()
             assertEquals(ModuleVerdict.PROVEN, r.verdict, text)
@@ -38,6 +40,9 @@ class VerifyTest {
             assertEquals(listOf(Verdict.PROVEN), r.rows.map { it.verdict }.distinct(), text)
             assertTrue(r.seconds!! < SiliconBudget().wallSeconds, text)
             assertTrue("module: PROVEN" in text.lines().first(), text)
+            // Nothing failed, so no property check (pass 2) ran, and the stale pass-2 program is gone.
+            assertEquals(null, r.propertyCheck, text)
+            assertTrue(!File(dir, "$variant.pass2.vpr").exists() && "Property check" !in text, text)
             // DESIGN-v0.md 8.3: the trusted model of the reactor operation bodies is listed for review.
             val models = text.lines().single { it.startsWith("  Trusted models: ") }.removePrefix("  Trusted models: ").split(", ")
             assertEquals(variant == "reactor", "reactor.Mono.fromCallable" in models, text)
@@ -59,7 +64,11 @@ class VerifyTest {
         assertEquals("P_false", (f.source as Source.Sidecar).id, text)
         assertEquals(ws.at("keylocallock.common.kv", "ensures P_false:", "!has"), f.at!!.line to f.at!!.col, text)
         val (line, col) = ws.at("keylocallock.common.kv", "ensures P_false:", "!has")
-        assertTrue(text.lines().any { "action sweep" in it && "KeyLocalLock.kt:97:37" in it && it.trimEnd().endsWith("FAILED") }, text)
+        assertTrue(text.lines().any { "action sweep" in it && "KeyLocalLock.kt:97:37" in it && it.trimEnd().endsWith("FAILED (property)") }, text)
+        // A property error in pass 1 needs no property check.
+        assertEquals(SubStatus.PROPERTY, sweep.sub, text)
+        assertEquals(null, r.propertyCheck, text)
+        assertTrue(!File(dir, "coroutine.pass2.vpr").exists(), text)
         assertTrue("sidecar P_false keylocallock.common.kv:$line:$col" in text, text)
         assertEquals(listOf(Verdict.PROVEN), r.rows.filter { it.label != "sweep" }.map { it.verdict }.distinct(), text)
     }

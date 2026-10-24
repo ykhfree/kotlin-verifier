@@ -15,7 +15,8 @@ For each unit (variant or module) and mutant (the unmutated original included), 
   2. applies the mutant's exact string edits to the unit's edited file; each edit must match exactly once (rule 1),
   3. runs `KV verify --root <copy> ... <specs>/<sidecar of the unit>` (rule 2: req-shield is not touched),
   4. compares the module verdict (from the exit code, DESIGN-v0.md 8.3 Q7) and, for FAILED, the FAILED action and
-     the set of failing obligation IDs (the sidecar IDs `kv verify` prints) with the EXPECTED table.
+     the set of failing obligation IDs (the sidecar IDs `kv verify` prints) with the EXPECTED table. These are the
+     pass-1 errors; the sub-status of a FAILED action and its property check (pass 2) errors are printed, not compared.
 With --roots-only it stops after step 2 and prints `<unit> <mutant> <root>` per copy (the B3 gate reads them).
 
 Exit code: 0 every row matches; 1 a row does not match; 2 a script error (bad usage, an edit that does not match
@@ -245,10 +246,13 @@ SUITES = {
 # `kv verify` exit codes (DESIGN-v0.md 8.3, Q7).
 VERDICTS = {0: "PROVEN", 1: "FAILED", 3: "INCOMPLETE", 4: "ERROR"}
 
-ROW = re.compile(r"^  (?:action (\S+)|(stray action \S+))\s+\S+\s+(PROVEN|FAILED|UNSUPPORTED|ERROR)$")
+# A FAILED action row ends with its sub-status in parentheses: property, invariant only, ...
+ROW = re.compile(r"^  (?:action (\S+)|(stray action \S+))\s+\S+\s+(PROVEN|FAILED|UNSUPPORTED|ERROR)(?: \(([^()]+)\))?$")
 OTHERS = re.compile(r"^  ((?:init|lemma \S+|probe) (?:PROVEN|FAILED|UNSUPPORTED|ERROR)(?: · |$))+")
 # A generated obligation is named by what the tool generated (e.g. MI_OWN), without Silicon's reason in parentheses.
 FINDING = re.compile(r"^      (?P<msg>[^:]+): (?:sidecar (?P<id>.+?) [\w./-]+\.kv:\d+:\d+|generated (?P<gen>[^()]+?)(?: \(.*\))?$|(?P<other>kotlin .+|no source range .+))")
+# One error of the property check (pass 2) of a FAILED action; after the prefix, the text of a finding.
+PASS2 = "        pass 2 (property check): "
 
 
 class ScriptError(Exception):
@@ -288,31 +292,46 @@ def make_root(suite, req_shield, out, unit, mutant):
     return root
 
 
+def finding_id(line):
+    """The obligation ID of a finding line, or None if the line is no finding."""
+    f = FINDING.match(line)
+    return f and (f.group("id") or f.group("gen") or f.group("other"))
+
+
 def parse_report(text):
-    """The FAILED action rows and, per row, the set of failing obligation IDs; also the other rows' verdicts."""
-    rows, current = {}, None
+    """The action rows and, per row, the verdict and the set of failing obligation IDs (pass 1); the other rows'
+    verdicts; and per action row with a sub-status, the sub-status and the obligation IDs of its property check."""
+    rows, checks, current = {}, {}, None
     others = []
     for line in text.splitlines():
         m = ROW.match(line)
         if m:
             current = m.group(1) or m.group(2)
             rows[current] = (m.group(3), set())
+            if m.group(4):
+                checks[current] = (m.group(4), set())
             continue
         if OTHERS.match(line):
             others += [p.rsplit(" ", 1) for p in line.strip().split(" · ")]
             current = None
             continue
         if current and line.startswith("      ") and not line.startswith("       "):
-            f = FINDING.match(line)
-            if not f:
+            i = finding_id(line)
+            if not i:
                 if rows[current][0] == "UNSUPPORTED":
                     continue
                 raise ScriptError("cannot read the finding line: %r" % line)
-            rows[current][1].add(f.group("id") or f.group("gen") or f.group("other"))
+            rows[current][1].add(i)
+            continue
+        if current in checks and line.startswith(PASS2):
+            i = finding_id("      " + line[len(PASS2):])
+            if not i:
+                raise ScriptError("cannot read the property check line: %r" % line)
+            checks[current][1].add(i)
             continue
         if not line.startswith("      "):
             current = None
-    return rows, others
+    return rows, others, checks
 
 
 def run_one(args, suite, variant, mutant):
@@ -335,12 +354,12 @@ def run_one(args, suite, variant, mutant):
     first = p.stdout.splitlines()[0] if p.stdout else ""
     if p.stdout and "module: %s" % verdict not in first:
         raise ScriptError("%s %s: exit code says %s, the report says %r" % (variant, mutant, verdict, first))
-    rows, others = parse_report(p.stdout)
+    rows, others, checks = parse_report(p.stdout)
     failed = {name: ids for name, (v, ids) in rows.items() if v == "FAILED"}
     not_proven = [name for name, (v, _) in rows.items() if v not in ("PROVEN", "FAILED")]
     not_proven += [" ".join(o) for o in others if o[-1] != "PROVEN"]
     return {"variant": variant, "mutant": mutant, "verdict": verdict, "failed": failed, "other": not_proven,
-            "seconds": seconds}
+            "checks": {name: c for name, c in checks.items() if name in failed}, "seconds": seconds}
 
 
 def read_expected(path, suite):
@@ -377,8 +396,14 @@ def check(result, expected):
     return problems
 
 
-def fmt(failed):
-    return "; ".join("%s {%s}" % (a, ", ".join(sorted(ids))) for a, ids in sorted(failed.items())) or "none"
+def fmt(failed, checks=None):
+    """`action {obligations}` per FAILED action; with CHECKS, each followed by `(sub-status)` and its pass-2 IDs."""
+    def check(a):
+        if not checks or a not in checks:
+            return ""
+        sub, ids = checks[a]
+        return " (%s%s)" % (sub, "; pass 2 {%s}" % ", ".join(sorted(ids)) if ids else "")
+    return "; ".join("%s {%s}%s" % (a, ", ".join(sorted(ids)), check(a)) for a, ids in sorted(failed.items())) or "none"
 
 
 def main():
@@ -424,7 +449,7 @@ def main():
     for r in results:
         problems = check(r, expected[(r["variant"], r["mutant"])])
         bad += bool(problems)
-        print("%-10s %-9s %-8s %5.1fs %s%s" % (r["variant"], r["mutant"], r["verdict"], r["seconds"], fmt(r["failed"]),
+        print("%-10s %-9s %-8s %5.1fs %s%s" % (r["variant"], r["mutant"], r["verdict"], r["seconds"], fmt(r["failed"], r["checks"]),
                                               "" if not problems else "   MISMATCH: " + "; ".join(problems)))
     print("%d run(s), %d mismatch(es), %.1f s wall clock; reports and Viper files in %s" % (len(results), bad, time.time() - start, args.out))
     return 1 if bad else 0
