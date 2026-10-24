@@ -201,3 +201,13 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - 프롬프트 원문과 예측 7개를 결과 전에 등록했다.
 - 1단계 시작: 측정 도구(샌드박스, 컴파일, 테스트, 도구, hole 과제, 유사도) 구현을 feature-developer에게 맡겼다.
   - 원본(D1)과 SB1 결함(D2)으로 측정 도구를 먼저 시험한다.
+- 1단계 완료 (`5b4c1e1` ~ `e08d3a3`): 측정 도구 `translator/scripts/aicode.py`.
+  - 시험 실행:
+    - D1(원본): 테스트 14/14, PROVEN, 유사도 1.0.
+    - D2(SB1): 테스트 12/14, FAILED (property, unLock P3a), hole 과제를 만듦.
+  - 메인 세션 확인과 결정 (생성 전, `AI-CODE.md` 변경 기록):
+    1. HELPERS.md의 원래 import 줄을 빼서 오염을 줄였다.
+    2. 자유 프롬프트 문법을 고쳤다.
+    3. 테스트는 `--shim`으로 돌린다.
+    4. hole TASK.md의 설명을 고쳤다.
+    - AicodeScriptTest 6/6 통과.

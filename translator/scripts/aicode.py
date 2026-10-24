@@ -105,8 +105,15 @@ HELPER_PARTS = [
     ("LocalLockLimit.rejectsNewEntry", LOCK_LIMIT, [(17, 17, "package "), (46, 46, "object LocalLockLimit {"), (76, 86, "    /**")]),
     ("LOCK_MONITOR_INTERVAL_MILLIS", CONFIG_VALUES,
      [(17, 17, "package "), (19, 19, "object ConfigValues {"), (24, 24, "    const val LOCK_MONITOR_INTERVAL_MILLIS")]),
-    # The import lines for kotlinx.coroutines and slf4j are those of the original coroutine KeyLocalLock.kt.
-    ("Import lines for kotlinx.coroutines and slf4j", IMPL_REL, [(22, 29, "import kotlinx.coroutines.")]),
+# No import lines of the original KeyLocalLock.kt: they would show its monitor design (AI-CODE.md change log).
+]
+LIBRARIES = [
+    "## Libraries on the classpath",
+    "",
+    "- Kotlin standard library and java.util.concurrent",
+    "- kotlinx.coroutines (kotlinx-coroutines-core 1.8)",
+    "- SLF4J (org.slf4j.LoggerFactory)",
+    "",
 ]
 
 # req-shield's core-kotlin-coroutine module does not depend on Reactor. The verifier's KeyLocalLock classpath also
@@ -249,7 +256,8 @@ The hole is Viper text over the vocabulary the specification already uses, for e
 ## Reading the output of verify.sh
 
 - `module: PROVEN`: done.
-- An action `FAILED (property)`: a property of the specification fails in that action.
+- An action `FAILED (property)`: a property of the specification fails in that action, from a state that
+  satisfies the current hole. A hole that rules out that state may remove the failure.
 - An action `FAILED (invariant only)`: only the hole fails in that action; no property fails in one step from a
   state that satisfies the hole.
 
@@ -446,7 +454,8 @@ def prompt_for(env, kind, sandbox):
     prompt, _ = ai_code_texts(env)
     if kind == "free":
         # AI-CODE.md 4.2: without the RULES.md mention, and one sentence more at the end.
-        prompt = prompt.replace(RULES_MENTION, "").rstrip("\n") + " " + FREE_SENTENCE + "\n"
+        prompt = prompt.replace(RULES_MENTION, "").replace("implement), HELPERS.md", "implement) and HELPERS.md")
+        prompt = prompt.rstrip("\n") + " " + FREE_SENTENCE + "\n"
     return prompt.replace("<SANDBOX>", sandbox)
 
 
@@ -482,6 +491,7 @@ def helpers_md(env):
         # Close the objects the signature parts opened.
         code += ["}"] * sum(1 for _, _, s in parts if s.startswith("object "))
         body += ["## " + title, "", "```kotlin"] + code + ["```", ""]
+    body += LIBRARIES
     header[-1] += " -->"
     return "\n".join(header + [""] + body)
 
