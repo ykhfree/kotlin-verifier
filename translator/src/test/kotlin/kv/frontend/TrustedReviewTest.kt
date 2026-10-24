@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 
 /**
  * B6 (DESIGN-v0.md 8.3 "reviewed 지문"): the `reviewed` note of a trusted fun is bound to the Kotlin declaration from
- * `fun` to its end, in the module's sources or, for a library function, in the req-shield support sources. A
+ * its first modifier keyword (else `fun`) to its end, in the module's sources or, for a library function, in the req-shield support sources. A
  * mismatch is the sidecar error stale-review, which `kv verify` reports as ERROR (exit 4). Copies of the specs and
  * sources only; no Silicon run.
  */
@@ -49,10 +49,13 @@ class TrustedReviewTest {
 
     private fun resolveAspect(root: File) = Frontend.resolve(File(dir, "specs/aspect.core-spring.kv"), root, Aspects.classpath, ReqShield.kotlincArgs)
 
-    /** The fingerprint of createReqShield in the edited copy, from `fun` to its closing brace, computed here. */
-    private fun createReqShieldSha(root: File): String {
+    /** The fingerprint of createReqShield in the edited copy, from its [modifier] to its closing brace, computed here. */
+    private fun createReqShieldSha(
+        root: File,
+        modifier: String = "private",
+    ): String {
         val text = File(root, aspectFile).readText()
-        val start = text.indexOf("fun createReqShield(")
+        val start = text.indexOf("$modifier fun createReqShield(")
         val end = text.indexOf("\n    }\n", start) + "\n    }".length
         return sha16(text.substring(start, end).replace(Regex("""\s+"""), " ").trim())
     }
@@ -72,7 +75,7 @@ class TrustedReviewTest {
         val root = aspectRoot("        return ReqShield(reqShieldConfiguration)\n", "        return ReqShield(reqShieldConfiguration.copy())\n")
         val e = single(resolveAspect(root), "stale-review")
         assertTrue(e.pos.file.endsWith("aspect.core-spring.kv") && e.pos.line == 13 && e.pos.col == 3, e.toString())
-        assertTrue("sha256 \"2950f49523041c8a\"" in e.message && "sha256 \"${createReqShieldSha(root)}\"" in e.message && "ReqShieldAspect.kt:116" in e.message, e.message)
+        assertTrue("sha256 \"6e2380555c453306\"" in e.message && "sha256 \"${createReqShieldSha(root)}\"" in e.message && "ReqShieldAspect.kt:116" in e.message, e.message)
     }
 
     @Test
@@ -95,12 +98,25 @@ class TrustedReviewTest {
     }
 
     @Test
+    fun `a changed modifier is stale-review, because the reviewed text starts at the first modifier`() {
+        val root = aspectRoot("    private fun createReqShield(", "    internal fun createReqShield(")
+        val e = single(resolveAspect(root), "stale-review")
+        assertTrue("sha256 \"6e2380555c453306\"" in e.message && "sha256 \"${createReqShieldSha(root, "internal")}\"" in e.message, e.message)
+    }
+
+    @Test
+    fun `an annotation before the first modifier is outside the reviewed text`() {
+        val root = aspectRoot("    private fun createReqShield(", "    @Suppress(\"UNCHECKED_CAST\")\n    private fun createReqShield(")
+        assertEquals(emptyList(), resolveAspect(root).errors)
+    }
+
+    @Test
     fun `a trusted fun note without a fingerprint is an error that names the fingerprint to record`() {
         copySpecs()
         val spec = File(dir, "specs/aspect.core-spring.kv")
-        spec.writeText(spec.readText().replace(" sha256 \"2950f49523041c8a\"", ""))
+        spec.writeText(spec.readText().replace(" sha256 \"6e2380555c453306\"", ""))
         val e = single(resolveAspect(ReqShield.dir), "missing-fingerprint")
-        assertTrue("sha256 \"2950f49523041c8a\"" in e.message, e.message)
+        assertTrue("sha256 \"6e2380555c453306\"" in e.message, e.message)
     }
 
     @Test

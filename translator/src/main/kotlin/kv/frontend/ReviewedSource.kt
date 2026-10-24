@@ -11,7 +11,8 @@ import java.io.File
 /**
  * A function declaration of a Kotlin file, found by the light-tree parser. [classes] are the names of the classes
  * and objects around it (empty for a top-level function); [start] and [end] bound the whole declaration, KDoc and
- * modifiers included; [funKeyword] is where the keyword `fun` starts.
+ * modifiers included; [funKeyword] is where the keyword `fun` starts; [reviewStart] is where the first modifier
+ * keyword starts, or [funKeyword] if the declaration has no modifier keyword.
  */
 internal data class FunDeclaration(
     val file: File,
@@ -20,11 +21,12 @@ internal data class FunDeclaration(
     val params: Int,
     val start: Int,
     val funKeyword: Int,
+    val reviewStart: Int,
     val end: Int,
     val source: String,
 ) {
-    /** The reviewed unit of a trusted fun (B6): the declaration from `fun` to its end, signature included. */
-    val reviewedText: String get() = source.substring(funKeyword, end)
+    /** The reviewed unit of a trusted fun (B6): the declaration from its first modifier keyword (else `fun`) to its end, signature included. KDoc and annotations are outside it. */
+    val reviewedText: String get() = source.substring(reviewStart, end)
 
     /** `File.kt:line` of the `fun` keyword, for messages. */
     val where: String get() = "${file.name}:${source.substring(0, funKeyword).count { it == '\n' } + 1}"
@@ -49,7 +51,10 @@ internal object ReviewedSource {
                         val name = parts.firstOrNull { it.tokenType == KtTokens.IDENTIFIER } ?: continue
                         val keyword = parts.firstOrNull { it.tokenType == KtTokens.FUN_KEYWORD } ?: continue
                         val params = parts.firstOrNull { it.tokenType == KtNodeTypes.VALUE_PARAMETER_LIST }?.let { list -> tree.children(list).count { it.tokenType == KtNodeTypes.VALUE_PARAMETER } } ?: 0
-                        out += FunDeclaration(file, classes, text.substring(name.startOffset, name.endOffset), params, child.startOffset, keyword.startOffset, child.endOffset, text)
+                        val firstModifier =
+                            parts.firstOrNull { it.tokenType == KtNodeTypes.MODIFIER_LIST }
+                                ?.let { list -> tree.children(list).firstOrNull { it.tokenType != KtNodeTypes.ANNOTATION_ENTRY && it.tokenType != KtNodeTypes.ANNOTATION } }
+                        out += FunDeclaration(file, classes, text.substring(name.startOffset, name.endOffset), params, child.startOffset, keyword.startOffset, firstModifier?.startOffset ?: keyword.startOffset, child.endOffset, text)
                     }
                     KtNodeTypes.CLASS, KtNodeTypes.OBJECT_DECLARATION -> {
                         val parts = tree.children(child)

@@ -360,7 +360,7 @@ class SidecarResolver(
 
     /**
      * B6 (DESIGN-v0.md 8.3 "reviewed 지문"): the `reviewed` note of [t] records the fingerprint of the Kotlin
-     * declaration of [fn] from `fun` to its end. A function of the compiled sources is read from its file; a library
+     * declaration of [fn] from its first modifier keyword (else `fun`) to its end. A function of the compiled sources is read from its file; a library
      * function from its source under [reviewRoot] ([ReviewedSource.library]). A missing fingerprint, a stale one
      * (`stale-review`) and a source that cannot be found are errors; the messages carry the fingerprint of the text now.
      */
