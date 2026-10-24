@@ -109,3 +109,29 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   2. 메인 세션이 결과를 다시 돌려 확인한다.
   3. deep-reasoner가 생존 변이를 판정한다.
   4. 결과를 이 문서에 기록한다.
+
+### 측정 결과 (2026-10-24, 판정 전)
+
+- 커밋: `7462f2a` ~ `17e1b42` (측정 도구 `kv mutation-sites`, `translator/scripts/mechanical.py`, 결과 `mutation/`).
+- 변이 278개, 사산 27개 (smart cast가 깨진 null 검사 변이 24, non-null 결과를 `null`로 3). Silicon 198회 (해시 공유로 12회 절약), 898 s (측정).
+- 판정 분포 (측정):
+
+| 판정 | 개수 |
+|---|---|
+| FAILED | 129 (7.1 예측 6, 7.2 예측 9, 그 밖 114) |
+| PROVEN, 모델 바뀜 | 60 (판정 대기) |
+| PROVEN, 모델 동일 | 7 (규칙으로 추상화됨) |
+| ERROR `stale-review` | 47 (서명이 막음) |
+| ERROR 그 밖 | 0 |
+| INCOMPLETE | 8 |
+
+- 예측 대조: 7.1, 7.3, 7.4, 7.5, 7.6은 예측과 같다. 7.2(9개)와 7.7(9개)은 판정 대기다.
+- 한계: Aspect 세 모듈의 변이 14개는 모두 서명이 막았거나(11) 사산(3)이다. 기계적 규칙으로는 Aspect 연산 코드의 품질을 잴 수 없다. Aspect의 근거는 계속 손으로 고른 변이(DESIGN-B 7절)다.
+- 메인 세션 확인:
+  - 테스트 396개 통과.
+  - gate 4개 exit 0.
+  - 손으로 고른 변이 33회와 30회 모두 불일치 0.
+  - `results.jsonl`을 집계해 요약 표와 같음을 확인했다.
+  - 변이 3개(SDL-13 PROVEN, RACY-01 FAILED, BOOL-03 FAILED)는 측정 도구 없이 직접 재현했다. 판정과 실패 의무가 모두 같았다.
+- 정리: 저장소가 추적하던 `__pycache__/mutants.cpython-314.pyc`를 빼고 `.gitignore`에 `__pycache__/`를 더했다.
+- 다음: 판정 묶음 49개(`mutation/judge/`)를 새 맥락의 판정자에게 넘긴다.
