@@ -255,8 +255,8 @@ class ScriptError(Exception):
     pass
 
 
-def make_root(suite, req_shield, out, unit, mutant):
-    root = os.path.join(out, "roots", "%s-%s" % (unit, mutant))
+def copy_sources(suite, req_shield, root, unit):
+    """Copies the unit's sources into ROOT, at their paths relative to the req-shield checkout (rule 2)."""
     shutil.rmtree(root, ignore_errors=True)
     for rel in suite.copies(unit):
         src, dst = os.path.join(req_shield, rel), os.path.join(root, rel)
@@ -265,6 +265,16 @@ def make_root(suite, req_shield, out, unit, mutant):
         else:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copy(src, dst)
+
+
+def kv_command(kv, command, root, classpath, kotlinc, out, sidecar):
+    """The arguments of `KV COMMAND` on the copy ROOT, writing the Viper program to OUT."""
+    return [kv, command, "--root", root, "--classpath", classpath, "--kotlinc", kotlinc, "--out", out, sidecar]
+
+
+def make_root(suite, req_shield, out, unit, mutant):
+    root = os.path.join(out, "roots", "%s-%s" % (unit, mutant))
+    copy_sources(suite, req_shield, root, unit)
     path = os.path.join(root, suite.edited(unit))
     with open(path) as f:
         text = f.read()
@@ -308,8 +318,7 @@ def parse_report(text):
 def run_one(args, suite, variant, mutant):
     root = make_root(suite, args.req_shield, args.out, variant, mutant)
     vpr = os.path.join(args.out, "%s-%s.vpr" % (variant, mutant))
-    command = [args.kv, "verify", "--root", root, "--classpath", args.classpath, "--kotlinc", args.kotlinc,
-               "--out", vpr, os.path.join(args.specs, suite.sidecar(variant))]
+    command = kv_command(args.kv, "verify", root, args.classpath, args.kotlinc, vpr, os.path.join(args.specs, suite.sidecar(variant)))
     start = time.time()
     try:
         p = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout)

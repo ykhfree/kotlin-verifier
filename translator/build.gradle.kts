@@ -244,3 +244,31 @@ val mutantsAspect by tasks.registering(Exec::class) {
         },
     )
 }
+
+// `./gradlew mechanicalMutants`: the mechanical mutation measurement of MUTATION.md. scripts/mechanical.py lists the
+// mutation sites of the six modules with `kv mutation-sites`, applies each to a temp copy, runs `kv emit`, and runs
+// `kv verify` (Silicon, with its budget) once per normalized model hash. It writes ../mutation/results.jsonl,
+// summary.md and judge/; the copies, models and reports go to build/kv/mechanical. Needs python3 and Silicon.
+// Options: -PmutantJobs=N (parallel runs, default 3), -PmutantModules=keylocallock.core,aspect.webflux (a subset).
+val mechanicalMutants by tasks.registering(Exec::class) {
+    group = "kv"
+    description = "Runs the MUTATION.md mechanical mutation measurement on the six req-shield modules."
+    dependsOn(tasks.installDist)
+    executable = "python3"
+    val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
+    val work = layout.buildDirectory.dir("kv/mechanical").get().asFile.path
+    val results = layout.projectDirectory.dir("../mutation").asFile.path
+    val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
+    val normalizer = layout.projectDirectory.file("../spike/vpr_normalize.py").asFile.path
+    val jobs = providers.gradleProperty("mutantJobs").getOrElse("3")
+    val modules = providers.gradleProperty("mutantModules").orNull
+    argumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                "-I", "scripts/mechanical.py", "--kv", kv, "--req-shield", reqShieldDir, "--classpath", reqShieldClasspath.asPath,
+                "--aspect-classpath", aspectClasspath.asPath, "--kotlinc", reqShieldKotlincArgs, "--specs", specs, "--normalizer", normalizer,
+                "--work", work, "--results", results, "--jobs", jobs,
+            ) + (modules?.let { listOf("--modules", it) } ?: emptyList())
+        },
+    )
+}
