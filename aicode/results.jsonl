@@ -1,13 +1,13 @@
 {"compile_calls": 1, "compiled": true, "final_verdict": null, "id": "T-haiku-1", "judge": null, "keylock_changed": false, "kind": "template", "model": "haiku", "sandbox_extra_files": []}
-{"final_verdict": null, "id": "T-haiku-2", "judge": null, "kind": "template"}
-{"final_verdict": null, "id": "T-haiku-3", "judge": null, "kind": "template"}
+{"compile_calls": 2, "compiled": true, "final_verdict": null, "id": "T-haiku-2", "judge": null, "keylock_changed": false, "kind": "template", "model": "haiku", "sandbox_extra_files": []}
+{"compile_calls": 1, "compiled": true, "final_verdict": null, "id": "T-haiku-3", "judge": null, "keylock_changed": false, "kind": "template", "model": "haiku", "sandbox_extra_files": []}
 {"final_verdict": null, "id": "T-haiku-4", "judge": null, "kind": "template"}
 {"compile_calls": 1, "compiled": true, "final_verdict": null, "id": "T-sonnet-1", "judge": null, "keylock_changed": false, "kind": "template", "model": "sonnet", "sandbox_extra_files": []}
 {"compile_calls": 1, "compiled": true, "final_verdict": null, "id": "T-sonnet-2", "judge": null, "keylock_changed": false, "kind": "template", "model": "sonnet", "sandbox_extra_files": []}
-{"final_verdict": null, "id": "T-sonnet-3", "judge": null, "kind": "template"}
+{"compile_calls": 1, "compiled": true, "final_verdict": null, "id": "T-sonnet-3", "judge": null, "keylock_changed": false, "kind": "template", "model": "sonnet", "sandbox_extra_files": []}
 {"final_verdict": null, "id": "T-sonnet-4", "judge": null, "kind": "template"}
 {"compile_calls": 3, "compiled": true, "final_verdict": null, "id": "T-opus-1", "judge": null, "keylock_changed": false, "kind": "template", "model": "opus", "sandbox_extra_files": []}
-{"final_verdict": null, "id": "T-opus-2", "judge": null, "kind": "template"}
+{"compile_calls": 1, "compiled": true, "final_verdict": null, "id": "T-opus-2", "judge": null, "keylock_changed": false, "kind": "template", "model": "opus", "sandbox_extra_files": []}
 {"final_verdict": null, "id": "T-opus-3", "judge": null, "kind": "template"}
 {"final_verdict": null, "id": "T-opus-4", "judge": null, "kind": "template"}
 {"compile_calls": 1, "compiled": true, "final_verdict": null, "id": "F-sonnet-1", "judge": null, "keylock_changed": false, "kind": "free", "model": "sonnet", "sandbox_extra_files": []}
