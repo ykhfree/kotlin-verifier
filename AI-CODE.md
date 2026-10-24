@@ -280,3 +280,41 @@ action 단위의 정답 (10.1절):
 5. 판정이 정답과 어긋나는 action은 0이다. tryLock이나 sweep의 PROVEN은 놓침이고, 정상 unLock의 FAILED는 오경보다.
 6. 끝까지 PROVEN인 모듈은 0이다 (12개 모두 결함이 있으므로 정답과 맞는 결과다).
 
+## 12. 2차 결과 (2026-10-25, `Int.toLong`과 kotlinx `Semaphore` 모델을 더한 뒤 도구만)
+
+결과 파일: `aicode/round2/` (results.jsonl, summary.md, compare.md, logs/). 커밋 `7c65fd3` ~ `03ebe93`.
+
+### 12.1 action 단위 대조 (메인 세션이 보고서 원문에서 다시 집계함)
+
+| 대조 | 1차 | 2차 |
+|---|---|---|
+| 검출 (도구 FAILED, 정답 결함) | 6 | 10 (tryLock 3: T-haiku-2, T-sonnet-1, T-sonnet-4; sweep 7) |
+| 맞은 PROVEN (도구 PROVEN, 정답 정상) | 5 | 5 (unLock) |
+| 놓침 | 0 | 0 |
+| 오경보 (action 단위) | 0 | 0 |
+| 판정 없음 | 25 | 21 |
+
+- 모듈 단위 (1차 → 2차): PROVEN 0 → 0, FAILED 6 → 7, INCOMPLETE 2 → 2, ERROR 0 → 3, 묶기 실패 4 → 0.
+- **의무 단위의 거짓 이유 2개 (메인 세션 확인):** T-haiku-2의 tryLock은 실제 위반인 P3a와 함께 `cap_unbacked`와 발급 set-once `gIssued`로도 실패한다. 판정자는 두 성질이 성립한다고 판정했다 (판정자 3은 "도구가 P1a의 freshness를 증명하지 못할 수 있다"고 미리 적었다). 이 구현은 토큰을 compute 밖에서 만든다. 도구는 그 연산을 모듈의 UNSUPPORTED로 적으면서도 action을 검증했다. 그래서 그 action의 실패 이유 일부가 지원 밖 구문에 기댄다. action 판정은 맞지만 보고된 이유는 일부 거짓이다.
+- **ERROR 3개 (T-sonnet-2, T-opus-3, T-opus-4):** 기존 도구 결함이다. smart cast된 entry로 companion helper(`isExpired(lockInfo, now)`)를 부르면, inlining이 nullable `let`을 만들고(W5) entry가 아닌 객체를 읽는다(W6). 수정 전 도구로 jdk 버전을 돌려도 같은 W5 ERROR가 났다 (구현 agent 측정). W 검사가 이것을 잡았으므로 거짓 PROVEN은 나오지 않았다.
+- kotlinx `release`의 증명 의무는 AI 구현에서는 한 번도 실행되지 않았다 (해당 action이 UNSUPPORTED이거나 ERROR). 고정 테스트에서만 확인했다.
+
+### 12.2 예측 대조 (11.1)
+
+| 예측 | 대조 |
+|---|---|
+| 1. tryLock이 범위에 들어오는 것은 5개 | 틀림: 3개(T-haiku-2, T-sonnet-1, T-sonnet-4)다. T-haiku-3(`Semaphore(1).also {...}`)과 T-sonnet-3(지역 `val semaphore = Semaphore(1)`)은 Semaphore를 만드는 모양 때문에 계속 UNSUPPORTED다. 1차 보고서에는 이 원인이 `Int toLong`에 가려 보이지 않았다 |
+| 2. 3개는 계속 UNSUPPORTED | 맞음 |
+| 3. T-haiku-3, T-sonnet-3의 unLock 결함은 계속 판정되지 않음 | 맞음 (원인은 Semaphore를 만드는 모양) |
+| 4. kotlinx 4개가 묶이고 일부가 판정됨 | 맞음 (T-opus-1의 sweep FAILED; 나머지 3개는 ERROR) |
+| 5. 어긋나는 action 0 | 맞음 (action 단위). 의무 단위의 거짓 이유 2개는 12.1 |
+| 6. PROVEN 모듈 0 | 맞음 |
+
+### 12.3 남은 범위 밖 구문 (2차)
+
+| 구문 | 구현 |
+|---|---|
+| Semaphore를 만드는 모양 (`Semaphore(1).also/apply {...}`, 지역 변수) | T-haiku-1, T-haiku-3, T-haiku-4, T-sonnet-3, T-opus-1 |
+| helper inlining의 W5/W6 결함 (도구 버그) | T-sonnet-2, T-opus-3, T-opus-4 |
+| 다른 객체의 helper 호출, `?.`, 값으로 쓴 if, 생성자 기본값, entry의 지역 별칭 | T-haiku-1, T-haiku-3, T-opus-2, T-opus-4 |
+
