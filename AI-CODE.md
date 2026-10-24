@@ -177,3 +177,8 @@ req-shield는 공개 저장소다. 그래서 원래 구현이 학습 자료에 �
 ## 변경 기록
 
 - 2026-10-24, 결과 전: advisor 검토를 반영해 초안을 고쳤다. 고친 것: 주장의 범위(모양 틀의 뜻), 자유 구현 3개를 필수로, 오염 검사, 분류(sidecar 밖 결함, 묶기 실패, invariant only의 뜻), 세 쪽 블라인드, 프롬프트 원문, 예측되는 오경보.
+- 2026-10-24, 생성 전 (측정 도구 시험 뒤):
+  1. HELPERS.md에 원래 `KeyLocalLock.kt`의 import 줄(22-29행)을 넣지 않는다. 그 줄이 원래 monitor 설계(`Job`, `isActive`, `CancellationException`)를 드러내기 때문이다. 대신 classpath의 라이브러리 목록을 준다.
+  2. 4.2 자유 프롬프트: RULES.md 언급을 뺀 뒤 "KeyLock.kt (...) and HELPERS.md (...)"로 문법을 맞춘다.
+  3. 단위 테스트는 `--shim`으로 돌린다. 이 옵션은 테스트 소스에 아무 일도 하지 않는 확장 함수 `stopMonitoring()`, `cancel()`을 넣는다. `KeyLocalLockTest`가 이 두 멤버를 부르는데 명세 묶음에는 없기 때문이다 (측정: 두 멤버가 없으면 14개 모두 컴파일 실패). 위험: AI의 monitor가 테스트 사이에 멈추지 않아 드물게 결과가 흔들릴 수 있다. 자유 구현은 리플렉션으로 `lockMap`을 읽는 테스트(405행)에서 실패할 수 있다.
+  4. hole 작성자용 TASK.md: "FAILED (property)"는 현재 hole이 허용하는 상태에서의 실패이고, 그 상태를 배제하는 hole이면 사라질 수 있다고 적는다.

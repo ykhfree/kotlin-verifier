@@ -156,6 +156,7 @@ class AicodeScriptTest {
         // AI-CODE.md 4.2: the free prompt does not mention RULES.md and ends with one more sentence.
         val free = File(work, "state/F/prompt.txt").readText()
         assertTrue("RULES.md" !in free && f.path in free && free.endsWith("did not settle. Write production-quality code.\n"), free)
+        assertTrue("implement) and HELPERS.md (functions and constants you may call).\n" in free, free)
         // SPEC.md holds README.md 104-105 and 113-149 and CLAUDE.md 24 verbatim, and names the ranges.
         val spec = File(t, "SPEC.md").readText()
         val readme = File(ReqShield.dir, "README.md").readLines()
@@ -164,9 +165,11 @@ class AicodeScriptTest {
         assertTrue("README.md lines 104-105" in spec && "README.md lines 113-149" in spec && "CLAUDE.md line 24" in spec, spec)
         assertEquals(File(ReqShield.coroutineDir, "KeyLock.kt").readText(), File(t, "KeyLock.kt").readText())
         val helpers = File(t, "HELPERS.md").readText()
-        for (s in listOf("fun nowToEpochTime()", "fun rejectsNewEntry(currentSize: Long): Boolean\n", "const val LOCK_MONITOR_INTERVAL_MILLIS = 1000L", "import org.slf4j.LoggerFactory")) {
+        for (s in listOf("fun nowToEpochTime()", "fun rejectsNewEntry(currentSize: Long): Boolean\n", "const val LOCK_MONITOR_INTERVAL_MILLIS = 1000L", "- SLF4J (org.slf4j.LoggerFactory)")) {
             assertTrue(s in helpers, s)
         }
+        // The original KeyLocalLock.kt's import lines would show its monitor design (AI-CODE.md change log).
+        assertFalse("import kotlinx.coroutines." in helpers, helpers)
         // No sandbox file names the verifier's command, a sidecar, this repository or the req-shield checkout.
         for (file in t.listFiles()!! + f.listFiles()!!) {
             for (word in listOf("kv verify", ".kv", "sidecar", "kotlin-verifier", ReqShield.dir.path)) assertFalse(word in file.readText(), "${file.name} names $word")
