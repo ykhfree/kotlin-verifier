@@ -211,3 +211,8 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
     3. 테스트는 `--shim`으로 돌린다.
     4. hole TASK.md의 설명을 고쳤다.
     - AicodeScriptTest 6/6 통과.
+- 2단계 완료 (생성, `b3e2eda` ~ `15b462c`): 15개 모두 컴파일됨 (`compile.sh` 1-3회). 예측 1 맞음.
+  - 관찰 (판정 전): 틀 구현 12개 중 4개(T-sonnet-2, T-opus-1, T-opus-3, T-opus-4)가 `kotlinx.coroutines.sync.Semaphore`를 골랐다. RULES.md가 `Semaphore`의 패키지를 정하지 않았다.
+  - T-sonnet-4는 `LockInfo`를 companion object 안에 두었다.
+  - 프로토콜 이탈: T-opus-2는 "다른 agent 금지"를 어기고 advisor(더 강한 모델)에 한 번 물었다. 블라인드는 유지된다(advisor는 그 agent의 대화만 봄). 다만 "opus 단독"이 아니므로 결과에 따로 표시한다.
+  - 생성 agent에는 사용자의 전역 CLAUDE.md(한국어 응답, 개념 줄이기 규칙)가 함께 적용된다. 실제 팀 환경과 같은 조건으로 본다.
