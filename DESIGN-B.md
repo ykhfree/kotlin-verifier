@@ -684,6 +684,12 @@ feature-developer가 순서대로 구현한다. 마일스톤은 수락 테스트
 | 9 | 사용자 서명을 요청한다 |
 | 다른 점 1-10 | 받아들인다: sidecar가 `exc`를 쓰면 raise가 없어도 `exc`를 둔다, 읽지 않는 put/remove 결과는 `var cur`를 만들지 않는다, raise 뒤 구간은 `if (!exc)`로 감싼다, instance 모듈의 M9는 KVIR `if` 분기만 probe한다, 보고서 추가 줄 |
 
+### 9.6 B 완료 (2026-10-24)
+
+- 사용자 결정: `createReqShield` 세 메모에 서명했다 (`ykhfree 2026-10-24:`). 메인 세션이 세 본문과 세 `ReqShield` 클래스를 원문으로 읽고 근거를 제시했다. 지문은 첫 modifier부터의 Kotlin 선언에 묶인다 (`c561637`; core-spring `6e2380555c453306`을 메인 세션이 따로 계산해 같음을 확인).
+- 최종 확인 (메인 세션): 테스트 377개, gate 4개 exit 0, `mutantsReqShield` 33회와 `mutantsAspect` 30회 불일치 0, `verifyAspect` 세 모듈 PROVEN (Silicon 약 2.3 s).
+- 미룬 것: `P_key`(B7), `expressionMap`(B5), 헬퍼를 거친 연산 호출의 기계 검사(9.4 질문 6), object 모듈의 연산 구간 번역(9.4 질문 1).
+
 ## 부록 A. 재현
 
 1. 목표 모델: `spike/silicon.sh spike/aspect/target.vpr` (`TIMES=1`이면 메서드별 시간).
