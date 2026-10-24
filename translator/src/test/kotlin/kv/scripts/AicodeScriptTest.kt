@@ -291,6 +291,24 @@ class AicodeScriptTest {
     }
 
     @Test
+    fun `a skipped hole stage keeps the tool's sub-status as the final verdict and shows its reason`() {
+        env(fakeKv("failed"))
+        collected("S", sb1)
+        assertEquals(0, aicode("tool", "S").first)
+        assertEquals("\"FAILED (hole pending)\"", field("S", "final_verdict"))
+        val (code, out) = aicode("hole-skip", "S", "--reason", "the judges confirmed the violation")
+        assertEquals(0, code, out)
+        assertEquals("\"FAILED (property)\"", field("S", "final_verdict"))
+        assertEquals(0, aicode("summary").first)
+        assertTrue("skipped: the judges confirmed the violation" in File(results, "summary.md").readText())
+        // Only a FAILED template implementation has a hole stage.
+        collected("P", original)
+        env(fakeKv("proven"))
+        assertEquals(0, aicode("tool", "P").first)
+        assertEquals(1, aicode("hole-skip", "P", "--reason", "x").first)
+    }
+
+    @Test
     fun `verify_sh rejects edits outside the hole, logs every call and stops at its budget`() {
         env(fakeKv("failed"))
         collected("H", sb1)
