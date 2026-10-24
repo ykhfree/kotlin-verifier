@@ -88,13 +88,13 @@ class AspectVerifyTest {
     @Test
     fun `(a) an unmodeled call after the fresh call and before putIfAbsent may throw, so MI_INV_1 fails on the orphan path`() {
         val f = createThenPutIfAbsent("        audit(jp)", members = "    private fun audit(jp: Any) {\n        println(jp)\n    }")
-        val flag = question5Flags(f).single()
-        assertEquals(f.at("audit(jp)", after = "val created").let { it.first to it.second }, flag.pos.line to flag.pos.col)
         val r = f.verified()
         val text = r.render()
         assertEquals(ModuleVerdict.FAILED, r.verdict, text)
         assertEquals(setOf("MI_INV_1"), r.failing("getOrCreate"), text)
         assertEquals(listOf(Verdict.PROVEN), r.rows.filter { it.label != "getOrCreate" }.map { it.verdict }.distinct(), text)
+        // The one raise is at the unmodeled call.
+        assertEquals(listOf(f.at("audit(jp)", after = "val created")), question5Flags(f).map { it.pos.line to it.pos.col })
     }
 
     @Test
