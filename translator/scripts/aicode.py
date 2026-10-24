@@ -15,7 +15,7 @@ Commands, in the order of AI-CODE.md 9:
   similarity ID...                  AI-CODE.md 4.3: token similarity to the original KeyLocalLock.kt (flag >= 0.9).
   similarity --pair A.kt B.kt       Prints the token similarity of two files.
   tests ID [--shim]                 AI-CODE.md 5.1: KeyLocalLockTest (coroutine) on the implementation, in a fresh
-                                    extracted req-shield copy, offline (120 s per test method, see TEST_INIT).
+                                    extracted req-shield copy, offline (60 s per test method, see TEST_INIT).
                                     --shim: see TEST_SHIM.
   tool ID                           AI-CODE.md 6.1-6.2: `kv verify` with the coroutine sidecar on a copy root that
                                     holds the implementation. RESULTS/impl/ID/bindings.txt, if present, holds the
@@ -131,12 +131,13 @@ internal fun KeyLocalLock.cancel() {}
 internal fun KeyLocalLock.Companion.stopMonitoring() {}
 """
 
-# Gradle init script of the test runner: a hanging implementation fails its test method after 120 s instead of
-# blocking the run (JUnit 5.9 timeouts on a separate thread), and the whole test task stops after 20 minutes.
+# Gradle init script of the test runner: a hanging implementation fails its test method after 60 s instead of
+# blocking the run (JUnit 5.9 timeouts on a separate thread), and the whole test task stops after 20 minutes. The
+# slowest KeyLocalLockTest method takes about 7 s with the original class.
 TEST_INIT = """allprojects {
     tasks.withType(Test).configureEach {
         timeout.set(java.time.Duration.ofMinutes(20))
-        systemProperty "junit.jupiter.execution.timeout.default", "120 s"
+        systemProperty "junit.jupiter.execution.timeout.default", "60 s"
         systemProperty "junit.jupiter.execution.timeout.thread.mode.default", "SEPARATE_THREAD"
     }
 }
@@ -521,8 +522,9 @@ def cmd_sandbox(env, args):
         write(os.path.join(box, RULES_FILE), ai_code_texts(env)[1])
     prompt = prompt_for(env, args.kind, box)
     write(os.path.join(state, "prompt.txt"), prompt)
-    # A new sandbox is a new generation: the results of an earlier one with this ID no longer hold.
-    update(env, args.id, reset=True, kind=args.kind)
+    # A new sandbox is a new generation: the results of an earlier one with this ID no longer hold. The judge column
+    # stays empty until a judge reports (AI-CODE.md 5.2).
+    update(env, args.id, reset=True, kind=args.kind, judge=None)
     print("sandbox %s (%s): %s" % (args.id, args.kind, box))
     print("prompt (also in %s):" % os.path.join(state, "prompt.txt"))
     print(prompt, end="")
