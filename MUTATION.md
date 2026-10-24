@@ -103,6 +103,13 @@ RACY는 도구의 고유한 주장("action 밖의 읽기는 임의 값")을 겨�
   3. "PROVEN, 모델 바뀜" 전부 (6절 상한 적용)
   이유: 의심을 구현 agent나 메인 세션이 고르면 판정자의 독립성이 없어진다.
 - 2026-10-24, 결과 뒤 (판정 전): 4절 2의 판정 공유에 검사 하나를 더했다. 해시가 같아 판정을 함께 쓰는 변이도 각자 `kv lower`로 미지원 구문과 완결성을 확인한다. 이유: kv는 미지원 부분을 출력하지 않으므로, 미지원 구문이 다른 두 변이가 같은 모델이 될 수 있다 (측정: RET-04와 SDL-01). 이번 실행의 충돌은 0이고, 범주별 개수는 검사 전후가 같다.
+- 2026-10-24, 재측정 전 (사용자 결정 뒤): sidecar를 바꿨다. `progress_live`를 좁히고 `cap_unbacked`, `expired_takeover`를 더했다. 도구 보고도 바꾼다: 불변식 조각만 실패하면 성질을 따로 확인하고, "성질 위반"과 "불변식만 불일치"로 나눈다. 재측정 결과의 예측 (결과 전에 등록):
+  1. MOP-01 ×2와 core RACY-02는 `expired_takeover`로 FAILED가 된다.
+  2. RACY-04 ×3과 coroutine SDL-08은 `cap_unbacked`로 FAILED가 된다.
+  3. coroutine RACY-09와 reactor RACY-08은 PROVEN으로 남는다.
+  4. RACY-03 ×3, coroutine RET-11, reactor SDL-02는 "불변식만 불일치"로 FAILED다.
+  5. RACY-06 ×3은 성질 위반(`progress_owner`)으로 FAILED다. 의도대로 읽으면 v0 2.12(경쟁 읽기는 임의 값) 때문에 생긴 오경보다.
+  6. "불변식만 불일치"는 무해하다는 뜻이 아니다. 판정자 B의 core·reactor AOR-03과 coroutine SDL-06은 다음 단계에서 P3a를 깨는 진짜 결함인데, "불변식만 불일치"로 보고될 수 있다.
 
 ## 9. 결과 (2026-10-24, 판정 뒤)
 

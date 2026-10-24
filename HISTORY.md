@@ -156,3 +156,17 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 3. 보고 개선을 구현한다. 불변식 조각만 실패하면 성질을 따로 확인하고, 보고를 "성질 위반"과 "불변식만 불일치"로 나눈다.
 
 순서: 1과 2(명세와 기대 모델)를 먼저 하고, 3(도구)을 나중에 한다. 동시에 하면 서로의 회귀 검사를 깬다.
+
+### sidecar 변경 (2026-10-24, 사용자 승인)
+
+- 커밋: 이 항목과 같은 날의 "Narrow progress_live and add cap_unbacked and expired_takeover".
+- 바뀐 것:
+  - `progress_live`: 잡혀 있고 만료되지 않은 entry만 획득을 막는다.
+  - `cap_unbacked` 추가: README 139행의 상한 동작.
+  - `expired_takeover` 추가: KeyLock KDoc이 함축하는 만료 lock 넘겨받기.
+- `progress_owner`는 그대로 둔다. 의도("자기가 받은 토큰")가 호출자의 이력에 관한 것이라 v0 명세로 표현할 수 없다.
+- 확인 (메인 세션):
+  - 세 변형 PROVEN, gate 4개 exit 0, 테스트 396개.
+  - 손으로 고른 변이 33회와 30회 불일치 0.
+  - 기대 모델 사본에서 변이 24개의 판정이 이전과 같다.
+- 다음: 보고 개선(성질 재확인)을 구현하고 재측정한다. 재측정 예측은 `MUTATION.md` 변경 기록에 결과 전에 등록했다.
