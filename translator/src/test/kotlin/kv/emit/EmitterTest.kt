@@ -1,6 +1,7 @@
 package kv.emit
 
 import kv.lower.LockFixture
+import kv.lower.bindGhosts
 import kv.sidecar.SidecarException
 import kv.sidecar.parseSidecar
 import org.junit.jupiter.api.io.TempDir
@@ -230,6 +231,35 @@ class EmitterTest {
             ),
             body,
         )
+    }
+
+    @Test
+    fun `the property check program leaves out only the hole ensures of the named actions, a stray action included`() {
+        val f = LockFixture("if (e != null) result.set(e.token)\ne", members = "    fun drop(k: String) {\n        lockMap.compute(k) { _, _ -> null }\n    }", operations = ISSUING)
+        val s = parseSidecar(File(dir, "Lock.kv").path, f.sidecar)
+        val bound = bindGhosts(f.lower(dir), s)
+        val full = emitViper(bound, s)
+        val stray = full.methods.single { it.kind == MethodKind.STRAY }.label
+        for (without in listOf(setOf("run"), setOf(stray), setOf("run", stray))) {
+            val p = emitViper(bound, s, withoutHole = without)
+            val ranges = full.methods.filter { it.label in without }.map { it.range.line..it.range.endLine }
+            val removed = full.text.lines().filterIndexed { i, l -> ranges.any { i + 1 in it } && l.trim().startsWith("ensures MI_INV_") }
+            assertEquals(without.size, removed.size, "the fixture hole has one conjunct: $removed")
+            val expected = full.text.lines().filterIndexed { i, l -> !(ranges.any { i + 1 in it } && l.trim().startsWith("ensures MI_INV_")) }
+            val comments = p.text.lines().filter { it.startsWith("// Property check (pass 2): ") || it == "  // property check (pass 2): the hole ensures MI_INV_i are left out" }
+            assertEquals(1 + without.size, comments.size, p.text)
+            assertEquals(expected, p.text.lines() - comments.toSet(), "only the hole ensures of $without are gone")
+        }
+    }
+
+    @Test
+    fun `the property check program has its own position table`() {
+        val (m, s) = lowerReqShield("coroutine")
+        val p = emitViper(bindGhosts(m, s), s, withoutHole = setOf("tryLock"))
+        val line = p.lineOf("ensures res ==> old(has(S, k)) && old(S.m[k].token) == t")
+        assertEquals("unLock", p.methodAt(line)?.label)
+        assertEquals("P1", (p.sourceAt(line, p.colOf(line, "res ==>"))?.source as Source.Sidecar).id)
+        assertTrue(p.lineOf("ensures MI_INV_1(S)") > p.lineOf("method unLock("), "tryLock has no hole ensures; unLock keeps them")
     }
 
     @Test

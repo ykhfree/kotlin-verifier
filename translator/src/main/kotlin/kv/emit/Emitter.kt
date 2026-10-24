@@ -85,12 +85,15 @@ import kv.sidecar.Vexpr
  * With [reach], the program is the branch reachability clone of 5.4 item 4 (M9): the action methods keep their
  * preconditions and bodies, lose their postconditions, and start each branch with `refute false`; init, lemmas and
  * the probe are left out.
+ * The action methods whose labels are in [withoutHole] have no hole ensures (`ensures MI_INV_i(S)`) and keep every
+ * other ensures: the program of the property check (pass 2, [kv.verify.verify]).
  */
 fun emitViper(
     module: Module,
     sidecar: Sidecar,
     reach: Boolean = false,
-): Emitted = Emitter(module, sidecar, reach).run()
+    withoutHole: Set<String> = emptySet(),
+): Emitted = Emitter(module, sidecar, reach, withoutHole).run()
 
 /** What kind of value a free value is, for comments and reports (DESIGN-v0.md 2.12). */
 internal fun Origin.kind(): String =
@@ -166,6 +169,7 @@ private class Emitter(
     private val m: Module,
     private val s: Sidecar,
     private val reach: Boolean,
+    private val withoutHole: Set<String>,
 ) {
     private val w = VprWriter()
     private val methods = mutableListOf<EmittedMethod>()
@@ -281,6 +285,9 @@ private class Emitter(
         if (reach) {
             w.comment("Branch reachability clone (DESIGN-v0.md 5.4 item 4): the action methods without postconditions, with")
             w.comment("`refute false` at the start of each branch. A refute that holds marks an unreachable branch (INFO only).")
+        }
+        if (withoutHole.isNotEmpty()) {
+            w.comment("Property check (pass 2): ${withoutHole.sorted().joinToString()} without the hole ensures MI_INV_i; every other ensures stays.")
         }
         w.put("\n")
     }
@@ -487,7 +494,7 @@ private class Emitter(
             w.line("method ${op.name}($params)$returns")
             requires(a, op)
             if (!reach) {
-                ensuresInvariant()
+                ensuresInvariant(op.name)
                 if (!b) allowances(decl, op)
                 decl.items.filterIsInstance<EnsuresItem>().forEach { e ->
                     w.put("  ensures ")
@@ -558,14 +565,21 @@ private class Emitter(
         renaming: Map<String, String>,
     ): String = Regex("""(?<![.\w])[A-Za-z_]\w*""").replace(text) { renaming[it.value] ?: it.value }
 
-    /** The ensures every action method has: the module invariant, one clause per part (5.7). */
-    private fun ensuresInvariant() {
+    /**
+     * The ensures every action method has: the module invariant, one clause per part (5.7). The method [label] has no
+     * hole ensures if it is in [withoutHole].
+     */
+    private fun ensuresInvariant(label: String) {
         w.line("ensures MI_PERMS(S)", Source.Generated("MI_PERMS"), 2)
         w.line("ensures MI_OWN(S)", Source.Generated("MI_OWN"), 2)
         // DESIGN-B.md 5.4 rule 1 (JB1): each set-once line right after MI_OWN.
         setOnce.forEach { d -> w.line("ensures ${d.id.text}(S)", Source.Sidecar(d.pos, d.id.text), 2) }
         invariants.forEach { p -> w.line("ensures ${p.id.text}(S)", Source.Sidecar(p.expr.pos, p.id.text), 2) }
-        hole.forEachIndexed { i, c -> w.line("ensures MI_INV_${i + 1}(S)", Source.Sidecar(c.expr.pos, "MI_INV_${i + 1}", c.name), 2) }
+        if (label in withoutHole) {
+            w.comment("property check (pass 2): the hole ensures MI_INV_i are left out", 2)
+        } else {
+            hole.forEachIndexed { i, c -> w.line("ensures MI_INV_${i + 1}(S)", Source.Sidecar(c.expr.pos, "MI_INV_${i + 1}", c.name), 2) }
+        }
         if (!b) w.line("ensures HIST", Source.Generated("HIST"), 2)
     }
 
@@ -623,19 +637,20 @@ private class Emitter(
     /** A compute call that no sidecar operation names: a method with the default contract (DESIGN-v0.md 3.5 R2). */
     private fun stray(a: Action) {
         val name = "stray_" + a.id.replace(Regex("""\W"""), "_")
+        val label = "stray action ${a.id}"
         w.comment("Stray action ${a.id}: ${map.kotlin}.${a.kind.method} ${at(a.pos)}; no sidecar operation names it, so it has the default contract.")
         w.comment("  ${origin(a.key)}")
         a.free.forEach { w.comment("  ${origin(it)}, unnamed: arbitrary") }
-        method(name, MethodKind.STRAY, "stray action ${a.id}", a.pos) {
+        method(name, MethodKind.STRAY, label, a.pos) {
             w.line("method $name(S: Ref, ${a.key.local.name}: ${vtype(a.key.local.type)})")
             w.line("requires MI(S)", Source.Generated("MI"), 2)
             if (!reach) {
                 // DESIGN-B.md 5.4 rule 5: MI and every set-once line, and no allowance clause without a ghost record.
-                ensuresInvariant()
+                ensuresInvariant(label)
                 if (!b) allowances(null, null)
             }
             w.line("{")
-            if (b) SectionBody(a, null, false, "stray action ${a.id}").run() else Body(a, "stray action ${a.id}").run(null)
+            if (b) SectionBody(a, null, false, label).run() else Body(a, label).run(null)
             w.put("}")
         }
     }

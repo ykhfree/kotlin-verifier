@@ -58,6 +58,9 @@ class AspectVerifyTest {
             assertEquals(listOf("getOrCreate", "init", "probe"), r.rows.map { it.label }.sorted(), text)
             assertEquals(listOf(Verdict.PROVEN), r.rows.map { it.verdict }.distinct(), text)
             assertTrue("Spec to review: set-once P_stable: m; trusted createReqShield: returns fresh Shield, throws, effects none" in text, text)
+            // Nothing failed, so no property check (pass 2) ran.
+            assertNull(r.propertyCheck, text)
+            assertTrue(!File(dir, "$module.pass2.vpr").exists() && "Property check" !in text, text)
         }
     }
 

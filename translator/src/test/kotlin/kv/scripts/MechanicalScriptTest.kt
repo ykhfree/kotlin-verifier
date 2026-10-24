@@ -315,6 +315,42 @@ class MechanicalScriptTest {
     }
 
     @Test
+    fun `results keep the pass-1 obligations and add each FAILED action's sub-status and property check errors`() {
+        val hole = "Postcondition of tryLock might not hold: sidecar MI_INV_1 keylocallock.common.kv:99:3 \"INV-E\""
+        val live = "Postcondition of tryLock might not hold: sidecar progress_live keylocallock.common.kv:70:3"
+        val checked = "Property check (pass 2): tryLock without the hole ensures MI_INV_i (Silicon 2.00 s)"
+
+        fun failed(
+            sub: String,
+            findings: List<String>,
+            tail: List<String> = emptyList(),
+        ) = Response(1, report("FAILED", findings, tail).replaceFirst("   FAILED\n", "   FAILED ($sub)\n"))
+        val (exit, out, _) =
+            run(
+                listOf(Site("ROR", "existing != null", "existing == null"), Site("NEG", "if (existing != null)", "if (!(existing != null))"), Site("BOOL", "compareAndSet(true", "compareAndSet(false")),
+                mapOf(
+                    "emit ROR-01" to Response(vpr = program("  res := existing__155 + 21\n")),
+                    "verify ROR-01" to failed("property", listOf(hole, "  pass 2 (property check): $live"), listOf(checked)),
+                    "emit NEG-01" to Response(vpr = program("  res := existing__155 + 22\n")),
+                    "verify NEG-01" to failed("invariant only", listOf(hole, "  meaning: this action does not preserve the inductive invariant (the hole MI_INV)."), listOf(checked)),
+                    "emit BOOL-01" to Response(vpr = program("  res := existing__155 + 23\n")),
+                    "verify BOOL-01" to failed("property", listOf(p3a)),
+                ),
+            )
+        assertEquals(0, exit, out)
+        val r = results()
+        val ror = r.getValue("keylocallock.coroutine/ROR-01")
+        assertEquals(listOf("[\"tryLock: MI_INV_1\"]", "{\"tryLock\": \"property\"}", "[\"tryLock: progress_live\"]", "true"), listOf(ror["failing"], ror["sub_status"], ror["pass2_failing"], ror["pass2_run"]))
+        val neg = r.getValue("keylocallock.coroutine/NEG-01")
+        assertEquals(listOf("[\"tryLock: MI_INV_1\"]", "{\"tryLock\": \"invariant only\"}", "[]", "true"), listOf(neg["failing"], neg["sub_status"], neg["pass2_failing"], neg["pass2_run"]))
+        val bool = r.getValue("keylocallock.coroutine/BOOL-01")
+        assertEquals(listOf("[\"tryLock: ends_only_if P3a\"]", "{\"tryLock\": \"property\"}", "[]", "false"), listOf(bool["failing"], bool["sub_status"], bool["pass2_failing"], bool["pass2_run"]))
+        assertTrue("중복 제거로 아낀 Silicon 실행: 0회. 그 가운데 성질 확인(pass 2)을 더 돌린 실행: 2회." in summary(), summary())
+        assertTrue("- FAILED action의 하위 상태 (변이×action): invariant only 1, property 2." in summary(), summary())
+        assertTrue("3 mutant(s), 4 Silicon run(s) (2 with a property check)" in out, out)
+    }
+
+    @Test
     fun `over 30 PROVEN changed mutants the judge sees every ROR boundary and RET one and a seeded sample of the rest`() {
         val sites =
             List(31) { Site("BOOL", "compareAndSet(true", "compareAndSet(false") } +

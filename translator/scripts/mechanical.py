@@ -68,6 +68,8 @@ JUDGE_CAP = 30
 # kv lower: an UNSUPPORTED diagnostic, or an unsupported ledger entry, each ending with its position.
 LOWER_UNSUPPORTED = re.compile(r"(?m)^\s+(?:U\d+_\d+ UNSUPPORTED|\d+(?:-\d+)? unsupported) (.+?) @\d+:\d+$")
 FREE_VALUE = re.compile(r"(\S+) <- (.+?) \d+:\d+ \(([^)]*)\)(?:, |$)")
+# kv verify: the line of a report whose run had the property check (pass 2).
+PASS2_LINE = re.compile(r"(?m)^Property check \(pass 2\): ")
 
 
 class Module:
@@ -236,6 +238,11 @@ def silicon_ran(mu):
     return bool(mu.verified and mu.report[1] and "(Silicon " in mu.report[1].splitlines()[0])
 
 
+def pass2_ran(mu):
+    """True if the kv verify run also ran the property check (pass 2): its report has the property check line."""
+    return bool(mu.verified and mu.report[1] and PASS2_LINE.search(mu.report[1]))
+
+
 # ---- 6. classification ----
 
 def verdict_of(report):
@@ -244,14 +251,17 @@ def verdict_of(report):
 
 
 def failing_obligations(stdout):
-    """`action: obligation` per finding of a FAILED action row, and each init, lemma or probe row that FAILED."""
+    """`action: obligation` per pass-1 finding of a FAILED action row, and each init, lemma or probe row that FAILED;
+    then the sub-status of each FAILED action, and `action: obligation` per error of its property check (pass 2)."""
     try:
-        rows, others = mutants.parse_report(stdout)
+        rows, others, checks = mutants.parse_report(stdout)
     except ScriptError as e:
-        return ["(the report cannot be read: %s)" % e]
+        return ["(the report cannot be read: %s)" % e], {}, []
     out = ["%s: %s" % (name, i) for name, (v, ids) in sorted(rows.items()) if v == "FAILED" for i in sorted(ids)]
     out += [" ".join(o[:-1]) for o in others if o[-1] == "FAILED"]
-    return out
+    sub = {name: s for name, (s, _) in checks.items() if rows[name][0] == "FAILED"}
+    pass2 = ["%s: %s" % (name, i) for name, (_, ids) in sorted(checks.items()) if name in sub for i in sorted(ids)]
+    return out, sub, pass2
 
 
 def free_values(stdout):
@@ -340,12 +350,13 @@ def records(modules):
                 "model_hash": mu.hash, "model_identical": None if mu.hash is None else mu.hash == m.original.hash,
                 "ledger": s["ledger"], "facts": s["facts"], "tags": [], "class": None, "message": None,
                 "silicon_run": silicon_ran(mu), "shared_from": mu.shared_from, "own_lowering": None, "dedupe_conflict": False,
+                "sub_status": {}, "pass2_failing": [], "pass2_run": pass2_ran(mu),
             }
             if mu.compiled:
                 report = (mu.shared_from_mutant or mu).report
                 r["verdict"] = verdict_of(report)
                 if r["verdict"] == "FAILED":
-                    r["failing"] = failing_obligations(report[1])
+                    r["failing"], r["sub_status"], r["pass2_failing"] = failing_obligations(report[1])
                 elif r["verdict"] == "ERROR":
                     r["message"] = relative(mu.shared_from_mutant or mu, report_message(report))
                 elif r["verdict"] == "INCOMPLETE":
@@ -470,8 +481,8 @@ def write_summary(args, modules, recs, items, notes, stats):
     L = ["# 기계적 변이 측정 결과", "", "MUTATION.md 8절 형식이다. 판정자가 정할 범주는 \"판정 대기\"로 둔다.", ""]
     L += ["- 측정: %s, wall clock %.0f s, 병렬 %d." % (time.strftime("%Y-%m-%d"), stats["seconds"], args.jobs),
           "- 원본 판정: " + ", ".join("%s %s" % (m.name, verdict_of(m.original.report)) for m in modules) + ".",
-          "- 변이 %d개, 사산 %d개, 모델이 있는 변이 %d개. Silicon 실행 %d회 (원본 %d회, 새 해시 %d회). 중복 제거로 아낀 Silicon 실행: %d회."
-          % (len(recs), sum(not r["compiled"] for r in recs), stats["with_model"], stats["silicon"], len(modules), stats["new_hashes"], stats["saved"])]
+          "- 변이 %d개, 사산 %d개, 모델이 있는 변이 %d개. Silicon 실행 %d회 (원본 %d회, 새 해시 %d회). 중복 제거로 아낀 Silicon 실행: %d회. 그 가운데 성질 확인(pass 2)을 더 돌린 실행: %d회."
+          % (len(recs), sum(not r["compiled"] for r in recs), stats["with_model"], stats["silicon"], len(modules), stats["new_hashes"], stats["saved"], stats["pass2"])]
     shared = [r for r in recs if r["own_lowering"] is not None]
     conflicts = [r for r in shared if r["dedupe_conflict"]]
     L += ["- 중복 제거 검사: 판정을 함께 쓴 변이 %d개를 각자 `kv lower`로 다시 낮췄다 (Silicon 없음). 완결성이 함께 쓴 판정과 어긋나는 변이: %d개%s."
@@ -513,7 +524,8 @@ def write_summary(args, modules, recs, items, notes, stats):
               sum(1 for _, why in items if why == "FAILED, 무작위 표본")),
           "- 예측된 오경보 / 설명 안 된 오경보: 판정 대기 (예측 7.2-7.4에 맞는 FAILED %d개, 무작위 표본 %d개)." % (
               sum(r["class"].startswith("pending judge: FAILED") for r in recs), sum(1 for _, why in items if why == "FAILED, 무작위 표본")),
-          "- FAILED 합계: %d개." % len(failed), ""]
+          "- FAILED 합계: %d개." % len(failed),
+          "- FAILED action의 하위 상태 (변이×action): %s." % (", ".join("%s %d" % kv for kv in sorted(collections.Counter(s for r in failed for s in r["sub_status"].values()).items())) or "없음"), ""]
     errors = [r for r in recs if r["verdict"] == "ERROR"]
     defects = [r for r in errors if r["class"] == "tool defect candidate"]
     incomplete = [r for r in recs if r["verdict"] == "INCOMPLETE"]
@@ -610,13 +622,14 @@ def main():
         with_model = sum(r["model_hash"] is not None for r in recs)
         new_hashes = len({(r["module"], r["model_hash"]) for r in recs if r["model_hash"] is not None and not r["model_identical"]})
         silicon = sum(silicon_ran(m.original) for m in modules) + sum(silicon_ran(mu) for m in modules for mu in m.sites)
-        stats = {"seconds": time.time() - start, "with_model": with_model, "new_hashes": new_hashes, "silicon": silicon, "saved": with_model - new_hashes}
+        pass2 = sum(pass2_ran(m.original) for m in modules) + sum(pass2_ran(mu) for m in modules for mu in m.sites)
+        stats = {"seconds": time.time() - start, "with_model": with_model, "new_hashes": new_hashes, "silicon": silicon, "saved": with_model - new_hashes, "pass2": pass2}
         write_summary(args, modules, recs, items, notes, stats)
     except ScriptError as e:
         print("mechanical.py: script error: %s" % e, file=sys.stderr)
         return 2
     counts = collections.Counter(r["class"] for r in recs)
-    print("%d mutant(s), %d Silicon run(s), %.0f s wall clock" % (len(recs), stats["silicon"], stats["seconds"]))
+    print("%d mutant(s), %d Silicon run(s) (%d with a property check), %.0f s wall clock" % (len(recs), stats["silicon"], stats["pass2"], stats["seconds"]))
     for k, v in sorted(counts.items()):
         print("  %-45s %d" % (k, v))
     print("results in %s; work files in %s" % (args.results, args.work))
