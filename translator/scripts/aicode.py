@@ -19,7 +19,7 @@ Commands, in the order of AI-CODE.md 9:
                                     --shim: see TEST_SHIM.
   tool ID                           AI-CODE.md 6.1-6.2: `kv verify` with the coroutine sidecar on a copy root that
                                     holds the implementation. RESULTS/impl/ID/bindings.txt, if present, holds the
-                                    binding-name adaptations (see read_bindings).
+                                    binding adaptations (see read_bindings).
   hole-task ID [--force]            AI-CODE.md 6.3: WORK/holes/ID/task for a hole writer (template kind, tool FAILED).
                                     Its verify.sh keeps the count, the attempts and the outputs in WORK/holes/ID/harness.
   hole-outcome ID [--report F]      Reads the hole task's calls and records the outcome.
@@ -766,6 +766,7 @@ def cmd_tests(env, args):
 LOCAL = r"(free\s+%s(?:\s*:\s*\w+)?\s*=\s*local\s+)(\w+)"
 SOURCE = re.compile(r'^source\s+"([^"]+)"', re.M)
 CLASS = r"(?m)^class\s+%s\s*=\s*([\w.]+)"
+USE = re.compile(r"(?m)^use\s+(\S+)")
 
 
 def read_bindings(path):
@@ -773,16 +774,18 @@ def read_bindings(path):
         local OPERATION FREE NAME   in operation OPERATION, `free FREE = local X` becomes `free FREE = local NAME`
         source OLD NEW              `source "OLD"` becomes `source "NEW"`
         class NAME KNAME            `class NAME = X` becomes `class NAME = KNAME` (where the class is declared)
+        use MODEL                   the variant sidecar gets the line `use MODEL` (AI-CODE.md 11: the Kotlin type of a
+                                    Semaphore field chooses its trusted model, which the sidecar must use)
     Nothing else of the sidecar may change (properties, permission clauses, issue rules, the hole)."""
     out = []
     for n, line in enumerate(read(path).splitlines(), 1):
         words = line.split("#", 1)[0].split()
         if not words:
             continue
-        if (words[0] == "local" and len(words) == 4) or (words[0] in ("source", "class") and len(words) == 3):
+        if (words[0] == "local" and len(words) == 4) or (words[0] in ("source", "class") and len(words) == 3) or (words[0] == "use" and len(words) == 2):
             out.append(words)
         else:
-            raise ScriptError("%s:%d: an adaptation is 'local OPERATION FREE NAME', 'source OLD NEW' or 'class NAME KNAME': %r" % (path, n, line))
+            raise ScriptError("%s:%d: an adaptation is 'local OPERATION FREE NAME', 'source OLD NEW', 'class NAME KNAME' or 'use MODEL': %r" % (path, n, line))
     return out
 
 
@@ -796,9 +799,15 @@ def operation_span(text, name):
 
 
 def adapt(texts, bindings):
-    """TEXTS (sidecar file name -> text) with BINDINGS applied; each must change exactly one place."""
+    """TEXTS (sidecar file name -> text) with BINDINGS applied; each must change exactly one place. A `use` adaptation
+    adds its line at the end of the variant sidecar, and only for a model the sidecar does not use yet."""
     texts = dict(texts)
     for b in bindings:
+        if b[0] == "use":
+            if any(m.group(1) == b[1] for text in texts.values() for m in USE.finditer(text)):
+                raise ScriptError("adaptation %r: the sidecar already uses %s" % (" ".join(b), b[1]))
+            texts[SIDECAR] = texts[SIDECAR].rstrip("\n") + "\nuse %s\n" % b[1]
+            continue
         hits = []
         for name, text in texts.items():
             if b[0] == "local":
