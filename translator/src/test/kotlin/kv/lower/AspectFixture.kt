@@ -74,13 +74,13 @@ data class AspectFixture(
         """.trimMargin()
 
     /**
-     * [trusted] with the fingerprint of [factory] from `fun` to its end in its `reviewed` note (B6), unless the note
-     * has one: fixtures review their factory as written.
+     * [trusted] with the fingerprint of [factory] in its `reviewed` note (B6), unless the note has one: fixtures
+     * review their factory as written. A factory starts at its first modifier and has no KDoc or annotation.
      */
     private val stampedTrusted: String
         get() {
             if ("sha256" in trusted) return trusted
-            val sha = reviewFingerprint(factory.substring(factory.indexOf("fun ")))
+            val sha = reviewFingerprint(factory)
             return trusted.replace(Regex("""(\n\s*reviewed "[^"]*")"""), "$1 sha256 \"$sha\"")
         }
 
