@@ -9,7 +9,6 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /** The spike directory: the gate script and the hand-written target models. Read only. */
@@ -94,13 +93,11 @@ class GateTest {
     }
 
     /**
-     * B3 acceptance 2 under DESIGN-B.md 9.4 question 5: the core-spring Kotlin mutants of scripts/mutants.py (suite
-     * aspect) give the models of spike/aspect/mutants.py. In M2, M4 and M7 the key argument getTargetMethod(joinPoint)
-     * runs after the fresh call and before the action, so the generated model has one more raise path; with that
-     * path taken out, the models are the same. All other mutants and the two controls are the same as they are.
+     * B3 acceptance 2: the core-spring Kotlin mutants of scripts/mutants.py (suite aspect) give the models of
+     * spike/aspect/mutants.py. Those models hold the raise path of DESIGN-B.md 9.4 question 5 in M2, M4 and M7.
      */
     @Test
-    fun `the core-spring Kotlin mutants give the models of spike aspect mutants_py, up to the question 5 raise`() {
+    fun `the core-spring Kotlin mutants give the models of spike aspect mutants_py`() {
         val targets = File(dir, "aspect-targets")
         val (made, list) = python(File(spikeDir, "aspect/mutants.py").path, targets.path)
         assertEquals(0, made, list)
@@ -115,44 +112,15 @@ class GateTest {
                 "--out", File(dir, "mutants").path, "--roots-only", "--only", names.keys.joinToString(","),
             )
         assertEquals(0, code, roots)
-        val raising = setOf("M2", "M4", "M7")
+        val checked = mutableSetOf<String>()
         for (line in roots.lines().filter { it.startsWith("core-spring ") }) {
             val (_, mutant, root) = line.split(" ", limit = 3)
             val generated = generatedAspect("core-spring", File(root), "core-spring-$mutant")
-            val expected = File(targets, "${names.getValue(mutant)}.vpr")
-            val (same, diff) = normalize(expected, generated)
-            if (mutant !in raising) {
-                assertEquals(0, same, "$mutant:\n$diff")
-                continue
-            }
-            assertEquals(1, same, "$mutant has the question 5 raise path:\n$diff")
-            val stripped = File(dir, "core-spring-$mutant-without-raise.vpr").apply { writeText(withoutQuestion5Raise(generated.readText(), mutant)) }
-            val (rest, restDiff) = normalize(expected, stripped)
-            assertEquals(0, rest, "$mutant without its raise path:\n$restDiff")
+            val (same, diff) = normalize(File(targets, "${names.getValue(mutant)}.vpr"), generated)
+            assertEquals(0, same, "$mutant:\n$diff")
+            checked += mutant
         }
-    }
-
-    /**
-     * [text] without its one raise of DESIGN-B.md 9.4 question 5: the flag declaration, `if (flag) { exc := true }
-     * else {` and the brace that closes the else. Fails unless there is exactly one.
-     */
-    private fun withoutQuestion5Raise(
-        text: String,
-        what: String,
-    ): String {
-        val lines = text.lines().toMutableList()
-        val flags = lines.withIndex().filter { Regex("""^\s*var cond_\d+_\d+: Bool  // call .* may throw""").containsMatchIn(it.value) }
-        assertEquals(1, flags.size, "$what: one question 5 flag in\n$text")
-        val i = flags.single().index
-        val indent = lines[i].takeWhile { it == ' ' }
-        val flag = Regex("""cond_\d+_\d+""").find(lines[i])!!.value
-        assertEquals("${indent}if ($flag) {", lines[i + 1])
-        assertTrue(lines[i + 2].trim().startsWith("exc := true"), lines[i + 2])
-        assertEquals("$indent} else {", lines[i + 3])
-        val close = (i + 4 until lines.size).first { lines[it] == "$indent}" }
-        lines.removeAt(close)
-        repeat(4) { lines.removeAt(i) }
-        return lines.joinToString("\n")
+        assertEquals(names.keys, checked)
     }
 
     @Test

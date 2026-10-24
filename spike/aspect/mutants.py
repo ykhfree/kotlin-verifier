@@ -140,9 +140,14 @@ def put_if_absent_after_create(bookkeeping_when_mapped_only):
         "    exc := true                                      // createReqShield(joinPoint) @112:23 threw\n"
         "  } else {\n" +
         fresh("r_112_23", "@112:23", 4) +
-        "    var cur_113_16: Ref := has(S, k) ? S.m[k] : null  // action: putIfAbsent @113:16\n"
-        "    if (cur_113_16 == null) { S.m := S.m[k := r_112_23] }\n"
-        "    res := cur_113_16 != null ? cur_113_16 : r_112_23  // ?: created\n"
+        "    var cond_113_41: Bool                            // getTargetMethod(joinPoint) @113:41 runs after the fresh call\n"
+        "    if (cond_113_41) {                               // and may throw (question 5 of DESIGN-B.md 9.4)\n"
+        "      exc := true                                    // the created object is dropped\n"
+        "    } else {\n"
+        "      var cur_113_16: Ref := has(S, k) ? S.m[k] : null  // action: putIfAbsent @113:16\n"
+        "      if (cur_113_16 == null) { S.m := S.m[k := r_112_23] }\n"
+        "      res := cur_113_16 != null ? cur_113_16 : r_112_23  // ?: created\n"
+        "    }\n"
         "  }\n"
     )
 
@@ -222,8 +227,13 @@ MUTANTS = {
          "    exc := true                                      // createReqShield(joinPoint) @112:23 threw\n"
          "  } else {\n" +
          fresh("r_112_23", "@112:23", 4) +
-         "    S.m := S.m[k := r_112_23]                        // action: reqShieldMap[...] = created @113:9 (put)\n"
-         "    res := r_112_23\n"
+         "    var cond_113_22: Bool                            // getTargetMethod(joinPoint) @113:22 runs after the fresh call\n"
+         "    if (cond_113_22) {                               // and may throw (question 5 of DESIGN-B.md 9.4)\n"
+         "      exc := true                                    // the created object is dropped\n"
+         "    } else {\n"
+         "      S.m := S.m[k := r_112_23]                      // action: reqShieldMap[...] = created @113:9 (put)\n"
+         "      res := r_112_23\n"
+         "    }\n"
          "  }\n"),
     ]),
     # Kotlin M3 (getOrPut), see get_or_put.
@@ -262,9 +272,14 @@ MUTANTS = {
          "    exc := true                                      // createReqShield(joinPoint) @112:23 threw\n"
          "  } else {\n" +
          fresh("r_112_23", "@112:23", 4) +
-         "    var cur_113_9: Ref := has(S, k) ? S.m[k] : null   // action: putIfAbsent @113:9 (result unused)\n"
-         "    if (cur_113_9 == null) { S.m := S.m[k := r_112_23] }\n"
-         "    res := r_112_23                                  // return created @114:16\n"
+         "    var cond_113_34: Bool                            // getTargetMethod(joinPoint) @113:34 runs after the fresh call\n"
+         "    if (cond_113_34) {                               // and may throw (question 5 of DESIGN-B.md 9.4)\n"
+         "      exc := true                                    // the created object is dropped\n"
+         "    } else {\n"
+         "      var cur_113_9: Ref := has(S, k) ? S.m[k] : null // action: putIfAbsent @113:9 (result unused)\n"
+         "      if (cur_113_9 == null) { S.m := S.m[k := r_112_23] }\n"
+         "      res := r_112_23                                // return created @114:16\n"
+         "    }\n"
          "  }\n"),
     ]),
     # Design alternative (v0 racy read: an arbitrary value) on the fast-path control R2. Expected pass; a failure
