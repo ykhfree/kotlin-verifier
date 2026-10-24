@@ -1,0 +1,65 @@
+> Task :core-kotlin-coroutine:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :support:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core-kotlin-coroutine:processResources NO-SOURCE
+> Task :core-kotlin-coroutine:processTestFixturesResources NO-SOURCE
+> Task :support:processResources NO-SOURCE
+> Task :core-kotlin-coroutine:processTestResources NO-SOURCE
+> Task :support:processTestFixturesResources NO-SOURCE
+
+> Task :support:compileKotlin
+w: Language version 2.0 is deprecated and its support will be removed in a future version of Kotlin. Update the version to 2.2.
+
+> Task :support:compileJava NO-SOURCE
+> Task :support:classes UP-TO-DATE
+> Task :support:jar
+
+> Task :support:compileTestFixturesKotlin
+w: Language version 2.0 is deprecated and its support will be removed in a future version of Kotlin. Update the version to 2.2.
+
+> Task :support:compileTestFixturesJava NO-SOURCE
+> Task :support:testFixturesClasses UP-TO-DATE
+> Task :support:testFixturesJar
+
+> Task :core-kotlin-coroutine:compileKotlin
+w: Language version 2.0 is deprecated and its support will be removed in a future version of Kotlin. Update the version to 2.2.
+
+> Task :core-kotlin-coroutine:compileJava NO-SOURCE
+> Task :core-kotlin-coroutine:classes UP-TO-DATE
+> Task :core-kotlin-coroutine:jar
+> Task :core-kotlin-coroutine:compileTestFixturesKotlin NO-SOURCE
+> Task :core-kotlin-coroutine:compileTestFixturesJava NO-SOURCE
+> Task :core-kotlin-coroutine:testFixturesClasses UP-TO-DATE
+> Task :core-kotlin-coroutine:testFixturesJar
+
+> Task :core-kotlin-coroutine:compileTestKotlin
+w: Language version 2.0 is deprecated and its support will be removed in a future version of Kotlin. Update the version to 2.2.
+
+> Task :core-kotlin-coroutine:compileTestJava NO-SOURCE
+> Task :core-kotlin-coroutine:testClasses UP-TO-DATE
+
+> Task :core-kotlin-coroutine:test
+
+KeyLocalLockTest > should not let a stale token release the lock of the next owner() FAILED
+    org.opentest4j.AssertionFailedError at KeyLocalLockTest.kt:97
+
+KeyLocalLockTest > should reject an unlock presenting a token of another owner() FAILED
+    org.opentest4j.AssertionFailedError at KeyLocalLockTest.kt:79
+
+> Task :core-kotlin-coroutine:test FAILED
+> Task :core-kotlin-coroutine:jacocoTestReport
+
+[Incubating] Problems report is available at: file://build/reports/problems/problems-report.html
+10 actionable tasks: 10 executed
+
+14 tests completed, 2 failed
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':core-kotlin-coroutine:test'.
+> There were failing tests. See the report at: file://core-kotlin-coroutine/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to get full insights.
+
+BUILD FAILED in 18s

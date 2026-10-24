@@ -1,0 +1,143 @@
+$ aicode.py --results aicode/dryrun sandbox D1 --kind template --force
+sandbox D1 (template): <work>/sandboxes/D1
+prompt (also in <work>/state/D1/prompt.txt):
+You are implementing one Kotlin class for a team. Work only inside the directory <work>/sandboxes/D1. Do not read, list or
+search any file outside it. Do not use the web, memory tools, or other agents.
+
+Read SPEC.md (the team's specification, copied from the project documentation), KeyLock.kt (the interface you
+implement), HELPERS.md (functions and constants you may call) and RULES.md (rules every implementation must follow).
+Write KeyLocalLock.kt in this directory: package com.linecorp.cse.reqshield.kotlin.coroutine,
+class KeyLocalLock(private val lockTimeoutMillis: Long) : KeyLock.
+
+Check that it compiles with ./compile.sh. It only compiles; it does not test or verify. You may call it at most
+10 times. When you are done, report: whether the final file compiles, and every design decision you made that the
+specification did not settle.
+(exit 0)
+$ aicode.py --results aicode/dryrun sandbox D2 --kind template --force
+sandbox D2 (template): <work>/sandboxes/D2
+prompt (also in <work>/state/D2/prompt.txt):
+You are implementing one Kotlin class for a team. Work only inside the directory <work>/sandboxes/D2. Do not read, list or
+search any file outside it. Do not use the web, memory tools, or other agents.
+
+Read SPEC.md (the team's specification, copied from the project documentation), KeyLock.kt (the interface you
+implement), HELPERS.md (functions and constants you may call) and RULES.md (rules every implementation must follow).
+Write KeyLocalLock.kt in this directory: package com.linecorp.cse.reqshield.kotlin.coroutine,
+class KeyLocalLock(private val lockTimeoutMillis: Long) : KeyLock.
+
+Check that it compiles with ./compile.sh. It only compiles; it does not test or verify. You may call it at most
+10 times. When you are done, report: whether the final file compiles, and every design decision you made that the
+specification did not settle.
+(exit 0)
+$ sandboxes/D1/compile.sh
+compile.sh: KeyLocalLock.kt compiles (call 1 of 10 used)
+(exit 0)
+$ sandboxes/D2/compile.sh
+compile.sh: KeyLocalLock.kt compiles (call 1 of 10 used)
+(exit 0)
+$ aicode.py --results aicode/dryrun collect D1 --model dryrun (original) --report <work>/D1-report.txt
+D1: model dryrun (original), compiles, 1 compile.sh call(s)
+(exit 0)
+$ aicode.py --results aicode/dryrun collect D2 --model dryrun (SB1) --report <work>/D2-report.txt
+D2: model dryrun (SB1), compiles, 1 compile.sh call(s)
+(exit 0)
+$ aicode.py --results aicode/dryrun similarity D1 D2
+D1: similarity 1.0000  FLAG (>= 0.9)
+D2: similarity 0.9964  FLAG (>= 0.9)
+(exit 0)
+$ aicode.py --results aicode/dryrun tests D1
+D1: 14/14 tests passed in 18.4 s
+(exit 0)
+$ aicode.py --results aicode/dryrun tests D2
+D2: 12/14 tests passed in 18.5 s
+  FAILED should not let a stale token release the lock of the next owner: org.opentest4j.AssertionFailedError: expected: <false> but was: <true>
+  FAILED should reject an unlock presenting a token of another owner: org.opentest4j.AssertionFailedError: A foreign token must not release the lock ==> expected: <false> but was: <true>
+(exit 0)
+$ aicode.py --results aicode/dryrun tool D1
+D1: PROVEN in 6.2 s, 0 adaptation(s)
+(exit 0)
+$ aicode.py --results aicode/dryrun tool D2
+D2: FAILED unLock (property) in 6.2 s, 0 adaptation(s)
+(exit 0)
+$ aicode.py --results aicode/dryrun hole-task D1
+aicode.py: D1: the tool verdict is PROVEN, not FAILED: no hole task (AI-CODE.md 6.3)
+(exit 1)
+$ aicode.py --results aicode/dryrun hole-task D2 --force
+hole task D2: <work>/holes/D2/task
+(exit 0)
+$ holes/D2/task/verify.sh   (the hole unchanged)
+kv: hole check OK: <work>/holes/D2/harness/attempts/1/keylocallock.common.kv changes only the hole MI_INV of <work>/holes/D2/harness/original/keylocallock.common.kv
+com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion (keylocallock.coroutine.kv)    module: FAILED (Silicon 4.62 s)
+  action tryLock  KeyLocalLock.kt:155:9   PROVEN
+  action unLock   KeyLocalLock.kt:209:9   FAILED (property)
+      Postcondition of unLock might not hold: sidecar ends_only_if P3a keylocallock.common.kv:80:3 (incomplete quantifiers)
+  action sweep    KeyLocalLock.kt:97:37   PROVEN
+  init PROVEN · lemma P3c PROVEN · probe PROVEN
+Spec to review: ends_only_if tryLock P3a, unLock P3a, sweep P3a; unbacked_only_if tryLock P3b; issue tryLock
+Assumptions (not checked by Silicon):
+  Long unbounded: KeyLocalLock.kt:80:52, KeyLocalLock.kt:172:42, KeyLocalLock.kt:188:54
+  Free values:
+    tryLock: k <- completeKey 149:9 (action key), now <- now 150:9 (captured), timeout <- this.lockTimeoutMillis 172:48 (instance val lockTimeoutMillis), rej <- LocalLockLimit.rejectsNewEntry(...) 181:21 (trusted call LocalLockLimit.rejectsNewEntry), limit <- LocalLockLimit.rejectsNewEntry(...) 181:21 (trusted call LocalLockLimit.rejectsNewEntry)
+    unLock: k <- completeKey 203:9 (action key), t <- token 201:9 (captured)
+    sweep: k <- key 96:56 (action key), now <- now 90:33 (captured)
+  Trusted models: jdk.ConcurrentHashMap.compute, jdk.ConcurrentHashMap.mappingCount, jdk.ConcurrentHashMap.racyRead, jdk.Semaphore, jdk.AtomicBoolean, jdk.AtomicLong, jdk.AtomicCell, jdk.System.currentTimeMillis, slf4j.Logger
+  Trusted project functions: nowToEpochTime (reviewed: ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()), rejectsNewEntry (reviewed: ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit)
+  Init: the ghost records are allocated by an inhale with no record issued (trusted)
+Racy reads (modeled as arbitrary values): lockMap.keys 96:33
+Not modeled (no module-state access): property log 37:1, class KeyLocalLock 39:1, constructor of KeyLocalLock 39:19, constructor of Companion 68:5, property monitorJob 77:9, fun ensureMonitorStarted 82:9, fun stopMonitoring 129:9, property job 137:5, property coroutineContext 138:5, init 141:5, fun tryLock 145:5, fun unLock 198:5, fun cancel 230:5
+Unsupported: none
+Branch reachability (INFO, not part of any verdict; DESIGN-v0.md 5.4): 24 branch(es) probed, 4 unreachable
+  INFO unreachable branch: tryLock KeyLocalLock.kt:161:49 compareAndSet fails
+  INFO unreachable branch: unLock KeyLocalLock.kt:213:17 compareAndSet fails
+  INFO unreachable branch: unLock KeyLocalLock.kt:213:13 if-else
+  INFO unreachable branch: sweep KeyLocalLock.kt:104:49 compareAndSet fails
+Note: init and probe do not check inductiveness; the action methods do (DESIGN-v0.md 5.4).
+Viper program: <work>/holes/D2/harness/attempts/1/model.vpr
+(call 1 of 20 used)
+(exit 1)
+$ aicode.py --results aicode/dryrun hole-outcome D2
+D2: hole FAILED after 1 call(s); last call FAILED; last sub-status property
+(exit 0)
+$ aicode.py --results aicode/dryrun summary
+# AI가 쓴 코드: 집계 (AI-CODE.md 7)
+
+`translator/scripts/aicode.py summary`가 `results.jsonl`에서 만든다. 손으로 고치지 않는다.
+
+## 구현별
+
+| ID | 모델 | 종류 | 컴파일 | compile.sh 호출 | 유사도 | 테스트 | 도구 (처음) | 묶기 이름 바꿈 | hole | 최종 | 판정자 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| D1 | dryrun (original) | template | 예 | 1 | 1.000 ⚑ | 14/14 | PROVEN | 0 | - | PROVEN | - |
+| D2 | dryrun (SB1) | template | 예 | 1 | 0.996 ⚑ | 12/14 | FAILED (property) | 0 | FAILED, 1 call(s) | FAILED (property) | - |
+
+## 오염 검사 (4.3)
+
+- 유사도 분포: 0.996, 1.000
+- 0.9 이상: 2개 (D1, D2)
+
+## 7.1 범위
+
+| 항목 | 본 실험 (template) | 범위 실험 (free) |
+|---|---|---|
+| 사산 (컴파일 실패) | 0개 (-) | 0개 (-) |
+| 묶기 실패 | 없음 | 없음 |
+| 범위 밖 (INCOMPLETE) | 없음 | 없음 |
+
+### 자유 구현
+
+| ID | 컴파일 | 묶기에서 깨지는 것 | 이름만 바꾸면 돌아가는가 |
+|---|---|---|---|
+
+## 7.2 정확성 (본 실험 중 범위 안)
+
+칸의 ID는 그 구현이다. FAILED (invariant only)는 hole을 다시 써도 증명되지 않은 것이다. FAILED (pending)는 hole 단계가 남은 것이다.
+
+| 정답 \ 도구 최종 | PROVEN | FAILED (property) | FAILED (invariant only) | FAILED (pending) |
+|---|---|---|---|---|
+| 결함 (sidecar 성질) | - | - | - | - |
+| 결함 (sidecar 밖) | - | - | - | - |
+| 정상 | - | - | - | - |
+| 미결 | - | - | - | - |
+| 판정 대기 | D1 | D2 | - | - |
+
+범위 밖이거나 대기 중인 본 실험 구현: 없음
+(exit 0)
