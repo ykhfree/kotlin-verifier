@@ -88,6 +88,8 @@ tasks.test {
     systemProperty("kv.spikeDir", rootProject.layout.projectDirectory.dir("../spike").asFile.absolutePath)
     // The M8 mutant script (scripts/mutants.py), tested with a fake kv.
     systemProperty("kv.scriptsDir", layout.projectDirectory.dir("scripts").asFile.absolutePath)
+    // The Kotlin compiler's own classpath: the sandbox compile.sh of scripts/aicode.py runs it as a plain kotlinc.
+    systemProperty("kv.compilerClasspath", configurations.runtimeClasspath.get().asPath)
 }
 
 // `./gradlew discoverReqShield`, `resolveReqShield`, `lowerReqShield`, `emitReqShield` and `verifyReqShield`: run
@@ -272,4 +274,37 @@ val mechanicalMutants by tasks.registering(Exec::class) {
             ) + (modules?.let { listOf("--modules", it) } ?: emptyList())
         },
     )
+}
+
+// `./gradlew aicodeEnv`: the AI-written-code measurement of ../AI-CODE.md. Writes build/kv/aicode-env.json, which
+// scripts/aicode.py reads: the installed kv, the req-shield checkout, the KeyLocalLock compile classpath and flags, the
+// compiler's own classpath (for the sandbox compile.sh), the specs, AI-CODE.md, the results directory (../aicode) and
+// the work directory for sandboxes and copies (-PaicodeWork=DIR, default build/kv/aicode-work).
+val aicodeEnv by tasks.registering {
+    group = "kv"
+    description = "Writes build/kv/aicode-env.json for scripts/aicode.py (AI-CODE.md)."
+    dependsOn(tasks.installDist)
+    val env = layout.buildDirectory.file("kv/aicode-env.json")
+    val work = providers.gradleProperty("aicodeWork").getOrElse(layout.buildDirectory.dir("kv/aicode-work").get().asFile.path)
+    outputs.upToDateWhen { false }
+    doLast {
+        val values =
+            mapOf(
+                "kv" to layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path,
+                "kvInstall" to layout.buildDirectory.dir("install/kv").get().asFile.path,
+                "reqShield" to reqShieldDir,
+                "classpath" to reqShieldClasspath.asPath,
+                "kotlinc" to reqShieldKotlincArgs,
+                "compilerClasspath" to configurations.runtimeClasspath.get().asPath,
+                "specs" to layout.projectDirectory.dir("../specs/reqshield").asFile.canonicalPath,
+                "aiCode" to layout.projectDirectory.file("../AI-CODE.md").asFile.canonicalPath,
+                "results" to layout.projectDirectory.dir("../aicode").asFile.canonicalPath,
+                "work" to File(work).absolutePath,
+            )
+        env.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(values)) + "\n")
+        }
+        println("wrote ${env.get().asFile.path}")
+    }
 }
