@@ -1,0 +1,19 @@
+com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion (keylocallock.coroutine.kv)    module: ERROR
+  ERROR: the KVIR violates W1-W14 (a tool defect): W5 at root/core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt:126:51: let info__118: RefT(cls=LockInfo, nullable=true) is not assignable to RefT(cls=LockInfo, nullable=false); W6 at root/core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt:120:22: reads expiresAt of an object that is neither the entry nor created by the action; this run proves nothing
+  action tryLock  KeyLocalLock.kt:48:9   UNSUPPORTED
+      UNSUPPORTED local alias entry in action tryLock#48 at KeyLocalLock.kt:55:17: a second name for a module object is not modeled; use the entry or the new object directly
+Spec to review: ends_only_if tryLock P3a, unLock P3a, sweep P3a; unbacked_only_if tryLock P3b; issue tryLock
+Assumptions (not checked by Silicon):
+  Long unbounded: KeyLocalLock.kt:115:51
+  Free values:
+    tryLock: k <- lockKeyOf(key, lockType) 48:25 (action key), now <- now 46:9 (captured), timeout <- this.lockTimeoutMillis 40:5 (instance val lockTimeoutMillis), rej <- LocalLockLimit.rejectsNewEntry(...) 49:37 (trusted call LocalLockLimit.rejectsNewEntry), limit <- LocalLockLimit.rejectsNewEntry(...) 49:37 (trusted call LocalLockLimit.rejectsNewEntry)
+    unLock: k <- lockKeyOf(key, lockType) 80:25 (action key), t <- token 77:9 (captured)
+    sweep: k <- key 123:18 (action key), now <- now 124:17 (captured)
+  Trusted models: jdk.ConcurrentHashMap.compute, jdk.ConcurrentHashMap.mappingCount, jdk.ConcurrentHashMap.racyRead, jdk.Semaphore, jdk.AtomicBoolean, jdk.AtomicLong, jdk.AtomicCell, jdk.System.currentTimeMillis, slf4j.Logger, kotlinx.Semaphore
+  Trusted project functions: nowToEpochTime (reviewed: ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()), rejectsNewEntry (reviewed: ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit)
+  Init: the ghost records are allocated by an inhale with no record issued (trusted)
+Racy reads (modeled as arbitrary values): lockMap.keys 123:25
+Not modeled (no module-state access): class KeyLocalLock 39:1, constructor of KeyLocalLock 39:19, fun tryLock 42:5, fun unLock 74:5, constructor of Companion 101:5, init 105:9, fun removeExpiredEntries 122:9
+Unsupported: tryLock KeyLocalLock.kt:48:9
+Note: init and probe do not check inductiveness; the action methods do (DESIGN-v0.md 5.4).
+Viper program: out/model.vpr
