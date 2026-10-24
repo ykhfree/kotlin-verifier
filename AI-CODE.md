@@ -182,3 +182,5 @@ req-shield는 공개 저장소다. 그래서 원래 구현이 학습 자료에 �
   2. 4.2 자유 프롬프트: RULES.md 언급을 뺀 뒤 "KeyLock.kt (...) and HELPERS.md (...)"로 문법을 맞춘다.
   3. 단위 테스트는 `--shim`으로 돌린다. 이 옵션은 테스트 소스에 아무 일도 하지 않는 확장 함수 `stopMonitoring()`, `cancel()`을 넣는다. `KeyLocalLockTest`가 이 두 멤버를 부르는데 명세 묶음에는 없기 때문이다 (측정: 두 멤버가 없으면 14개 모두 컴파일 실패). 위험: AI의 monitor가 테스트 사이에 멈추지 않아 드물게 결과가 흔들릴 수 있다. 자유 구현은 리플렉션으로 `lockMap`을 읽는 테스트(405행)에서 실패할 수 있다.
   4. hole 작성자용 TASK.md: "FAILED (property)"는 현재 hole이 허용하는 상태에서의 실패이고, 그 상태를 배제하는 hole이면 사라질 수 있다고 적는다.
+- 2026-10-24, 도구 1차 결과 뒤 (판정 전): 6.1의 묶기 수정에 `class NAME KNAME`을 더했다 (sidecar의 `class LockInfo = X`의 Kotlin 이름만 바꿈). 이유: RULES.md가 `LockInfo`의 위치(클래스 안, companion 안, 파일 최상위)를 정하지 않았다. 그래서 4개 구현(T-haiku-1, T-haiku-3, T-haiku-4, T-sonnet-4)의 묶기가 실패했다. 이것은 성질이나 조건이 아니라 묶기용 이름이므로 6.1의 취지 안이다. 다만 미리 등록한 목록에는 없었으므로 결과 뒤 변경으로 적는다. 바꾼 구현은 `aicode/impl/<ID>/bindings.txt`에 있고, `binding_adaptations`로 센다.
+

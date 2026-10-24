@@ -1,0 +1,3 @@
+
+--- stderr ---
+spec/keylocallock.common.kv:17:30: error[kotlin-type]: field permits: Semaphore needs a Kotlin java.util.concurrent.Semaphore, but 'semaphore' is kotlinx.coroutines.sync.Semaphore

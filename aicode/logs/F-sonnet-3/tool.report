@@ -1,0 +1,6 @@
+
+--- stderr ---
+spec/keylocallock.common.kv:16:18: error[unresolved]: no class 'KeyLocalLock.LockInfo' in the module object, its outer class, package com.linecorp.cse.reqshield.kotlin.coroutine or the imports of KeyLocalLock.kt
+spec/keylocallock.coroutine.kv:8:33: error[unresolved]: no property 'tokenSequence' in the module object, its outer class or package com.linecorp.cse.reqshield.kotlin.coroutine
+spec/keylocallock.common.kv:13:33: error[unresolved]: no property 'lockMap' in the module object, its outer class or package com.linecorp.cse.reqshield.kotlin.coroutine
+spec/keylocallock.common.kv:85:30: error[ambiguous-selector]: compute in KeyLocalLock.Companion matches 0 action calls []; it must match exactly one
