@@ -241,3 +241,9 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 1. 만료 경계는 엄격(`>`)을 유지한다.
 2. 2차 측정: 도구에 `Int.toLong`과 kotlinx `Semaphore` 모델을 더하고, 같은 12개로 도구만 다시 돌린다.
 - 계획과 예측 6개: `AI-CODE.md` 11절 (결과 전에 등록).
+- 2차 결과 (`7c65fd3` ~ `03ebe93`, `AI-CODE.md` 12절):
+  - 판정한 action이 11개에서 15개로 늘었다: 검출 10, 맞은 PROVEN 5, 놓침 0, action 단위 오경보 0.
+  - 의무 단위의 거짓 이유가 2개 있다 (T-haiku-2: compute 밖 토큰 생성 때문).
+  - ERROR 3개는 기존 helper inlining 결함이다 (W5/W6가 잡음).
+  - 예측 1은 틀렸다 (Semaphore를 만드는 모양이 숨은 원인). 예측 2-6은 맞았다.
+  - 메인 세션 확인: 테스트 429개, gate 4개, 변이 63회 불일치 0, 보고서 원문 집계.
