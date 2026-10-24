@@ -137,7 +137,11 @@ method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) re
   ensures res != NULL && tok(res).gBacked ==> has(S, k) && S.m[k].token == res
   // progress_free, progress_live (checked by probe): a free key is acquired, a live entry is not taken.
   ensures !old(has(S, k)) && !rej ==> res != NULL && tok(res).gBacked
-  ensures old(has(S, k)) && now <= old(S.m[k].expiresAt) ==> res == NULL
+  ensures old(has(S, k)) && old(S.m[k].isHeld) && now <= old(S.m[k].expiresAt) ==> res == NULL
+  // cap_unbacked: at the cap a new key gets an unbacked token and no map entry (README 139).
+  ensures !old(has(S, k)) && rej ==> res != NULL && !tok(res).gBacked && !has(S, k)
+  // expired_takeover: tryLock takes over an expired entry at once.
+  ensures old(has(S, k)) && now > old(S.m[k].expiresAt) ==> res != NULL && tok(res).gBacked
 {
   var existing__155: Ref := has(S, k) ? S.m[k] : null
   var pre_tok: Int := existing__155 != null ? existing__155.token : NULL // ghost: owner token before the action
