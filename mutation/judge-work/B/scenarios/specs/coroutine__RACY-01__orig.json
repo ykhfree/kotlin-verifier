@@ -1,0 +1,34 @@
+{
+ "name": "coroutine__RACY-01__orig",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/keylocallock.coroutine.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rB",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rA",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rB == 1 && rA == NULL"
+  },
+  {
+   "assert": "(forall qt: Int :: { tok(qt).gHeld } old[L2](tok(qt).gIssued) && old[L2](tok(qt).gBacked) && old[L2](tok(qt).gHeld) && !tok(qt).gHeld ==> (1000 > old[L2](tok(qt).gLease)))"
+  },
+  {
+   "assert": "(old[L2](has(S, k)) && 1000 <= old[L2](S.m[k].expiresAt) ==> rA == NULL)"
+  }
+ ],
+ "doc": "same inputs on the original code"
+}

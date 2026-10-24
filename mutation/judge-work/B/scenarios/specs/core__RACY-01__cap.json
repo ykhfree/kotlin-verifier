@@ -1,0 +1,44 @@
+{
+ "name": "core__RACY-01__cap",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.core/verify/RACY-01.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rB",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0",
+   "racy": {
+    "racy_1__173": "false"
+   }
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rA",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "true",
+   "limit": "5",
+   "racy": {
+    "racy_1__173": "false"
+   },
+   "doc": "A at the cap, stale read"
+  },
+  {
+   "assert": "rB == 1 && rA == 2"
+  },
+  {
+   "assert": "rA != NULL && !tok(rA).gBacked && old[L2](has(S, k))"
+  },
+  {
+   "assert": "old[L2](tok(rB).gIssued) && old[L2](tok(rB).gBacked) && old[L2](tok(rB).gHeld) && !tok(rB).gHeld && !(1000 > old[L2](tok(rB).gLease))"
+  },
+  {
+   "assert": "!has(S, k)"
+  }
+ ],
+ "doc": "at the cap A's stale tryLock removes B's live entry and returns an unbacked token"
+}

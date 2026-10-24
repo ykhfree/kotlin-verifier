@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.linecorp.cse.reqshield.KeyLocalLockTest" tests="20" skipped="0" failures="1" errors="0" timestamp="2026-10-24T04:19:45.480Z" hostname="yang-gaeng-iui-Macmini.local" time="24.113">
+  <properties/>
+  <testcase name="should cleanup multiple expired held locks without memory leak()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="1.951"/>
+  <testcase name="testLockCleanupEfficiency()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="3.108"/>
+  <testcase name="should handle concurrent operations from multiple instances safely()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.065"/>
+  <testcase name="expired-lock monitor removes entries from the shared lock map without any tryLock or unLock call()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.96"/>
+  <testcase name="should prevent concurrent lock acquisition after over-release attempt()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.006"/>
+  <testcase name="should not over-release semaphore on multiple unlock calls()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.003"/>
+  <testcase name="unLock with a foreign token returns false and keeps the lock held()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.001"/>
+  <testcase name="should share global lockMap across multiple instances()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.001"/>
+  <testcase name="testLockExpiration()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="4.504"/>
+  <testcase name="should cleanup expired lock even when unlock is never called()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="2.116"/>
+  <testcase name="testSharedSchedulerPerformance()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.114"/>
+  <testcase name="testConcurrencyWithOneKey()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="1.194"/>
+  <testcase name="testConcurrencyWithTwoKey()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="1.185"/>
+  <testcase name="at the cap tryLock still grants a permit but stops adding map entries()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.003"/>
+  <testcase name="should maintain request collapsing across multiple instances()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.057"/>
+  <testcase name="should allow different instances to unlock the same key via global lockMap()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.0"/>
+  <testcase name="should not remove lock that was just acquired during cleanup window()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="7.07"/>
+  <testcase name="should verify compute atomicity prevents TOCTOU race condition during concurrent cleanup and acquisition()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="1.432"/>
+  <testcase name="unLock removes the map entry right away instead of leaving it until expiry()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.002"/>
+  <testcase name="should not let an expired holder release the lock of the new holder()" classname="com.linecorp.cse.reqshield.KeyLocalLockTest" time="0.326">
+    <failure message="org.opentest4j.AssertionFailedError: B should take over the expired lock ==&gt; expected: not &lt;null&gt;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: B should take over the expired lock ==&gt; expected: not &lt;null&gt;
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:152)
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at app//org.junit.jupiter.api.AssertNotNull.failNull(AssertNotNull.java:49)
+	at app//org.junit.jupiter.api.AssertNotNull.assertNotNull(AssertNotNull.java:35)
+	at app//org.junit.jupiter.api.Assertions.assertNotNull(Assertions.java:312)
+	at app//kotlin.test.junit5.JUnit5Asserter.assertNotNull(JUnitSupport.kt:48)
+	at app//kotlin.test.AssertionsKt__AssertionsKt.assertNotNull(Assertions.kt:279)
+	at app//kotlin.test.AssertionsKt.assertNotNull(Unknown Source)
+	at app//com.linecorp.cse.reqshield.KeyLocalLockTest.should not let an expired holder release the lock of the new holder(KeyLocalLockTest.kt:151)
+	at java.base@21.0.10/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base@21.0.10/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base@21.0.10/java.util.ArrayList.forEach(ArrayList.java:1596)
+</failure>
+  </testcase>
+  <system-out><![CDATA[Successful operations: 37/50 total attempts
+Initial threads: 11
+Current threads: 11
+Thread increase: 0
+pool-4-thread-1 acquired the lock
+pool-4-thread-2 could not acquire the lock and is terminating
+pool-4-thread-3 could not acquire the lock and is terminating
+pool-4-thread-4 could not acquire the lock and is terminating
+pool-4-thread-5 could not acquire the lock and is terminating
+pool-4-thread-7 could not acquire the lock and is terminating
+pool-4-thread-9 could not acquire the lock and is terminating
+pool-4-thread-12 could not acquire the lock and is terminating
+pool-4-thread-6 could not acquire the lock and is terminating
+pool-4-thread-16 could not acquire the lock and is terminating
+pool-4-thread-15 could not acquire the lock and is terminating
+pool-4-thread-18 could not acquire the lock and is terminating
+pool-4-thread-14 could not acquire the lock and is terminating
+pool-4-thread-20 could not acquire the lock and is terminating
+pool-4-thread-13 could not acquire the lock and is terminating
+pool-4-thread-11 could not acquire the lock and is terminating
+pool-4-thread-10 could not acquire the lock and is terminating
+pool-4-thread-8 could not acquire the lock and is terminating
+pool-4-thread-19 could not acquire the lock and is terminating
+pool-4-thread-17 could not acquire the lock and is terminating
+pool-4-thread-1 released the lock
+pool-5-thread-1 acquired the lock
+pool-5-thread-2 acquired the lock
+pool-5-thread-4 could not acquire the lock and is terminating
+pool-5-thread-3 could not acquire the lock and is terminating
+pool-5-thread-7 could not acquire the lock and is terminating
+pool-5-thread-6 could not acquire the lock and is terminating
+pool-5-thread-5 could not acquire the lock and is terminating
+pool-5-thread-10 could not acquire the lock and is terminating
+pool-5-thread-12 could not acquire the lock and is terminating
+pool-5-thread-9 could not acquire the lock and is terminating
+pool-5-thread-8 could not acquire the lock and is terminating
+pool-5-thread-14 could not acquire the lock and is terminating
+pool-5-thread-16 could not acquire the lock and is terminating
+pool-5-thread-13 could not acquire the lock and is terminating
+pool-5-thread-18 could not acquire the lock and is terminating
+pool-5-thread-11 could not acquire the lock and is terminating
+pool-5-thread-20 could not acquire the lock and is terminating
+pool-5-thread-19 could not acquire the lock and is terminating
+pool-5-thread-17 could not acquire the lock and is terminating
+pool-5-thread-15 could not acquire the lock and is terminating
+pool-5-thread-2 released the lock
+pool-5-thread-1 released the lock
+13:20:00.700 [Test worker] WARN com.linecorp.cse.reqshield.support.config.LocalLockLimit -- Local lock map is at its cap of 1 entries, so new keys are no longer collapsed (1 refusals so far). Raise req-shield.lock.max-entries or shorten lockTimeoutMillis if this is unexpected.
+Successful cycles: 10, Lock removed while held: 0
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

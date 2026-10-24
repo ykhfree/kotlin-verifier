@@ -1,0 +1,64 @@
+{
+ "name": "coroutine__RACY-03__mut",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.coroutine/verify/RACY-03.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rB",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0",
+   "racy": {
+    "racy_3__155": "false"
+   },
+   "doc": "B read its clock at 0 and stalled"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rA",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0",
+   "racy": {
+    "racy_3__155": "false"
+   },
+   "doc": "A: stale containsKey"
+  },
+  {
+   "assert": "rB == 1 && rA == NULL"
+  },
+  {
+   "assert": "(forall qt: Int :: { tok(qt).gHeld } old[L2](tok(qt).gIssued) && old[L2](tok(qt).gBacked) && old[L2](tok(qt).gHeld) && !tok(qt).gHeld ==> (1000 > old[L2](tok(qt).gLease)))"
+  },
+  {
+   "assert": "(old[L2](has(S, k)) && 1000 <= old[L2](S.m[k].expiresAt) ==> rA == NULL)"
+  },
+  {
+   "assert": "has(S, k) && !S.m[k].isHeld && S.m[k].token == NULL && S.m[k].permits == 1"
+  },
+  {
+   "op": "tryLock",
+   "label": "L3",
+   "out": "rC",
+   "now": "50",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0",
+   "racy": {
+    "racy_3__155": "true"
+   },
+   "doc": "C read its clock at 50, containsKey after B's compute"
+  },
+  {
+   "assert": "rC == 2"
+  },
+  {
+   "assert": "old[L3](has(S, k)) && 50 <= old[L3](S.m[k].expiresAt) && rC != NULL"
+  }
+ ],
+ "doc": "A's stale tryLock frees an expired entry without taking it; C with an older clock takes it"
+}

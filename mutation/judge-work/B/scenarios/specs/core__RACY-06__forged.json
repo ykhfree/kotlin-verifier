@@ -1,0 +1,46 @@
+{
+ "name": "core__RACY-06__forged",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.core/verify/RACY-06.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rY",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0",
+   "doc": "Y acquires after X's containsKey"
+  },
+  {
+   "op": "unLock",
+   "label": "L2",
+   "out": "rX",
+   "t": "1",
+   "racy": {
+    "racy_6__229": "false"
+   },
+   "doc": "X: containsKey ran before Y's compute"
+  },
+  {
+   "assert": "rY == 1 && !rX"
+  },
+  {
+   "assert": "old[L2](has(S, k)) && old[L2](S.m[k].token) == 1"
+  },
+  {
+   "op": "unLock",
+   "label": "L3",
+   "out": "rY2",
+   "t": "rY",
+   "racy": {
+    "racy_6__229": "true"
+   },
+   "doc": "Y releases its own token"
+  },
+  {
+   "assert": "rY2"
+  }
+ ],
+ "doc": "a caller presents a token that is issued after its containsKey"
+}

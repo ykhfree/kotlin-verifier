@@ -1,0 +1,28 @@
+{
+ "name": "control__RACY-01__orig_viol",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/keylocallock.core.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rB",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rA",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "old[L2](tok(rB).gIssued) && old[L2](tok(rB).gBacked) && old[L2](tok(rB).gHeld) && !tok(rB).gHeld && !(1000 > old[L2](tok(rB).gLease))"
+  }
+ ],
+ "doc": "same inputs on the original code"
+}

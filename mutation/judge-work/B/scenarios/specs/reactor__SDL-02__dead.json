@@ -1,0 +1,78 @@
+{
+ "name": "reactor__SDL-02__dead",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.reactor/verify/SDL-02.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rB",
+   "now": "200",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rB == NULL"
+  },
+  {
+   "assert": "(forall qt: Int :: { tok(qt).gHeld } old[L2](tok(qt).gIssued) && old[L2](tok(qt).gBacked) && old[L2](tok(qt).gHeld) && !tok(qt).gHeld ==> (200 > old[L2](tok(qt).gLease)))"
+  },
+  {
+   "assert": "has(S, k) && !S.m[k].isHeld && S.m[k].token == NULL && S.m[k].permits == 0"
+  },
+  {
+   "op": "tryLock",
+   "label": "L3",
+   "out": "rC",
+   "now": "300",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rC == NULL"
+  },
+  {
+   "assert": "(old[L3](has(S, k)) && 300 <= old[L3](S.m[k].expiresAt) ==> rC == NULL)"
+  },
+  {
+   "op": "unLock",
+   "label": "L4",
+   "out": "ok",
+   "t": "rA"
+  },
+  {
+   "assert": "!ok"
+  },
+  {
+   "op": "sweep",
+   "label": "L5",
+   "now": "400"
+  },
+  {
+   "assert": "!has(S, k)"
+  },
+  {
+   "op": "tryLock",
+   "label": "L6",
+   "out": "rD",
+   "now": "401",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rD == 2 && tok(rD).gBacked"
+  }
+ ],
+ "doc": "a takeover leaves a dead entry; the sweep drops it; the next tryLock works"
+}

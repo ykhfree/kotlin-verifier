@@ -1,0 +1,42 @@
+{
+ "name": "core__RACY-01__live",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.core/verify/RACY-01.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rB",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0",
+   "racy": {
+    "racy_1__173": "false"
+   },
+   "doc": "B: no entry at B's containsKey, B creates the entry"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rA",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0",
+   "racy": {
+    "racy_1__173": "false"
+   },
+   "doc": "A: containsKey ran before B's compute (stale false)"
+  },
+  {
+   "assert": "rB == 1 && rA == 2"
+  },
+  {
+   "assert": "old[L2](tok(rB).gIssued) && old[L2](tok(rB).gBacked) && old[L2](tok(rB).gHeld) && !tok(rB).gHeld && !(1000 > old[L2](tok(rB).gLease))"
+  },
+  {
+   "assert": "old[L2](has(S, k)) && 1000 <= old[L2](S.m[k].expiresAt) && rA != NULL"
+  }
+ ],
+ "doc": "B holds a live lock; A's stale tryLock replaces B's entry"
+}

@@ -1,0 +1,39 @@
+{
+ "name": "coroutine__SDL-06__sweep",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.coroutine/verify/SDL-06.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rC",
+   "now": "200",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rC == 2 && S.m[k].expiresAt == 100"
+  },
+  {
+   "op": "sweep",
+   "label": "L3",
+   "now": "201"
+  },
+  {
+   "assert": "old[L3](tok(rC).gIssued) && old[L3](tok(rC).gBacked) && old[L3](tok(rC).gHeld) && !tok(rC).gHeld && !(201 > old[L3](tok(rC).gLease))"
+  },
+  {
+   "assert": "!has(S, k)"
+  }
+ ],
+ "doc": "the monitor drops C's fresh lock 1 ms after C took over"
+}

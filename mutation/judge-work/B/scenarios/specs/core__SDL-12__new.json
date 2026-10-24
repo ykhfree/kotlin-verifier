@@ -1,0 +1,34 @@
+{
+ "name": "core__SDL-12__new",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.core/verify/SDL-12.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rA == NULL && !old[L1](has(S, k))"
+  },
+  {
+   "assert": "has(S, k) && S.m[k].isHeld && S.m[k].token == 1 && !tok(1).gIssued"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rB",
+   "now": "1",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rB == NULL"
+  }
+ ],
+ "doc": "first tryLock of a key gets null"
+}

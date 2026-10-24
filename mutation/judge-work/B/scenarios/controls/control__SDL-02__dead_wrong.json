@@ -1,0 +1,28 @@
+{
+ "name": "control__SDL-02__dead_wrong",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.reactor/verify/SDL-02.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rB",
+   "now": "200",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rB != NULL"
+  }
+ ],
+ "doc": "a takeover leaves a dead entry; the sweep drops it; the next tryLock works"
+}

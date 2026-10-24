@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-10-24T04:19:35.479Z" hostname="yang-gaeng-iui-Macmini.local" time="7.444">
+  <properties/>
+  <testcase name="should not release a lock held by another owner()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.111"/>
+  <testcase name="should prevent concurrent lock acquisition after over-release attempt()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.037"/>
+  <testcase name="should not let a stale token release the lock of the next owner()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.409"/>
+  <testcase name="should not over-release semaphore on multiple unlock calls()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.004"/>
+  <testcase name="should share global lockMap across multiple instances()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.001"/>
+  <testcase name="testLockExpiration()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="4.503"/>
+  <testcase name="testConcurrencyWithOneKey()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="1.125"/>
+  <testcase name="testConcurrencyWithTwoKey()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="1.218"/>
+  <testcase name="at the cap tryLock still grants a permit but stops adding map entries()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.005"/>
+  <testcase name="should maintain request collapsing across multiple instances()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.002"/>
+  <testcase name="an entry already in the map is reacquired even when the map is at its cap()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.023"/>
+  <testcase name="unLock removes the map entry right away instead of leaving it until expiry()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.0"/>
+  <system-out><![CDATA[13:19:42.894 [Test worker] WARN com.linecorp.cse.reqshield.support.config.LocalLockLimit -- Local lock map is at its cap of 1 entries, so new keys are no longer collapsed (1 refusals so far). Raise req-shield.lock.max-entries or shorten lockTimeoutMillis if this is unexpected.
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

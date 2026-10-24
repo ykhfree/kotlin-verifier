@@ -1,0 +1,37 @@
+{
+ "name": "core__AOR-03__take",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.core/verify/AOR-03.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rA == 1 && S.m[k].expiresAt == 0 && tok(rA).gLease == 100"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rB",
+   "now": "1",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rB == 2"
+  },
+  {
+   "assert": "old[L2](tok(rA).gIssued) && old[L2](tok(rA).gBacked) && old[L2](tok(rA).gHeld) && !tok(rA).gHeld && !(1 > old[L2](tok(rA).gLease))"
+  },
+  {
+   "assert": "(old[L2](has(S, k)) && 1 <= old[L2](S.m[k].expiresAt) ==> rB == NULL)"
+  }
+ ],
+ "doc": "B takes A's lock 1 ms after A got it"
+}

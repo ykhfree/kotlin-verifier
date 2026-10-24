@@ -1,0 +1,31 @@
+{
+ "name": "reactor__AOR-03__orig",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/keylocallock.reactor.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rB",
+   "now": "1",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rA == 1 && rB == NULL"
+  },
+  {
+   "assert": "(forall qt: Int :: { tok(qt).gHeld } old[L2](tok(qt).gIssued) && old[L2](tok(qt).gBacked) && old[L2](tok(qt).gHeld) && !tok(qt).gHeld ==> (1 > old[L2](tok(qt).gLease)))"
+  }
+ ],
+ "doc": "same inputs on the original code"
+}

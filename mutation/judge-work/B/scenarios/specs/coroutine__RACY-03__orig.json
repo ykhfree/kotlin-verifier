@@ -1,0 +1,43 @@
+{
+ "name": "coroutine__RACY-03__orig",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/keylocallock.coroutine.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rB",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "tryLock",
+   "label": "L2",
+   "out": "rA",
+   "now": "1000",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rB == 1 && rA == 2"
+  },
+  {
+   "op": "tryLock",
+   "label": "L3",
+   "out": "rC",
+   "now": "50",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "assert": "rC == NULL"
+  },
+  {
+   "assert": "(old[L3](has(S, k)) && 50 <= old[L3](S.m[k].expiresAt) ==> rC == NULL)"
+  }
+ ],
+ "doc": "same inputs on the original code"
+}

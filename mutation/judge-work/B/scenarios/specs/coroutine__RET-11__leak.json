@@ -1,0 +1,34 @@
+{
+ "name": "coroutine__RET-11__leak",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.coroutine/verify/RET-11.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "sweep",
+   "label": "L2",
+   "now": "101"
+  },
+  {
+   "op": "sweep",
+   "label": "L3",
+   "now": "5000"
+  },
+  {
+   "op": "sweep",
+   "label": "L4",
+   "now": "1000000"
+  },
+  {
+   "assert": "has(S, k) && !S.m[k].isHeld && S.m[k].token == NULL && S.m[k].permits == 1"
+  }
+ ],
+ "doc": "the freed entry is never dropped"
+}

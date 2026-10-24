@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" tests="12" skipped="0" failures="1" errors="0" timestamp="2026-10-24T04:21:15.611Z" hostname="yang-gaeng-iui-Macmini.local" time="7.494">
+  <properties/>
+  <testcase name="should not release a lock held by another owner()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.111"/>
+  <testcase name="should prevent concurrent lock acquisition after over-release attempt()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.038"/>
+  <testcase name="should not let a stale token release the lock of the next owner()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.417"/>
+  <testcase name="should not over-release semaphore on multiple unlock calls()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.005"/>
+  <testcase name="should share global lockMap across multiple instances()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.002"/>
+  <testcase name="testLockExpiration()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="4.514"/>
+  <testcase name="testConcurrencyWithOneKey()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="1.144"/>
+  <testcase name="testConcurrencyWithTwoKey()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="1.216"/>
+  <testcase name="at the cap tryLock still grants a permit but stops adding map entries()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.004">
+    <failure message="org.opentest4j.AssertionFailedError: a permit handed out past the cap must not add a map entry ==&gt; expected: &lt;false&gt; but was: &lt;true&gt;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: a permit handed out past the cap must not add a map entry ==&gt; expected: &lt;false&gt; but was: &lt;true&gt;
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at app//org.junit.jupiter.api.AssertFalse.failNotFalse(AssertFalse.java:63)
+	at app//org.junit.jupiter.api.AssertFalse.assertFalse(AssertFalse.java:36)
+	at app//org.junit.jupiter.api.Assertions.assertFalse(Assertions.java:239)
+	at app//com.linecorp.cse.reqshield.reactor.KeyLocalLockTest.at the cap tryLock still grants a permit but stops adding map entries(KeyLocalLockTest.kt:365)
+	at java.base@21.0.10/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base@21.0.10/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base@21.0.10/java.util.ArrayList.forEach(ArrayList.java:1596)
+</failure>
+  </testcase>
+  <testcase name="should maintain request collapsing across multiple instances()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.001"/>
+  <testcase name="an entry already in the map is reacquired even when the map is at its cap()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.031"/>
+  <testcase name="unLock removes the map entry right away instead of leaving it until expiry()" classname="com.linecorp.cse.reqshield.reactor.KeyLocalLockTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

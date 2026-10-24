@@ -1,0 +1,16 @@
+{
+ "name": "core__RET-08__empty",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.core/verify/RET-08.vpr",
+ "steps": [
+  {
+   "op": "unLock",
+   "label": "L1",
+   "out": "ok",
+   "t": "99"
+  },
+  {
+   "assert": "ok && !old[L1](has(S, k))"
+  }
+ ],
+ "doc": "unLock on an empty map returns true"
+}

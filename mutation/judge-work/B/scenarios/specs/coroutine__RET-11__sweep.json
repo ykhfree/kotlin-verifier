@@ -1,0 +1,43 @@
+{
+ "name": "coroutine__RET-11__sweep",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.coroutine/verify/RET-11.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "sweep",
+   "label": "L2",
+   "now": "101"
+  },
+  {
+   "assert": "(forall qt: Int :: { tok(qt).gHeld } old[L2](tok(qt).gIssued) && old[L2](tok(qt).gBacked) && old[L2](tok(qt).gHeld) && !tok(qt).gHeld ==> (101 > old[L2](tok(qt).gLease)))"
+  },
+  {
+   "assert": "has(S, k) && !S.m[k].isHeld && S.m[k].token == NULL && S.m[k].permits == 1"
+  },
+  {
+   "op": "tryLock",
+   "label": "L3",
+   "out": "rC",
+   "now": "100",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0",
+   "doc": "C read its clock at 100, before the sweep pass started"
+  },
+  {
+   "assert": "rC == 2"
+  },
+  {
+   "assert": "old[L3](has(S, k)) && 100 <= old[L3](S.m[k].expiresAt) && rC != NULL"
+  }
+ ],
+ "doc": "the sweep frees but keeps an expired entry"
+}

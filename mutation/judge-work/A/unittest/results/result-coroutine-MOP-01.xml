@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" tests="14" skipped="0" failures="2" errors="0" timestamp="2026-10-24T04:21:25.445Z" hostname="yang-gaeng-iui-Macmini.local" time="16.037">
+  <properties/>
+  <testcase name="should prevent concurrent lock acquisition after over-release attempt()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.093"/>
+  <testcase name="should not let a stale token release the lock of the next owner()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.074">
+    <failure message="org.opentest4j.AssertionFailedError: actual value is null ==&gt; expected: not &lt;null&gt;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: actual value is null ==&gt; expected: not &lt;null&gt;
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:152)
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at app//org.junit.jupiter.api.AssertNotNull.failNull(AssertNotNull.java:49)
+	at app//org.junit.jupiter.api.AssertNotNull.assertNotNull(AssertNotNull.java:35)
+	at app//org.junit.jupiter.api.Assertions.assertNotNull(Assertions.java:312)
+	at app//kotlin.test.junit5.JUnit5Asserter.assertNotNull(JUnitSupport.kt:48)
+	at app//kotlin.test.AssertionsKt__AssertionsKt.assertNotNull(Assertions.kt:279)
+	at app//kotlin.test.AssertionsKt.assertNotNull(Unknown Source)
+	at app//kotlin.test.AssertionsKt__AssertionsKt.assertNotNull$default(Assertions.kt:277)
+	at app//kotlin.test.AssertionsKt.assertNotNull$default(Unknown Source)
+	at app//com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest$should not let a stale token release the lock of the next owner$1.invokeSuspend(KeyLocalLockTest.kt:109)
+	at app//kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at app//kotlinx.coroutines.DispatchedTaskKt.resume(DispatchedTask.kt:231)
+	at app//kotlinx.coroutines.DispatchedTaskKt.dispatch(DispatchedTask.kt:164)
+	at app//kotlinx.coroutines.CancellableContinuationImpl.dispatchResume(CancellableContinuationImpl.kt:466)
+	at app//kotlinx.coroutines.CancellableContinuationImpl.resumeImpl(CancellableContinuationImpl.kt:500)
+	at app//kotlinx.coroutines.CancellableContinuationImpl.resumeImpl$default(CancellableContinuationImpl.kt:489)
+	at app//kotlinx.coroutines.CancellableContinuationImpl.resumeUndispatched(CancellableContinuationImpl.kt:587)
+	at app//kotlinx.coroutines.EventLoopImplBase$DelayedResumeTask.run(EventLoop.common.kt:490)
+	at app//kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:277)
+	at app//kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:95)
+	at app//kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:69)
+	at app//kotlinx.coroutines.BuildersKt.runBlocking(Unknown Source)
+	at app//kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:48)
+	at app//kotlinx.coroutines.BuildersKt.runBlocking$default(Unknown Source)
+	at app//com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest.should not let a stale token release the lock of the next owner(KeyLocalLockTest.kt:97)
+	at java.base@21.0.10/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base@21.0.10/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base@21.0.10/java.util.ArrayList.forEach(ArrayList.java:1596)
+</failure>
+  </testcase>
+  <testcase name="should not over-release semaphore on multiple unlock calls()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.001"/>
+  <testcase name="should share global lockMap across multiple instances()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.001"/>
+  <testcase name="testLockExpiration()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="4.518"/>
+  <testcase name="testConcurrencyWithOneKey()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="1.124"/>
+  <testcase name="testConcurrencyWithTwoKey()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="1.12"/>
+  <testcase name="at the cap tryLock still grants a permit but stops adding map entries()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.018"/>
+  <testcase name="should maintain request collapsing across multiple instances()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.003"/>
+  <testcase name="should reject an unlock presenting a token of another owner()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.003"/>
+  <testcase name="an entry already in the map is reacquired even when the map is at its cap()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.033">
+    <failure message="org.opentest4j.AssertionFailedError: an entry already in the map must not be subject to the cap ==&gt; expected: not &lt;null&gt;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: an entry already in the map must not be subject to the cap ==&gt; expected: not &lt;null&gt;
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:152)
+	at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at app//org.junit.jupiter.api.AssertNotNull.failNull(AssertNotNull.java:49)
+	at app//org.junit.jupiter.api.AssertNotNull.assertNotNull(AssertNotNull.java:35)
+	at app//org.junit.jupiter.api.Assertions.assertNotNull(Assertions.java:312)
+	at app//kotlin.test.junit5.JUnit5Asserter.assertNotNull(JUnitSupport.kt:48)
+	at app//kotlin.test.AssertionsKt__AssertionsKt.assertNotNull(Assertions.kt:279)
+	at app//kotlin.test.AssertionsKt.assertNotNull(Unknown Source)
+	at app//com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest$an entry already in the map is reacquired even when the map is at its cap$1.invokeSuspend(KeyLocalLockTest.kt:492)
+	at app//kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)
+	at app//kotlinx.coroutines.DispatchedTaskKt.resume(DispatchedTask.kt:231)
+	at app//kotlinx.coroutines.DispatchedTaskKt.dispatch(DispatchedTask.kt:164)
+	at app//kotlinx.coroutines.CancellableContinuationImpl.dispatchResume(CancellableContinuationImpl.kt:466)
+	at app//kotlinx.coroutines.CancellableContinuationImpl.resumeImpl(CancellableContinuationImpl.kt:500)
+	at app//kotlinx.coroutines.CancellableContinuationImpl.resumeImpl$default(CancellableContinuationImpl.kt:489)
+	at app//kotlinx.coroutines.CancellableContinuationImpl.resumeUndispatched(CancellableContinuationImpl.kt:587)
+	at app//kotlinx.coroutines.EventLoopImplBase$DelayedResumeTask.run(EventLoop.common.kt:490)
+	at app//kotlinx.coroutines.EventLoopImplBase.processNextEvent(EventLoop.common.kt:277)
+	at app//kotlinx.coroutines.BlockingCoroutine.joinBlocking(Builders.kt:95)
+	at app//kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking(Builders.kt:69)
+	at app//kotlinx.coroutines.BuildersKt.runBlocking(Unknown Source)
+	at app//kotlinx.coroutines.BuildersKt__BuildersKt.runBlocking$default(Builders.kt:48)
+	at app//kotlinx.coroutines.BuildersKt.runBlocking$default(Unknown Source)
+	at app//com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest.an entry already in the map is reacquired even when the map is at its cap(KeyLocalLockTest.kt:478)
+	at java.base@21.0.10/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base@21.0.10/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base@21.0.10/java.util.ArrayList.forEach(ArrayList.java:1596)
+</failure>
+  </testcase>
+  <testcase name="should handle high contention tryLock and unLock without over-release()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="2.221"/>
+  <testcase name="should not over-release when tryLock and unLock race on expired lock()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="6.807"/>
+  <testcase name="unLock removes the map entry right away instead of leaving it until expiry()" classname="com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLockTest" time="0.005"/>
+  <system-out><![CDATA[DefaultDispatcher-worker-3 @coroutine#23 acquired the lock
+DefaultDispatcher-worker-8 @coroutine#24 could not acquire the lock and is terminating
+DefaultDispatcher-worker-8 @coroutine#31 could not acquire the lock and is terminating
+DefaultDispatcher-worker-4 @coroutine#27 could not acquire the lock and is terminating
+DefaultDispatcher-worker-15 @coroutine#33 could not acquire the lock and is terminating
+DefaultDispatcher-worker-2 @coroutine#29 could not acquire the lock and is terminating
+DefaultDispatcher-worker-5 @coroutine#26 could not acquire the lock and is terminating
+DefaultDispatcher-worker-6 @coroutine#30 could not acquire the lock and is terminating
+DefaultDispatcher-worker-7 @coroutine#25 could not acquire the lock and is terminating
+DefaultDispatcher-worker-10 @coroutine#35 could not acquire the lock and is terminating
+DefaultDispatcher-worker-10 @coroutine#38 could not acquire the lock and is terminating
+DefaultDispatcher-worker-17 @coroutine#37 could not acquire the lock and is terminating
+DefaultDispatcher-worker-10 @coroutine#39 could not acquire the lock and is terminating
+DefaultDispatcher-worker-10 @coroutine#40 could not acquire the lock and is terminating
+DefaultDispatcher-worker-15 @coroutine#42 could not acquire the lock and is terminating
+DefaultDispatcher-worker-17 @coroutine#41 could not acquire the lock and is terminating
+DefaultDispatcher-worker-3 @coroutine#34 could not acquire the lock and is terminating
+DefaultDispatcher-worker-8 @coroutine#32 could not acquire the lock and is terminating
+DefaultDispatcher-worker-1 @coroutine#28 could not acquire the lock and is terminating
+DefaultDispatcher-worker-7 @coroutine#36 could not acquire the lock and is terminating
+DefaultDispatcher-worker-1 @coroutine#23 released the lock
+13:21:32.395 [Test worker @coroutine#65] WARN com.linecorp.cse.reqshield.support.config.LocalLockLimit -- Local lock map is at its cap of 1 entries, so new keys are no longer collapsed (1 refusals so far). Raise req-shield.lock.max-entries or shorten lockTimeoutMillis if this is unexpected.
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

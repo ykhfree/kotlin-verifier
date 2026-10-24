@@ -1,0 +1,27 @@
+{
+ "name": "core__AOR-03__sweep",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.core/verify/AOR-03.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "sweep",
+   "label": "L2",
+   "now": "1"
+  },
+  {
+   "assert": "old[L2](tok(rA).gIssued) && old[L2](tok(rA).gBacked) && old[L2](tok(rA).gHeld) && !tok(rA).gHeld && !(1 > old[L2](tok(rA).gLease))"
+  },
+  {
+   "assert": "!has(S, k)"
+  }
+ ],
+ "doc": "the monitor drops A's entry at now = 1"
+}

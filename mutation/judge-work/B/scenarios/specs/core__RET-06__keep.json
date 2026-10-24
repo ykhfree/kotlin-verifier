@@ -1,0 +1,34 @@
+{
+ "name": "core__RET-06__keep",
+ "model": "/Users/ykhfree/AI/kotlin-verifier/translator/build/kv/mechanical/keylocallock.core/verify/RET-06.vpr",
+ "steps": [
+  {
+   "op": "tryLock",
+   "label": "L1",
+   "out": "rA",
+   "now": "0",
+   "timeout": "100",
+   "rej": "false",
+   "limit": "0"
+  },
+  {
+   "op": "unLock",
+   "label": "L2",
+   "out": "ok",
+   "t": "rA"
+  },
+  {
+   "assert": "rA == 1 && ok"
+  },
+  {
+   "assert": "has(S, k)"
+  },
+  {
+   "assert": "tok(rA).gHeld"
+  },
+  {
+   "assert": "!S.m[k].isHeld && S.m[k].permits == 1 && S.m[k].token == rA"
+  }
+ ],
+ "doc": "the entry stays after a successful unLock"
+}

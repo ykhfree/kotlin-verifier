@@ -103,3 +103,66 @@ RACY는 도구의 고유한 주장("action 밖의 읽기는 임의 값")을 겨�
   3. "PROVEN, 모델 바뀜" 전부 (6절 상한 적용)
   이유: 의심을 구현 agent나 메인 세션이 고르면 판정자의 독립성이 없어진다.
 - 2026-10-24, 결과 뒤 (판정 전): 4절 2의 판정 공유에 검사 하나를 더했다. 해시가 같아 판정을 함께 쓰는 변이도 각자 `kv lower`로 미지원 구문과 완결성을 확인한다. 이유: kv는 미지원 부분을 출력하지 않으므로, 미지원 구문이 다른 두 변이가 같은 모델이 될 수 있다 (측정: RET-04와 SDL-01). 이번 실행의 충돌은 0이고, 범주별 개수는 검사 전후가 같다.
+
+## 9. 결과 (2026-10-24, 판정 뒤)
+
+이 절은 결과다. 1-8절의 규칙은 바꾸지 않았다.
+
+### 9.1 기계적 집계 (측정)
+
+변이 278개 중 사산 27개다. 판정 분포는 다음과 같다.
+- FAILED 129개
+- PROVEN, 모델 바뀜 60개
+- PROVEN, 모델 동일 7개 (not-modeled 6, translated 1)
+- ERROR `stale-review` 47개
+- 그 밖의 ERROR 0개
+- INCOMPLETE 8개
+
+상세: `mutation/summary.md`, `mutation/results.jsonl`.
+
+### 9.2 판정 (판정자 A, B: 새 맥락의 deep-reasoner 2개)
+
+| 대상 | 판정 | 근거 파일 |
+|---|---|---|
+| PROVEN, 모델 바뀜: 60개 중 표본 30 | 놓침 0, 동등 30 (행동 같음 21, 행동은 바뀌나 sidecar 성질은 지킴 9), 미결 0 | `mutation/judgments-A.md`, `mutation/judge-work/A/` |
+| FAILED, 7.2 (경쟁 읽기) 9 | 검출 9, 오경보 0 | `mutation/judgments-B.md`, `mutation/judge-work/B/` |
+| FAILED, 무작위 10 | 검출 9, 오경보 1 (reactor SDL-02) | 같음 |
+
+1. **놓침:** 표본 30개에서 0개다. 표본이 30개이므로 "모델 바뀜 PROVEN" 가운데 놓침 비율의 95% 상한은 약 10%다 (3/30 규칙, 추정).
+2. **오경보 (FAILED 무작위 표본):** 1/10이다. 95% 구간은 0.25-44.5%다 (판정자 B 계산, 표본이 작다).
+3. **글자대로 읽기 대 의도대로 읽기:** 검출 7개(RACY-03 ×3, RACY-06 ×3, RET-11)는 진행 조건 `progress_live`, `progress_owner`를 sidecar 원문 그대로 읽을 때만 검출이다. 의도대로 좁혀 읽으면 오경보가 된다. 그때 무작위 표본의 오경보는 2/10이고, 7.2 범주의 검출은 3/9(RACY-01 ×3)다.
+4. **7절 예측 대조:**
+   - 7.1, 7.3-7.6은 9.1의 집계와 같다.
+   - 7.2의 FAILED 9개는 글자대로 읽으면 모두 검출이다. 의도대로 읽으면 6개가 오경보다.
+   - 7.7의 9개는 판정자 A가 모두 동등(행동 같음)으로 판정했다.
+
+### 9.3 발견
+
+1. **도구의 건전성 결함은 찾지 못했다.** 놓침이 0이고, 도구 결함 후보 ERROR도 0이다. 판정자 A는 표본 30개 모두에서 변이 모델이 변이 Kotlin을 그대로 옮겼음을 diff로 확인했다.
+2. **오경보 1개의 원인은 고정된 hole이다.** reactor SDL-02(만료 takeover의 `release()` 삭제)는 permits 0인 죽은 entry를 남긴다. 그 entry는 어떤 성질도 깨지 않는다. 원본 코드에 맞춘 불변식 `MI_INV_1`(INV-E)이 이 상태를 배제했을 뿐이다. 불변식을 넓힌 사본에서는 변이도 원본도 증명된다 (메인 세션 재현). 실제 사용에서는 코드가 바뀌면 hole을 다시 쓴다 (M7 흐름).
+3. **FAILED가 성질이 아니라 hole 조각만 가리키는 경우가 많다.** 검출 18개 중 9개는 `MI_INV_*`만 보고됐다. Silicon은 경로마다 처음 실패한 사후조건만 보고하고, 템플릿이 hole 조각을 성질보다 앞에 두기 때문이다. 이런 보고만으로는 사용자가 "성질이 깨졌는지, 불변식만 안 맞는지"를 알 수 없다.
+4. **진행 조건이 의도보다 강하다.**
+   - `progress_owner`는 발급받지 않은 token을 내는 호출자에게도 해제 성공을 요구한다.
+   - `progress_live`는 잡히지 않은 죽은 entry에도 획득 거부를 요구한다.
+   - 이 두 절은 설계 단계에서 probe용으로 썼고, 사람이 서명하지 않았다.
+5. **명세의 빈틈.** 아래 변이는 sidecar 성질은 모두 지키지만, 문서화된 동작을 깬다.
+   - 상한 동작: RACY-04 ×3, coroutine SDL-08. README 122, 139, 141행: "To bound it, set `req-shield.lock.max-entries`", "Once the map is full, a request for a **new** key is handed a permit that no map entry backs.", "no added latency, and the cache still gets populated". 판정자 B의 SDL-02(key가 최대 약 1 s 막힘)도 지연에 관한 같은 종류다.
+   - 만료된 lock의 즉시 넘겨받기: MOP-01 ×2, core RACY-02. `KeyLock.kt` KDoc은 만료된 lock을 다른 holder가 넘겨받는다고 전제하지만, "즉시"라고 쓰지는 않았다. 그래서 논쟁의 여지가 있다. req-shield 단위 테스트는 MOP-01에서 실패한다 (판정자 A 측정).
+   - monitor의 만료 entry 제거: coroutine RACY-09, reactor RACY-08. 드문 경쟁에서 한 주기 늦어질 뿐이라, 판정자 A는 빈틈이 아니라고 봤다.
+   - 판정자 A의 probe `G_cap`, `G_expired`, `G_sweep`은 원본에서 증명되고 해당 변이에서만 실패한다. 이 probe들은 sidecar에 더할 후보다.
+6. **기계적 규칙의 한계.** Aspect 세 모듈은 판정받은 변이가 0개다. 연산 코드가 `computeIfAbsent` 한 줄이라, 기계적 규칙의 변이가 서명된 함수에 걸리거나 사산이 된다.
+
+### 9.4 메인 세션 확인
+
+판정자의 증거 10개를 Silicon으로 다시 돌렸고, 모두 판정자의 설명과 같았다.
+- B 쪽 4개:
+  - SDL-02: 불변식을 넓힌 사본이 증명된다.
+  - 원본: 불변식을 넓힌 사본이 증명된다.
+  - RET-06: 순서를 바꾼 사본에서 P1이 보고된다.
+  - RACY-01: 두 holder 시나리오가 검증된다.
+- A 쪽 6개:
+  - 대조군 NC1은 실패한다.
+  - 동등성 probe에서 원본과 BOOL-09는 증명되고, MOP-01은 실패한다.
+  - `G_cap` probe에서 원본은 증명되고, RACY-04는 실패한다.
+
+README 인용 3개는 quote-check로 원문을 확인했다.
