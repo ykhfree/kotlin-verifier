@@ -1,6 +1,7 @@
 package kv.frontend
 
 import kv.kvir.Pos
+import kv.model.TrustedModels
 import kv.sidecar.ClassDecl
 import kv.sidecar.FieldDecl
 import kv.sidecar.FreeItem
@@ -75,13 +76,7 @@ private val CHM = ClassId.fromString("java/util/concurrent/ConcurrentHashMap")
 private val ATOMIC_LONG = ClassId.fromString("java/util/concurrent/atomic/AtomicLong")
 private val STRING = ClassId.fromString("kotlin/String")
 
-/** Kotlin classes of the built-in field types (DESIGN-v0.md 4.2, FTYPE); a sidecar type is a String. */
-private val FIELD_CLASSES =
-    mapOf(
-        "Semaphore" to ClassId.fromString("java/util/concurrent/Semaphore"),
-        "AtomicBoolean" to ClassId.fromString("java/util/concurrent/atomic/AtomicBoolean"),
-        "Long" to ClassId.fromString("kotlin/Long"),
-    )
+private val LONG = ClassId.fromString("kotlin/Long")
 
 /** The class [fqn] if [file] declares it, at any nesting depth. */
 @OptIn(DirectDeclarationsAccess::class)
@@ -124,6 +119,9 @@ class SidecarResolver(
 
     /** Sidecar class and field name to the Kotlin property. */
     internal val fields = mutableMapOf<Pair<String, String>, FirPropertySymbol>()
+
+    /** Sidecar class and field name to the trusted model of a flattened field, which the Kotlin type chooses. */
+    internal val fieldModels = mutableMapOf<Pair<String, String>, String>()
 
     /** Operation name to its action call. */
     internal val computeOf = mutableMapOf<String, FoundAction>()
@@ -292,20 +290,33 @@ class SidecarResolver(
             } else {
                 bind("field ${c.name.text}.${f.name.text}", f.name.pos, prop)
                 fields[c.name.text to f.name.text] = prop
-                fieldType(f, prop)
+                fieldType(c, f, prop)
             }
         }
     }
 
+    /**
+     * The Kotlin type of field [f] (DESIGN-v0.md 4.2, FTYPE): a flattened type binds a Kotlin class of one of its
+     * models, and that class chooses the model (TrustedModels.fieldModels); Long binds kotlin.Long; a sidecar type binds
+     * String. A Semaphore field's chosen model must be declared with `use`, since two models share the type.
+     */
     private fun fieldType(
+        c: ClassDecl,
         f: FieldDecl,
         prop: FirPropertySymbol,
     ) {
         val t = prop.resolvedReturnType.lowerBoundIfFlexible()
-        val expected = FIELD_CLASSES[f.type.text] ?: STRING
-        if (t.classId != expected || t.isMarkedNullable != f.nullable) {
-            val want = expected.asSingleFqName().asString() + if (f.nullable) "?" else ""
+        val models = TrustedModels.fieldModels[f.type.text].orEmpty()
+        val expected = models.keys.map(ClassId::fromString).ifEmpty { listOf(if (f.type.text == "Long") LONG else STRING) }
+        if (t.classId !in expected || t.isMarkedNullable != f.nullable) {
+            val want = expected.joinToString(" or ") { it.asSingleFqName().asString() + if (f.nullable) "?" else "" }
             err(f.kname.pos, "kotlin-type", "field ${f.name.text}: ${f.type.text}${if (f.nullable) "?" else ""} needs a Kotlin $want, but '${f.kname.text}' is ${typeText(t)}")
+            return
+        }
+        val model = models[t.classId!!.asString()] ?: return
+        fieldModels[c.name.text to f.name.text] = model
+        if (f.type.text == "Semaphore" && sidecar.uses.none { it.model.text == model }) {
+            err(f.type.pos, "missing-use", "field ${f.name.text}: '${f.kname.text}' is a ${typeText(t)}, whose trusted model is $model; the sidecar needs `use $model`")
         }
     }
 

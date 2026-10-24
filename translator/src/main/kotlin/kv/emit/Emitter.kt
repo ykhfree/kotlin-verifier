@@ -112,6 +112,9 @@ private fun fail(
     message: String,
 ): Nothing = throw SidecarException(listOf(SidecarError(pos, "emit", message)))
 
+/** The report's name of the proof obligation of a kotlinx Semaphore.release (TrustedModels, kotlinx.Semaphore). */
+const val OVER_RELEASE = "kotlinx Semaphore.release may over-release"
+
 /** Writes text and records which source each range comes from. */
 private class VprWriter {
     private val sb = StringBuilder()
@@ -836,8 +839,14 @@ private class Emitter(
                 "jdk.AtomicBoolean.compareAndSet" -> guarded("$target == ${expr(s.args[0])}", "$target := ${expr(s.args[1])}")
                 "jdk.AtomicBoolean.set" -> w.line("$target := ${expr(s.args[0])}", src, indent, s.op)
                 "jdk.AtomicBoolean.get" -> out(target)
-                "jdk.Semaphore.tryAcquire" -> guarded("$target > 0", "$target := $target - 1")
+                "jdk.Semaphore.tryAcquire", "kotlinx.Semaphore.tryAcquire" -> guarded("$target > 0", "$target := $target - 1")
                 "jdk.Semaphore.release" -> w.line("$target := $target + 1", src, indent, s.op)
+                "kotlinx.Semaphore.release" -> {
+                    // A tool obligation: an over-release throws IllegalStateException, which v0 does not model in an action.
+                    w.line("assert $target < ${expr(s.args[0])}", Source.Kotlin(s.pos, OVER_RELEASE), indent, "kotlinx Semaphore.release: below the maximum permits")
+                    w.line("$target := $target + 1", src, indent, s.op)
+                }
+                "kotlinx.Semaphore.availablePermits" -> out(target)
                 "jdk.AtomicLong.incrementAndGet" -> {
                     w.line("$target := $target + 1", src, indent, s.op)
                     out(target)

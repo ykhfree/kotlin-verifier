@@ -69,7 +69,7 @@ data class Finding(
                     val p = at ?: source.pos
                     "sidecar ${source.id} ${p.file.substringAfterLast('/')}:${p.line}:${p.col}" + (source.note?.let { " \"$it\"" } ?: "")
                 }
-                is Source.Kotlin -> "kotlin ${source.pos.file.substringAfterLast('/')}:${source.pos.line}:${source.pos.col}"
+                is Source.Kotlin -> "kotlin ${source.pos.file.substringAfterLast('/')}:${source.pos.line}:${source.pos.col}" + (source.note?.let { " \"$it\"" } ?: "")
                 is Source.Generated -> "generated ${source.what}"
                 null -> "no source range (Viper ${error.line}.${error.col})"
             }

@@ -23,10 +23,12 @@ data class VprRange(
 
 /** Where a range of the Viper text comes from. */
 sealed interface Source {
+    /** Kotlin code; [note] names a tool obligation the range holds, e.g. that a kotlinx Semaphore.release may over-release. */
     data class Kotlin(
         val pos: Pos,
+        val note: String? = null,
     ) : Source {
-        override fun toString(): String = "kotlin(${pos.file.substringAfterLast('/')}:${pos.line}:${pos.col})"
+        override fun toString(): String = "kotlin(${pos.file.substringAfterLast('/')}:${pos.line}:${pos.col}${note?.let { ", $it" } ?: ""})"
     }
 
     /**

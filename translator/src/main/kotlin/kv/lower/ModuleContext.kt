@@ -198,6 +198,11 @@ internal class ModuleContext(
 
     private val flattenProblems = mutableMapOf<ObjField, Problem>()
 
+    /** The maximum permits of each valid kotlinx Semaphore field: the `permits` all its constructions give. */
+    private val semaphoreMaxima = mutableMapOf<ObjField, Long>()
+
+    fun semaphoreMax(field: ObjField): Long? = semaphoreMaxima[field]
+
     /** Why [field] cannot be folded into its owner (DESIGN-v0.md 2.11 rule 5); null for a plain or valid field. */
     fun flattenProblem(field: ObjField): Problem? = flattenProblems[field]
 
@@ -231,12 +236,12 @@ internal class ModuleContext(
                 val fields =
                     c.fields.mapNotNull { f ->
                         val prop = resolver.fields[c.name.text to f.name.text] ?: return@mapNotNull null
-                        val (type, model) =
+                        val model = resolver.fieldModels[c.name.text to f.name.text]
+                        val type =
                             when (f.type.text) {
-                                "Semaphore" -> KType.IntT to "jdk.Semaphore"
-                                "AtomicBoolean" -> KType.BoolT to "jdk.AtomicBoolean"
-                                "Long" -> KType.IntT to null
-                                else -> KType.Abs(f.type.text, f.nullable) to null
+                                "Semaphore", "Long" -> KType.IntT
+                                "AtomicBoolean" -> KType.BoolT
+                                else -> KType.Abs(f.type.text, f.nullable)
                             }
                         val volatile = prop.backingFieldSymbol?.resolvedAnnotationClassIds?.contains(VOLATILE) == true
                         val field = ObjField(f.name.text, f.kname.text, type, model, volatile, declarations[prop]?.let { posOf(it) } ?: posOf(moduleClass))
@@ -300,6 +305,7 @@ internal class ModuleContext(
             if (field.model != null) {
                 val call = e as? FirFunctionCall ?: return null
                 if (entriesOf(call).none { it.model == field.model && it.role == Role.CTOR }) return null
+                if (field.model == TrustedModels.KOTLINX_SEMAPHORE_MODEL) return kotlinxPermits(call)?.let { IntLit(it.first, pos) }
                 call.arguments.singleOrNull() as? FirLiteralExpression
             } else {
                 e as? FirLiteralExpression
@@ -321,6 +327,19 @@ internal class ModuleContext(
         }
 
     /**
+     * The available count and the maximum of a kotlinx `Semaphore(permits, acquiredPermits = 0)` call (TrustedModels):
+     * Int literals with 1 <= permits and 0 <= acquiredPermits <= permits. Null otherwise, since the factory may throw.
+     */
+    fun kotlinxPermits(call: FirFunctionCall): Pair<Long, Long>? {
+        val args = call.resolvedArgumentMapping.orEmpty().entries.associate { (arg, param) -> param.name.asString() to arg }
+
+        fun int(name: String): Long? = ((args[name] as? FirLiteralExpression)?.value as? Number)?.toLong()
+        val permits = int("permits") ?: return null
+        val acquired = if ("acquiredPermits" in args) int("acquiredPermits") ?: return null else 0L
+        return if (permits >= 1 && acquired in 0..permits) permits - acquired to permits else null
+    }
+
+    /**
      * DESIGN-v0.md 2.11 rule 5: a flattened field is a `val`, every construction passes a new model object (or uses a
      * default that does), and every read is the receiver of a model operation. The whole module file is checked.
      */
@@ -332,16 +351,35 @@ internal class ModuleContext(
                     Problem("${field.kotlin} is a var; a flattened field must be a val", field.pos)
                 } else {
                     reads(sym).firstNotNullOfOrNull { read ->
-                        val call = index.parent(read) as? FirFunctionCall
-                        val ok = call != null && call.dispatchReceiver === read && entriesOf(call).any { it.model == model && it.role == Role.OP }
+                        // An operation is a call such as `release()` or a property such as kotlinx `availablePermits`.
+                        val op = index.parent(read) as? FirQualifiedAccessExpression
+                        val ok = op != null && op.dispatchReceiver === read && entriesOf(op).any { it.model == model && it.role == Role.OP }
                         if (ok) null else Problem("${field.kotlin} is used other than as the receiver of a $model operation", posOf(read))
                     } ?: constructions(field).firstNotNullOfOrNull { (call, arg) ->
                         val ok = arg is FirFunctionCall && entriesOf(arg).any { it.model == model && it.role == Role.CTOR }
                         if (ok) null else Problem("a construction of ${field.kotlin} does not pass a new $model object", posOf(arg ?: call))
-                    }
+                    } ?: if (model == TrustedModels.KOTLINX_SEMAPHORE_MODEL) semaphoreMaximum(field) else null
                 }
             problem?.let { flattenProblems[field] = it }
         }
+    }
+
+    /**
+     * The maximum of kotlinx Semaphore field [field], whose constructions all pass a new kotlinx Semaphore: each gives
+     * literal permits (see [kotlinxPermits]), all the same. Records it, or returns the problem.
+     */
+    private fun semaphoreMaximum(field: ObjField): Problem? {
+        val made = constructions(field).map { it.second as FirFunctionCall }
+        made.firstOrNull { kotlinxPermits(it) == null }?.let {
+            return Problem("kotlinx Semaphore(...) of ${field.kotlin} needs Int literals with 1 <= permits and 0 <= acquiredPermits <= permits", posOf(it))
+        }
+        val maxima = made.map { kotlinxPermits(it)!!.second }
+        if (maxima.isEmpty()) return Problem("no construction of ${field.kotlin} in the module file gives its maximum permits", field.pos)
+        made.firstOrNull { kotlinxPermits(it)!!.second != maxima[0] }?.let {
+            return Problem("the constructions of ${field.kotlin} give different permits (${maxima.distinct().joinToString()}); the field needs one maximum", posOf(it))
+        }
+        semaphoreMaxima[field] = maxima[0]
+        return null
     }
 
     /** The reads of property [sym] in the module file. */
@@ -554,11 +592,12 @@ internal class ModuleContext(
 /** The trusted model entries of [sym], matched by owner, name and parameter types. */
 internal fun modelEntries(sym: FirCallableSymbol<*>): List<Entry> {
     val id = sym.callableId ?: return emptyList()
-    val owner = id.classId?.asString() ?: return emptyList()
+    // A top-level function (owner: its package) matches only a factory, kotlinx `Semaphore(...)`; getOrPut is a MapCall.
+    val owner = id.classId?.asString() ?: id.packageName.asString().replace('.', '/')
     // K2 names a constructor after its class; the table names every constructor `<init>`.
     val name = if (sym is FirConstructorSymbol) "<init>" else id.callableName.asString()
     val params = (sym as? FirFunctionSymbol<*>)?.valueParameterSymbols?.map { it.resolvedReturnType.lowerBoundIfFlexible().classId?.asString() }.orEmpty()
-    return TrustedModels.lookup(owner, name, params)
+    return TrustedModels.lookup(owner, name, params).filter { id.classId != null || it.role == Role.CTOR }
 }
 
 /** [e] without its smart casts. */
