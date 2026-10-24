@@ -272,7 +272,7 @@ class AicodeScriptTest {
         // Any other form is refused, and so is an adaptation that matches no `free ... = local` line.
         bindings.writeText("state m = locks\n")
         val (other, otherOut) = aicode("tool", "B")
-        assertTrue(other == 2 && "an adaptation is 'local OPERATION FREE NAME', 'source OLD NEW' or 'class NAME KNAME'" in otherOut, otherOut)
+        assertTrue(other == 2 && "an adaptation is 'local OPERATION FREE NAME', 'source OLD NEW', 'class NAME KNAME' or 'use MODEL'" in otherOut, otherOut)
         bindings.writeText("local tryLock rej accepted\n")
         val (none, noneOut) = aicode("tool", "B")
         assertTrue(none == 2 && "matches 0 places" in noneOut, noneOut)
@@ -286,6 +286,16 @@ class AicodeScriptTest {
         bindings.writeText("class Missing LockInfo\n")
         val (noClass, noClassOut) = aicode("tool", "B")
         assertTrue(noClass == 2 && "matches 0 places" in noClassOut, noClassOut)
+        // AI-CODE.md 11: a use adaptation adds one `use` line to the variant sidecar, and nothing else changes.
+        bindings.writeText("use kotlinx.Semaphore   # the Kotlin type of LockInfo.semaphore chose it\n")
+        assertEquals(0, aicode("tool", "B").first)
+        assertEquals("1", field("B", "binding_adaptations"))
+        assertEquals(coroutine.trimEnd('\n') + "\nuse kotlinx.Semaphore\n", File(work, "tool/B/spec/keylocallock.coroutine.kv").readText())
+        assertEquals(common, File(work, "tool/B/spec/keylocallock.common.kv").readText())
+        // A model the sidecar already uses is refused: the adaptation would change nothing.
+        bindings.writeText("use jdk.Semaphore\n")
+        val (used, usedOut) = aicode("tool", "B")
+        assertTrue(used == 2 && "the sidecar already uses jdk.Semaphore" in usedOut, usedOut)
         // AI-CODE.md 4.2: a free implementation gets no hole stage.
         assertEquals(1, aicode("hole-task", "B").first)
     }
