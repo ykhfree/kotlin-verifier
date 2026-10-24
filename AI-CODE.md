@@ -251,3 +251,32 @@ req-shield는 공개 저장소다. 그래서 원래 구현이 학습 자료에 �
 - 판정자 3은 허용 범위보다 넓게 DESIGN-v0.md를 읽었다. 그 범위에 원래 코드의 조건문 한 줄이 있었다. 판정의 근거는 sidecar 원문이었다.
 - 생성 agent에는 사용자의 전역 CLAUDE.md가 함께 적용되었다.
 
+## 11. 2차 측정 계획 (2026-10-24, 결과 전)
+
+사용자 결정 (1차 결과 뒤):
+1. 만료 경계는 엄격(`>`)을 유지한다. 서명된 P3a, progress_live, expired_takeover는 바꾸지 않는다. 그래서 AI 구현 12개의 경계 결함은 결함으로 남는다.
+2. 도구의 지원 범위를 두 가지 넓힌 뒤, 같은 12개로 도구만 다시 돌린다. 생성과 판정은 다시 하지 않는다. 정답은 10.1절이고, 도구와 독립이다.
+   - `Int.toLong()`: 수학적 정수에서 항등 변환으로 모델링한다. action 안의 `lockMap.size`는 `mappingCount()`처럼 비결정 값으로 다룬다.
+   - `kotlinx.coroutines.sync.Semaphore`: 신뢰 모델을 더한다. 사용 가능한 permit 수로 평탄화한다.
+     - `tryAcquire()`는 jdk 모델과 같다.
+     - `release()`는 "permit 수가 최대보다 작다"를 증명할 의무(assert)로 낸다. 초과 해제는 `IllegalStateException`을 던지기 때문이다.
+     - 생성자는 `Semaphore(permits, acquiredPermits = 0)`이다.
+     - 근거는 kotlinx-coroutines 1.8.1 소스에서 인용한다.
+
+action 단위의 정답 (10.1절):
+
+| action | 결함 | 정상 |
+|---|---|---|
+| tryLock | 12개 모두 (P3a, progress_live: 경계 `>=`) | - |
+| sweep | 12개 모두 (P3a: 경계 `>=`) | - |
+| unLock | T-haiku-3, T-sonnet-3 (progress_owner; T-sonnet-3은 unLock의 P3a도) | 나머지 10개 |
+
+### 11.1 미리 등록한 예측 (결과 전)
+
+1. 묶인 8개 중 tryLock이 범위에 들어오는 것은 정확히 T-haiku-2, T-haiku-3, T-sonnet-1, T-sonnet-3, T-sonnet-4다. 1차의 tryLock UNSUPPORTED 원인이 `Int toLong`뿐이었기 때문이다. 이 5개의 tryLock은 FAILED (property)다 (P3a 또는 progress_live).
+2. 나머지 3개는 다른 구문 때문에 tryLock이 계속 UNSUPPORTED다: T-haiku-1 (helper 호출), T-haiku-4 (결과 반환 모양), T-opus-2 (생성자 기본값, 값으로 쓴 if).
+3. T-haiku-1, T-haiku-3, T-sonnet-3의 unLock은 계속 UNSUPPORTED다 (`Semaphore` 필드 직접 접근). 그래서 T-haiku-3과 T-sonnet-3의 unLock 결함은 계속 판정되지 않는다.
+4. kotlinx `Semaphore`를 쓴 4개(T-sonnet-2, T-opus-1, T-opus-3, T-opus-4)는 이제 묶인다. 그중 적어도 1개 action이 판정을 받고, 지원되는 sweep은 FAILED (property)다.
+5. 판정이 정답과 어긋나는 action은 0이다. tryLock이나 sweep의 PROVEN은 놓침이고, 정상 unLock의 FAILED는 오경보다.
+6. 끝까지 PROVEN인 모듈은 0이다 (12개 모두 결함이 있으므로 정답과 맞는 결과다).
+
