@@ -37,6 +37,7 @@ import kv.kvir.FieldWrite
 import kv.kvir.FreeValue
 import kv.kvir.If
 import kv.kvir.InstanceVal
+import kv.kvir.IntLit
 import kv.kvir.KType
 import kv.kvir.Let
 import kv.kvir.Local
@@ -771,8 +772,13 @@ internal class ActionLowering(
             // A local of the operation function that the section did not lower (DESIGN-B.md 2.6).
             return unsupported("read of ${sym.name}", "the operation section did not translate the declaration of ${sym.name}", e)
         }
-        // A model property inside an action, e.g. `lockMap.size`: an arbitrary value, as `mappingCount()` is.
-        if (!section) ctx.entriesOf(e).firstOrNull { it.role == Role.NONDET }?.let { return nondet(e, it) }
+        // A model property inside an action: `lockMap.size` is an arbitrary value, as `mappingCount()` is; kotlinx
+        // `semaphore.availablePermits` is an operation on a flattened field.
+        if (!section) {
+            val entries = ctx.entriesOf(e)
+            entries.firstOrNull { it.role == Role.NONDET }?.let { return nondet(e, it) }
+            if (entries.any { it.role == Role.OP }) return operation(e, entries)
+        }
         val field = ctx.fieldOf(sym)
         return when {
             sym is FirValueParameterSymbol || sym is FirPropertySymbol && sym.isLocal -> captured(sym, e)
@@ -1032,6 +1038,12 @@ internal class ActionLowering(
             return unsupported("flattened field ${field.kotlin}", "the argument is not a new ${field.model} object", arg)
         }
         mark(ctor)
+        if (field.model == TrustedModels.KOTLINX_SEMAPHORE_MODEL) {
+            // Literal arguments, checked with the field's other constructions (ModuleContext.semaphoreMaximum).
+            val (count, _) = ctx.kotlinxPermits(ctor) ?: return unsupported("flattened field ${field.kotlin}", "kotlinx Semaphore(...) needs Int literals with 1 <= permits and 0 <= acquiredPermits <= permits", ctor)
+            markAll(ctor)
+            return IntLit(count, ctx.posOf(ctor))
+        }
         return expr(ctor.arguments.single(), field.type)
     }
 
@@ -1055,7 +1067,10 @@ internal class ActionLowering(
         return when (first.role) {
             Role.ACTION -> unsupported("nested compute", "an action does not access its map except through its entry (DESIGN-v0.md 4.3)", c)
             Role.RACY_READ -> unsupported("map read ${first.name} inside an action", "inside an action the map is read only through compute's entry (DESIGN-v0.md 4.3)", c)
-            Role.CTOR -> unsupported("new ${first.owner.substringAfterLast('/')}", "a ${first.model} object is modeled only as a flattened field of a new object or as a cell", c)
+            Role.CTOR -> {
+                val cls = if (first.name == "<init>") first.owner.substringAfterLast('/') else first.name
+                unsupported("new $cls", "a ${first.model} object is modeled only as a flattened field of a new object or as a cell", c)
+            }
             Role.NONDET, Role.CLOCK -> nondet(c, first)
             Role.OPERATION_BODY -> unsupported("${first.model} inside an action", "a Mono.fromCallable lambda is the body of an operation function, not a value inside an action (DESIGN-v0.md 8.3)", c)
             Role.CONVERSION -> expr(c.dispatchReceiver ?: c.explicitReceiver ?: return null)
@@ -1109,9 +1124,9 @@ internal class ActionLowering(
         effect?.let { unsupported("call in a log argument", "an argument of a call with no effect must be pure", it) }
     }
 
-    /** A model operation on a flattened field, the module counter or a cell. */
+    /** A model operation on a flattened field, the module counter or a cell: a call, or a property such as `availablePermits`. */
     private fun operation(
-        c: FirFunctionCall,
+        c: FirQualifiedAccessExpression,
         entries: List<Entry>,
     ): Expr? {
         val pos = ctx.posOf(c)
@@ -1131,7 +1146,8 @@ internal class ActionLowering(
                 }
             } ?: return unsupported("${entries.first().name} on ${sourceText(receiver)}", "the receiver is not a flattened field, the module counter or a cell", c)
         if (!useCheck(entry, c)) return null
-        if (isLocal) return cellOperation(c, read, sym, entry)
+        // The cell model has only the calls set and get.
+        if (isLocal) return cellOperation(c as FirFunctionCall, read, sym, entry)
         mark(read)
         val target =
             if (field != null) {
@@ -1141,14 +1157,17 @@ internal class ActionLowering(
                 markAll(read.dispatchReceiver)
                 StateTarget(state!!)
             }
-        val args = c.arguments.map { expr(it) ?: return null }
+        val args = (c as? FirFunctionCall)?.arguments.orEmpty().map { expr(it) ?: return null }.toMutableList()
+        // kotlinx release: its proof obligation `count < maximum` reads the field's maximum (TrustedModels).
+        if (entry.model == TrustedModels.KOTLINX_SEMAPHORE_MODEL && entry.name == "release") args += IntLit(ctx.semaphoreMax(field!!)!!, pos)
         val result =
             when (entry.returns) {
                 Returns.BOOL -> temp("cond", KType.BoolT, pos)
                 Returns.LONG -> temp("n", KType.IntT, pos)
                 else -> null
             }
-        out += ModelOp(result, entry.op, target, args, if (entry.unbounded) ctx.assumption(c) else null, pos)
+        // An unbounded operation (incrementAndGet) is a call.
+        out += ModelOp(result, entry.op, target, args, if (entry.unbounded) ctx.assumption(c as FirFunctionCall) else null, pos)
         return result?.let { Var(it, pos) }
     }
 

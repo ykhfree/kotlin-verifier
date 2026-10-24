@@ -59,6 +59,7 @@ data class Entry(
 object TrustedModels {
     private const val CHM = "java/util/concurrent/ConcurrentHashMap"
     private const val SEMAPHORE = "java/util/concurrent/Semaphore"
+    private const val KOTLINX_SEMAPHORE = "kotlinx/coroutines/sync/Semaphore"
     private const val ATOMIC_BOOLEAN = "java/util/concurrent/atomic/AtomicBoolean"
     private const val ATOMIC_LONG = "java/util/concurrent/atomic/AtomicLong"
     private const val ATOMIC_REFERENCE = "java/util/concurrent/atomic/AtomicReference"
@@ -77,6 +78,9 @@ object TrustedModels {
 
     /** The model of a `fun` operation whose whole body is one `Mono.fromCallable { ... }` call (DESIGN-v0.md 8.3). */
     const val FROM_CALLABLE = "reactor.Mono.fromCallable"
+
+    /** The model of a `kotlinx.coroutines.sync.Semaphore` field, flattened like `jdk.Semaphore`. */
+    const val KOTLINX_SEMAPHORE_MODEL = "kotlinx.Semaphore"
 
     val entries: List<Entry> =
         listOf(
@@ -115,6 +119,32 @@ object TrustedModels {
             Entry("jdk.Semaphore", SEMAPHORE, "<init>", listOf(INT), Role.CTOR),
             Entry("jdk.Semaphore", SEMAPHORE, "tryAcquire", emptyList(), Role.OP, Returns.BOOL),
             Entry("jdk.Semaphore", SEMAPHORE, "release", emptyList(), Role.OP),
+            // model kotlinx.Semaphore
+            //   match   kotlinx.coroutines.sync.Semaphore(Int, Int) (a top-level factory function), and the members
+            //           tryAcquire(), release() and availablePermits of the interface kotlinx.coroutines.sync.Semaphore
+            //   field   flattened to an Int count of available permits, like jdk.Semaphore; its maximum is permits
+            //   new     Semaphore(permits, acquiredPermits = 0): count := permits - acquiredPermits. Both are Int
+            //           literals with 1 <= permits and 0 <= acquiredPermits <= permits (else the factory throws), and
+            //           all constructions of one field give the same permits; anything else is UNSUPPORTED
+            //   ops     tryAcquire = count > 0 ? { count -= 1; true } : false
+            //           release: a proof obligation `assert count < maximum` (an over-release throws, and v0 does not
+            //           model exceptions inside an action), then count += 1
+            //           availablePermits = count (never negative: no modeled operation takes a permit it lacks)
+            //   source  "kotlinx-coroutines-core-jvm 1.8.1 sources jar from the Gradle cache (SHA-1
+            //           de8e46286026b0249acd5db040effcae1188c6e9), commonMain/sync/Semaphore.kt:
+            //           68 'public fun Semaphore(permits: Int, acquiredPermits: Int = 0): Semaphore = SemaphoreImpl(permits, acquiredPermits)'
+            //           132 'require(permits > 0) { "Semaphore should have at least 1 permit, but had $permits" }'
+            //           133 'require(acquiredPermits in 0..permits) { "The number of acquired permits should be in 0..$permits" }'
+            //           146 'private val _availablePermits = atomic(permits - acquiredPermits)'
+            //           147 'override val availablePermits: Int get() = max(_availablePermits.value, 0)'
+            //           165-166 'if (p <= 0) return false' 'if (_availablePermits.compareAndSet(p, p - 1)) return true'
+            //           56 'Throws [IllegalStateException] if the number of [release] invocations is greater than the number of preceding [acquire].'
+            //           245 'val p = _availablePermits.getAndIncrement()' 248 'if (p >= permits) {'
+            //           252 'error("The number of released permits cannot be greater than $permits")'"
+            Entry(KOTLINX_SEMAPHORE_MODEL, "kotlinx/coroutines/sync", "Semaphore", listOf(INT, INT), Role.CTOR),
+            Entry(KOTLINX_SEMAPHORE_MODEL, KOTLINX_SEMAPHORE, "tryAcquire", emptyList(), Role.OP, Returns.BOOL),
+            Entry(KOTLINX_SEMAPHORE_MODEL, KOTLINX_SEMAPHORE, "release", emptyList(), Role.OP),
+            Entry(KOTLINX_SEMAPHORE_MODEL, KOTLINX_SEMAPHORE, "availablePermits", emptyList(), Role.OP, Returns.LONG),
             // AtomicBoolean as a flattened field: v := arg0; compareAndSet = v == arg0 ? { v := arg1; true } : false.
             Entry("jdk.AtomicBoolean", ATOMIC_BOOLEAN, "<init>", listOf(BOOLEAN), Role.CTOR),
             Entry("jdk.AtomicBoolean", ATOMIC_BOOLEAN, "compareAndSet", listOf(BOOLEAN, BOOLEAN), Role.OP, Returns.BOOL),
@@ -169,6 +199,16 @@ object TrustedModels {
             // by the same class and have the same name" "and formal parameter types and return type."; ConcurrentHashMap
             // compares keys with equals (ConcurrentHashMap.java:928 "such that {@code key.equals(k)}").
             "java.lang.reflect.Method" to "JDK 21 Method.java:361-364",
+        )
+
+    /**
+     * The models of a flattened sidecar field type, by the Kotlin class of the field (DESIGN-v0.md 2.11): the Kotlin
+     * type chooses the model. A `Semaphore` field is a java.util.concurrent or a kotlinx.coroutines.sync Semaphore.
+     */
+    val fieldModels: Map<String, Map<String, String>> =
+        mapOf(
+            "Semaphore" to mapOf(SEMAPHORE to "jdk.Semaphore", KOTLINX_SEMAPHORE to KOTLINX_SEMAPHORE_MODEL),
+            "AtomicBoolean" to mapOf(ATOMIC_BOOLEAN to "jdk.AtomicBoolean"),
         )
 
     /** Names a sidecar may `use`; a conversion needs no `use`. */
