@@ -247,3 +247,9 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - ERROR 3개는 기존 helper inlining 결함이다 (W5/W6가 잡음).
   - 예측 1은 틀렸다 (Semaphore를 만드는 모양이 숨은 원인). 예측 2-6은 맞았다.
   - 메인 세션 확인: 테스트 429개, gate 4개, 변이 63회 불일치 0, 보고서 원문 집계.
+
+### 사용자 결정 (2026-10-25, 2차 결과 뒤)
+
+- AI 코드 측정은 2차로 마친다.
+- 도구 결함 셋(지원 밖 구문에 기대는 action, helper inlining W5/W6, 지원 밖 구문 전부 나열)을 고친다. 수정 검증 실행의 예측은 `AI-CODE.md` 13절이다.
+- 그다음 Confluence/Markdown → sidecar 방향으로 전환한다. 설계는 deep-reasoner가 맡고, 버그 수정과 동시에 진행한다.

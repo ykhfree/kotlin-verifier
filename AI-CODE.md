@@ -318,3 +318,16 @@ action 단위의 정답 (10.1절):
 | helper inlining의 W5/W6 결함 (도구 버그) | T-sonnet-2, T-opus-3, T-opus-4 |
 | 다른 객체의 helper 호출, `?.`, 값으로 쓴 if, 생성자 기본값, entry의 지역 별칭 | T-haiku-1, T-haiku-3, T-opus-2, T-opus-4 |
 
+## 13. 버그 수정 뒤 검증 실행 (2026-10-25, 결과 전)
+
+사용자 결정: 측정은 2차로 마치고 Confluence/Markdown → sidecar 방향으로 전환한다. 그 전에 2차에서 드러난 도구 결함 셋을 고친다. 그리고 같은 12개로 도구만 다시 돌려 수정을 확인한다 (측정 3차가 아니라 수정 검증이다).
+1. 지원 밖 구문(action 밖의 counter 연산 등)에 입력이나 결과가 기대는 action은 검증하지 않고 UNSUPPORTED로 보고한다 (12.1의 거짓 이유).
+2. smart cast된 entry를 helper에 넘길 때의 inlining 결함(W5/W6)을 고친다.
+3. 보고서는 action마다 지원 밖 구문을 모두 나열한다 (12.2 예측 1의 원인).
+
+예측 (결과 전):
+1. T-haiku-2의 tryLock은 FAILED에서 UNSUPPORTED가 된다. 이유는 compute 밖의 토큰 생성이다. 그래서 검출 1개가 줄어든다.
+2. ERROR였던 3개(T-sonnet-2, T-opus-3, T-opus-4)는 더 이상 ERROR가 아니다. 지원되는 sweep은 FAILED (property)다 (경계).
+3. 놓침 0, action 단위 오경보 0이 유지된다.
+4. 1차·2차에서 UNSUPPORTED였던 action의 보고에 원인이 더 많이 나열된다 (예: T-haiku-3, T-sonnet-3의 tryLock에 Semaphore 생성 모양).
+
