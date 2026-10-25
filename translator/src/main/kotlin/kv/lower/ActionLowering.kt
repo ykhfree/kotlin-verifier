@@ -1333,7 +1333,10 @@ internal class ActionLowering(
         return low.classId?.asString() in setOf("kotlin/Long", "kotlin/Int", "kotlin/Boolean", "kotlin/String") || ctx.absOfType(low) != null || ctx.classOfType(low) != null
     }
 
-    /** Inlines a helper of the module file (DESIGN-v0.md 2.3): its parameters become locals, its result the value. */
+    /**
+     * Inlines a helper of the module file (DESIGN-v0.md 2.3): its parameters become locals, except that an object
+     * parameter is the object it gets; its result is the value.
+     */
     private fun inline(
         c: FirFunctionCall,
         fn: FirNamedFunction,
@@ -1355,6 +1358,12 @@ internal class ActionLowering(
             val arg = mapping.entries.find { it.value === param }?.key ?: param.defaultValue ?: return unsupported("argument ${param.name}", "no argument and no default", c)
             val type = ktype(ctx.typeOf(param), param.symbol, param) ?: return null
             val v = expr(arg, type) ?: return null
+            // An object argument (the entry or an object the action created) binds the parameter itself: a Let would
+            // be a second name for the object (W6), with the parameter's non-null type, which the entry lacks (W5).
+            if (v is Var && v.type is KType.RefT) {
+                locals[param.symbol] = v.local
+                continue
+            }
             val p = ctx.posOf(param)
             out += Let(declare(param.symbol, param.name.asString(), type, p), v, false, p)
         }
