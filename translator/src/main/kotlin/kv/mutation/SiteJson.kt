@@ -1,5 +1,6 @@
 package kv.mutation
 
+import kv.json.json
 import kv.sidecar.AllowanceItem
 import kv.sidecar.EnsuresItem
 import kv.sidecar.IssueItem
@@ -79,19 +80,4 @@ fun sitesJson(
     }
     sb.append("\n ]}\n")
     return sb.toString()
-}
-
-private fun json(s: String): String {
-    val sb = StringBuilder("\"")
-    for (c in s) {
-        when {
-            c == '"' -> sb.append("\\\"")
-            c == '\\' -> sb.append("\\\\")
-            c == '\n' -> sb.append("\\n")
-            c == '\t' -> sb.append("\\t")
-            c < ' ' -> sb.append("\\u%04x".format(c.code))
-            else -> sb.append(c)
-        }
-    }
-    return sb.append('"').toString()
 }
