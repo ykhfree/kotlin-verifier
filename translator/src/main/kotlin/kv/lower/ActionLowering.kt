@@ -588,7 +588,12 @@ internal class ActionLowering(
             s is FirElvisExpression -> {
                 mark(s)
                 val pos = exitAt ?: ctx.posOf(s)
-                val a = expr(s.lhs) ?: return
+                val a = expr(s.lhs)
+                // After an unsupported left side the right side is lowered only to report what else it holds (1.5).
+                if (a == null) {
+                    collect { result(s.rhs, exitAt) }
+                    return
+                }
                 val then = collect { exit(s.lhs, pos, a, nonNull = true) }
                 val els = collect { result(s.rhs, exitAt) }
                 out += If(Cmp(CmpOp.NE, a, NullLit(nullable(a.type) ?: a.type, a.pos), ctx.posOf(s)), then, els, ctx.posOf(s))
@@ -665,6 +670,8 @@ internal class ActionLowering(
         mark(w)
         if (w.subjectVariable != null) {
             unsupported("when with subject", "v0 translates `if` and `when` without subject", w)
+            // The branch bodies are lowered only to report what else they hold (1.5).
+            w.branches.forEach { branch(it.result) }
             return
         }
         out += chain(w, 0, branch)
@@ -687,10 +694,11 @@ internal class ActionLowering(
                 unsupported("when guard", "guards are not translated in v0", b.condition)
                 return@collect
             }
-            val c = expr(b.condition) ?: return@collect
+            val c = expr(b.condition)
+            // After an unsupported condition the branches are lowered only to report what else they hold (1.5).
             val then = branch(b.result)
             val els = chain(w, i + 1, branch)
-            out += If(c, then, els, if (i == 0) ctx.posOf(w) else ctx.posOf(b.condition))
+            if (c != null) out += If(c, then, els, if (i == 0) ctx.posOf(w) else ctx.posOf(b.condition))
         }
 
     private fun localVal(p: FirProperty) {
@@ -706,9 +714,11 @@ internal class ActionLowering(
             newObject(init, cls) { type -> declare(p.symbol, p.name.asString(), type, pos) }
             return
         }
-        val type = ktype(ctx.typeOf(p), p.symbol, p) ?: return
-        if (type is KType.RefT) {
-            unsupported("local alias ${p.name}", "a second name for a module object is not modeled; use the entry or the new object directly", p)
+        val type = ktype(ctx.typeOf(p), p.symbol, p)
+        if (type == null || type is KType.RefT) {
+            if (type != null) unsupported("local alias ${p.name}", "a second name for a module object is not modeled; use the entry or the new object directly", p)
+            // The value is lowered only to report what else it holds (1.5).
+            if (!isNullLiteral(init)) expr(init, type)
             return
         }
         val v = expr(init, type) ?: return
@@ -728,8 +738,9 @@ internal class ActionLowering(
             sym is FirValueParameterSymbol || sym is FirPropertySymbol && sym.isLocal ->
                 unsupported("assignment to captured var ${nameOf(sym)}", "the lambda assigns a local declared outside it; v0 supports only cells (DESIGN-v0.md 2.5 rule 6)", a)
             field != null && field.model == null -> {
-                val obj = obj(lhs.dispatchReceiver) ?: return
-                val v = expr(a.rValue, field.type) ?: return
+                val obj = obj(lhs.dispatchReceiver)
+                val v = expr(a.rValue, field.type)
+                if (obj == null || v == null) return
                 out += FieldWrite(obj, field, v, ctx.posOf(a))
             }
             else -> unsupported("write of ${describe(sym)}", "a write of state outside the model (DESIGN-v0.md 2.11 rule 4)", a)
@@ -756,8 +767,9 @@ internal class ActionLowering(
                 mark(e)
                 mark(e.compareToCall)
                 val c = e.compareToCall
-                val a = expr(c.explicitReceiver ?: c.dispatchReceiver ?: return unsupported("comparison", "no left operand", e)) ?: return null
-                val b = expr(c.arguments.single()) ?: return null
+                val a = expr(c.explicitReceiver ?: c.dispatchReceiver ?: return unsupported("comparison", "no left operand", e))
+                val b = expr(c.arguments.single())
+                if (a == null || b == null) return null
                 val op = COMPARISONS[e.operation] ?: return unsupported("comparison ${e.operation.operator}", "not translated in v0", e)
                 if (a.type != KType.IntT || b.type != KType.IntT) return unsupported("comparison of ${a.type} and ${b.type}", "v0 compares only Long and Int values", e)
                 Cmp(op, a, b, pos)
@@ -900,9 +912,14 @@ internal class ActionLowering(
                 FirOperation.NOT_EQ, FirOperation.NOT_IDENTITY -> CmpOp.NE
                 else -> return unsupported("equality ${e.operation.operator}", "not translated in v0", e)
             }
-        val nullLeft = unwrap(left).let { it is FirLiteralExpression && it.kind == ConstantValueKind.Null }
-        val b0 = if (nullLeft) expr(right) ?: return null else null
-        val a = expr(left, b0?.type?.let(::nullable)) ?: return null
+        val b0 = if (isNullLiteral(left)) expr(right) ?: return null else null
+        val a = expr(left, b0?.type?.let(::nullable))
+        // After an unsupported left side the right side is lowered only to report what else it holds (1.5); a bare
+        // null there has no type to report against.
+        if (a == null) {
+            if (b0 == null && !isNullLiteral(right)) expr(right)
+            return null
+        }
         val b = b0 ?: expr(right, nullable(a.type)) ?: return null
         val sameType =
             when (val t = a.type) {
@@ -917,6 +934,8 @@ internal class ActionLowering(
         }
         return Cmp(op, a, b, ctx.posOf(e))
     }
+
+    private fun isNullLiteral(e: FirExpression): Boolean = unwrap(e).let { it is FirLiteralExpression && it.kind == ConstantValueKind.Null }
 
     private fun nullable(t: KType): KType? =
         when (t) {
@@ -935,10 +954,11 @@ internal class ActionLowering(
     private fun logic(e: FirBooleanOperatorExpression): Expr? {
         mark(e)
         val pos = ctx.posOf(e)
-        val a = expr(e.leftOperand) ?: return null
+        val a = expr(e.leftOperand)
         var b: Expr? = null
         val effects = collect { b = expr(e.rightOperand) }
-        val right = b ?: return null
+        val right = b
+        if (a == null || right == null) return null
         val and = e.kind == LogicOperationKind.AND
         if (effects.isEmpty()) return if (and) And(a, right, pos) else Or(a, right, pos)
         val cond = temp("cond", KType.BoolT, pos)
@@ -1010,8 +1030,9 @@ internal class ActionLowering(
                 "minus" -> ArithOp.MINUS
                 else -> return unsupported("$type ${OPERATOR_SYMBOLS[name] ?: name}", "v0 models only + and - on $type (DESIGN-v0.md 2.3)", c)
             }
-        val a = expr(c.dispatchReceiver ?: c.explicitReceiver ?: return null) ?: return null
-        val b = expr(c.arguments.single()) ?: return null
+        val a = expr(c.dispatchReceiver ?: c.explicitReceiver ?: return null)
+        val b = expr(c.arguments.single())
+        if (a == null || b == null) return null
         return Arith(op, a, b, ctx.assumption(c), ctx.posOf(c))
     }
 
@@ -1027,10 +1048,13 @@ internal class ActionLowering(
             return unsupported("${cls.name} constructor", "${cls.name} objects come only from a `returns fresh ${cls.name}` trusted function, so that P_once counts each one (DESIGN-B.md 3.3 rule 4)", c)
         }
         val values = linkedMapOf<String, Expr>()
+        // The fields the call gives an argument, also an unsupported one: those take no default.
+        val given = mutableSetOf<String>()
         var ok = true
         // Arguments in source order: Kotlin evaluates them so. An argument for no sidecar field is evaluated for its effects.
         for ((arg, param) in c.resolvedArgumentMapping.orEmpty()) {
             val field = cls.fields.find { it.kotlin == param.name.asString() }
+            field?.let { given += it.name }
             val v =
                 when {
                     field == null -> expr(arg)
@@ -1039,9 +1063,9 @@ internal class ActionLowering(
                 }
             if (v == null) ok = false else if (field != null) values[field.name] = v
         }
-        for (f in cls.fields.filter { it.name !in values }) {
+        for (f in cls.fields.filter { it.name !in given }) {
             val default = cls.defaults[f.name]
-            val problem = ctx.flattenProblem(f)
+            val problem = flattenReason(f)
             if (default != null && problem == null) {
                 values[f.name] = default
                 continue
@@ -1050,7 +1074,7 @@ internal class ActionLowering(
             if (default == null) {
                 unsupported("constructor default of ${f.kotlin}", "${cls.name}(...) gives ${f.kotlin} no argument and its default is not a constant", c)
             } else {
-                unsupported("flattened field ${f.kotlin}", "${problem!!.reason} at ${where(problem.pos)}", c)
+                unsupported("flattened field ${f.kotlin}", problem!!, c)
             }
         }
         if (!ok) return null
@@ -1059,12 +1083,15 @@ internal class ActionLowering(
         return Var(v, ctx.posOf(c))
     }
 
+    /** Every reason why [field] is not flattened (ModuleContext.flattenProblems), with its position; null for a valid field. */
+    private fun flattenReason(field: kv.kvir.ObjField): String? = ctx.flattenProblems(field).takeIf { it.isNotEmpty() }?.joinToString("; ") { "${it.reason} at ${where(it.pos)}" }
+
     /** The initial value of flattened [field]: the argument of a new model object, e.g. `Semaphore(1)` is 1. */
     private fun flattenedInit(
         arg: FirExpression,
         field: kv.kvir.ObjField,
     ): Expr? {
-        ctx.flattenProblem(field)?.let { return unsupported("flattened field ${field.kotlin}", "${it.reason} at ${where(it.pos)}", arg) }
+        flattenReason(field)?.let { return unsupported("flattened field ${field.kotlin}", it, arg) }
         val ctor = arg as? FirFunctionCall
         if (ctor == null || ctx.entriesOf(ctor).none { it.model == field.model && it.role == Role.CTOR }) {
             return unsupported("flattened field ${field.kotlin}", "the argument is not a new ${field.model} object", arg)
@@ -1183,7 +1210,7 @@ internal class ActionLowering(
         mark(read)
         val target =
             if (field != null) {
-                ctx.flattenProblem(field)?.let { return unsupported("flattened field ${field.kotlin}", "${it.reason} at ${where(it.pos)}", c) }
+                flattenReason(field)?.let { return unsupported("flattened field ${field.kotlin}", it, c) }
                 FieldTarget(obj(read.dispatchReceiver) ?: return null, field)
             } else {
                 markAll(read.dispatchReceiver)
@@ -1254,7 +1281,7 @@ internal class ActionLowering(
         val model = describe(ctx.calleeOf(c))
         markAll(c.dispatchReceiver)
         if (t.fresh != null || t.throws) return freshOrThrowing(c, t, valueUsed)
-        c.arguments.forEach { expr(it) ?: return null }
+        if (c.arguments.map { expr(it) }.any { it == null }) return null
         if (t.clock) {
             val n = temp(t.shortName, KType.IntT, pos)
             out += Nondet(listOf(n), model, pos)
@@ -1295,9 +1322,11 @@ internal class ActionLowering(
         val pos = ctx.posOf(c)
         val model = describe(ctx.calleeOf(c))
         if (!t.effectsNone) return unsupported("call to $model", "a trusted function without 'effects none' may change state the model does not see", c)
+        var lowered = true
         for (arg in c.arguments) {
-            if (isModelType(arg.resolvedType)) expr(arg) ?: return null else pureArgument(arg)
+            if (isModelType(arg.resolvedType)) lowered = expr(arg) != null && lowered else pureArgument(arg)
         }
+        if (!lowered) return null
         val bound = named.find { (item, target) -> item.source is FreeSource.Call && target === c }?.first?.names?.map { it.text }
         val types = (t.returns + t.ghosts).map { v -> v.name.text to sidecarType(v.type.text) } + listOfNotNull(("cond" to KType.BoolT).takeIf { t.throws })
         val outs =
@@ -1353,11 +1382,18 @@ internal class ActionLowering(
         helpers += fn
         mark(fn)
         val mapping = c.resolvedArgumentMapping.orEmpty()
+        // After an unsupported argument the other ones and the body are lowered only to report what else they hold (1.5).
+        var failed = false
         for (param in fn.valueParameters) {
             mark(param)
-            val arg = mapping.entries.find { it.value === param }?.key ?: param.defaultValue ?: return unsupported("argument ${param.name}", "no argument and no default", c)
-            val type = ktype(ctx.typeOf(param), param.symbol, param) ?: return null
-            val v = expr(arg, type) ?: return null
+            val arg = mapping.entries.find { it.value === param }?.key ?: param.defaultValue
+            if (arg == null) unsupported("argument ${param.name}", "no argument and no default", c)
+            val type = ktype(ctx.typeOf(param), param.symbol, param)
+            val v = if (arg != null && type != null) expr(arg, type) else null
+            if (type == null || v == null) {
+                failed = true
+                continue
+            }
             // An object argument (the entry or an object the action created) binds the parameter itself: a Let would
             // be a second name for the object (W6), with the parameter's non-null type, which the entry lacks (W5).
             if (v is Var && v.type is KType.RefT) {
@@ -1375,8 +1411,9 @@ internal class ActionLowering(
             val last = body.statements.lastOrNull()
             if (last is FirReturnExpression && last.target.labeledElement === fn) {
                 mark(last)
-                val type = ktype(fn.returnTypeRef.coneType, fn.symbol, fn) ?: return null
-                return expr(last.result, type)
+                val type = ktype(fn.returnTypeRef.coneType, fn.symbol, fn)
+                val value = if (type != null || !isNullLiteral(last.result)) expr(last.result, type) else null
+                return value.takeIf { type != null && !failed }
             }
             last?.let(::statement)
             return if (valueUsed) unsupported("value of helper ${fn.name}", "the helper returns no value at its end", c) else null
