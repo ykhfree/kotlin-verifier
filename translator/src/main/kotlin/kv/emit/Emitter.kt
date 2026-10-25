@@ -1119,27 +1119,27 @@ private class Emitter(
         val ops = m.operations.filter { it.action.status == Status.Supported }.associateBy { it.name }
         val missing = p.steps.filterIsInstance<ProbeCall>().map { it.op.text }.filter { it !in ops }.distinct()
         if (missing.isNotEmpty()) {
-            warnings += "probe not emitted: it calls ${missing.joinToString()}, which ${if (missing.size == 1) "is" else "are"} not emitted"
+            warnings += "${p.label} not emitted: it calls ${missing.joinToString()}, which ${if (missing.size == 1) "is" else "are"} not emitted"
             return
         }
         p.steps.filterIsInstance<ProbeCall>().map { it.op.text }.distinct().forEach { name ->
             val decl = s.operations.single { it.name.text == name }
             if (decl.items.filterIsInstance<EnsuresItem>().none { it.id.text.startsWith("progress_") }) {
-                warnings += "probe uses operation $name, which has no progress_* ensures: the probe may be vacuous (DESIGN-v0.md 5.4)"
+                warnings += "${p.label} uses operation $name, which has no progress_* ensures: the probe may be vacuous (DESIGN-v0.md 5.4)"
             }
         }
         w.comment("Sidecar: probe scenario. MI is satisfiable from init, and the actions are reachable and not inert.")
         w.comment("init and probe do not check inductiveness; the action methods do.")
-        method("probe", MethodKind.PROBE, "probe", null) {
-            w.line("method probe(${p.params.joinToString { "${it.name.text}: ${stype(it.type.text)}" }})", Source.Sidecar(p.pos, "probe"))
+        method(p.method, MethodKind.PROBE, p.label, null) {
+            w.line("method ${p.method}(${p.params.joinToString { "${it.name.text}: ${stype(it.type.text)}" }})", Source.Sidecar(p.pos, p.label))
             p.requires?.let {
                 w.put("  requires ")
-                sidecarExpr(it, "probe requires")
+                sidecarExpr(it, "${p.label} requires")
                 w.put("\n")
             }
             w.line("{")
             w.line("var S: Ref", indent = 2)
-            w.line("S := init()", Source.Sidecar(p.pos, "probe"), 2)
+            w.line("S := init()", Source.Sidecar(p.pos, p.label), 2)
             p.steps.forEach { step ->
                 when (step) {
                     is ProbeCall -> {
@@ -1153,11 +1153,13 @@ private class Emitter(
                         val byName = step.args.filter { it.name != null }.associateBy { it.name!!.text }
                         val args = listOf(step.args.first().value.text) + op.action.free.filter { it.sidecarName != null }.map { byName.getValue(it.sidecarName!!).value.text }
                         step.outs.zip(types).forEach { (out, type) -> w.line("var ${out.text}: $type", indent = 2) }
-                        w.line("${step.outs.joinToString { it.text }} := ${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "probe call ${op.name}"), 2)
+                        // DESIGN-C.md 7.2: without outs, the call of an operation without a result.
+                        val targets = if (step.outs.isEmpty()) "" else "${step.outs.joinToString { it.text }} := "
+                        w.line("$targets${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "${p.label} call ${op.name}"), 2)
                     }
                     is ProbeAssert -> {
                         w.put("  assert ")
-                        sidecarExpr(step.expr, "probe assert")
+                        sidecarExpr(step.expr, "${p.label} assert")
                         w.put("\n")
                     }
                 }

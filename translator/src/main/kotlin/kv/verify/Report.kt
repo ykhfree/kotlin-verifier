@@ -127,6 +127,9 @@ private val ACTIONS = setOf(MethodKind.ACTION, MethodKind.STRAY)
 
 private val HOLE_ID = Regex("""MI_INV_\d+""")
 
+/** The emitter's warning for a probe it left out; group 1 is the probe's label (`probe` or `probe NAME`). */
+private val NOT_EMITTED = Regex("""^(probe(?: \w+)?) not emitted: """)
+
 /** True if the error is at a hole conjunct: its `ensures MI_INV_i(S)` line or its text. */
 private val Finding.atHole: Boolean get() = (source as? Source.Sidecar)?.id?.let(HOLE_ID::matches) == true
 
@@ -231,7 +234,7 @@ private fun finding(
     return Finding(e, src, at)
 }
 
-/** Rows for what was not emitted: unsupported actions and operations, and a probe that calls one. */
+/** Rows for what was not emitted: unsupported actions and operations, and each probe that calls one. */
 private fun unsupportedRows(
     module: Module,
     emitted: Emitted?,
@@ -243,8 +246,8 @@ private fun unsupportedRows(
     module.strayActions.filter { it.status is Status.Unsupported }.forEach {
         rows += Row(MethodKind.STRAY, "stray action ${it.id}", it.pos, Verdict.UNSUPPORTED, emptyList(), (it.status as Status.Unsupported).diagnostics.joinToString("; ") { d -> d.message })
     }
-    if (emitted != null && emitted.warnings.any { it.startsWith("probe not emitted") }) {
-        rows += Row(MethodKind.PROBE, "probe", null, Verdict.UNSUPPORTED, emptyList(), emitted.warnings.first { it.startsWith("probe not emitted") })
+    emitted?.warnings?.forEach { w ->
+        NOT_EMITTED.find(w)?.let { rows += Row(MethodKind.PROBE, it.groupValues[1], null, Verdict.UNSUPPORTED, emptyList(), w) }
     }
     return rows
 }
