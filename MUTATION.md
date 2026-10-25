@@ -111,6 +111,12 @@ RACY는 도구의 고유한 주장("action 밖의 읽기는 임의 값")을 겨�
   5. RACY-06 ×3은 성질 위반(`progress_owner`)으로 FAILED다. 의도대로 읽으면 v0 2.12(경쟁 읽기는 임의 값) 때문에 생긴 오경보다.
   6. "불변식만 불일치"는 무해하다는 뜻이 아니다. 판정자 B의 core·reactor AOR-03과 coroutine SDL-06은 다음 단계에서 P3a를 깨는 진짜 결함인데, "불변식만 불일치"로 보고될 수 있다.
 
+- 2026-10-25, 2차 재측정 전 (DESIGN-C.md 10, 사용자 결정 뒤): sidecar에 `invariant entry_lease`(entry의 만료 시각 = 그 토큰의 lease)와 tryLock의 `ensures refusal_keeps_entry`(거절된 호출은 owner와 lease를 바꾸지 않음)를 더했다. KeyLocalLock 세 모듈만 다시 잰다 (aspect sidecar는 바뀌지 않음). 결과는 `mutation/rerun2/`. 예측 (결과 전에 등록):
+  1. FAILED에서 PROVEN으로 바뀌는 변이는 0개다. 이유: `entry_lease`는 hole 조각 MI_INV_4와 같은 식이라 사전 조건에 새 가정을 더하지 않고, 새 ensures는 의무만 더한다.
+  2. PROVEN에서 FAILED로 바뀌는 변이는 0개다. 이유: 두 절을 깨는 변이는 MI_INV_4나 MI_INV_5(또는 P3a)도 깨므로 이미 FAILED였다.
+  3. MI_INV_4 하나로 "invariant only"였던 15개(SDL-06 ×2, reactor SDL-05, AOR-01..04 ×3)는 "property"(`entry_lease`)가 된다.
+  4. MI_INV_1 하나로 "invariant only"였던 18개는 그대로 "invariant only"다. 새 절은 permit과 isHeld를 말하지 않는다.
+
 ## 9. 결과 (2026-10-24, 판정 뒤)
 
 이 절은 결과다. 1-8절의 규칙은 바꾸지 않았다.

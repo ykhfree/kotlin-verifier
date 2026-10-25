@@ -8,11 +8,14 @@
 # SB2_toctou_unlock fail at the same clauses as below (measured 2026-10-23).
 # The reactor rows were measured before they were written here; they equal the coroutine rows (2026-10-23).
 #
+# 2026-10-25 (DESIGN-C.md 10 UC2): the sidecar invariant entry_lease now names SB3's defect (a takeover keeps the
+# old expiresAt). Before, SB3 failed only at the hole conjunct MI_INV_4 (invariant only).
+#
 # variant   mutant    verdict  action   obligations
 coroutine   original  PROVEN   -        -
 coroutine   SB1       FAILED   unLock   ends_only_if P3a
 coroutine   SB2       FAILED   unLock   ends_only_if P3a; progress_owner
-coroutine   SB3       FAILED   tryLock  MI_INV_4
+coroutine   SB3       FAILED   tryLock  entry_lease
 coroutine   SB4       FAILED   tryLock  issue tryLock: set-once gIssued
 coroutine   SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
 coroutine   E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
@@ -23,7 +26,7 @@ coroutine   R2        PROVEN   -        -
 core        original  PROVEN   -        -
 core        SB1       FAILED   unLock   ends_only_if P3a
 core        SB2       FAILED   unLock   ends_only_if P3a; progress_owner
-core        SB3       FAILED   tryLock  MI_INV_4
+core        SB3       FAILED   tryLock  entry_lease
 core        SB4       FAILED   tryLock  issue tryLock: set-once gIssued
 core        SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
 core        E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
@@ -34,7 +37,7 @@ core        R2        PROVEN   -        -
 reactor     original  PROVEN   -        -
 reactor     SB1       FAILED   unLock   ends_only_if P3a
 reactor     SB2       FAILED   unLock   ends_only_if P3a; progress_owner
-reactor     SB3       FAILED   tryLock  MI_INV_4
+reactor     SB3       FAILED   tryLock  entry_lease
 reactor     SB4       FAILED   tryLock  issue tryLock: set-once gIssued
 reactor     SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
 reactor     E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
