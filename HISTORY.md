@@ -298,3 +298,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - C2 완료 (`9ea254b`, `c7b54e1`; `DESIGN-C.md` 10.2): emitter가 FRAME, END, ISSUE 사실을 계약에 낸다. WITNESS는 C3에서 정한다.
   - gate 목표 모델은 메인 세션이 설계 식에서 손으로 고쳤고, emitter 출력과 같다 (테스트 490개 통과).
   - 판정 변화 0: 변이 63회, 기계적 변이 264개 (`mutation/rerun-c2/`가 `rerun3`과 같음).
+- C3 시작 (사용자 요청 2026-10-25, feature-developer): `kv spec check` (계약만의 모델, 시나리오 칸 결정성 a·b, 절 하나씩 일관성, 필드 고정 경고, `--draft`). 수락: 파일럿 표 재현, 지금 sidecar의 칸 표(예측: C05, C19가 방식 b에서도 정해짐), WITNESS(O1)와 필드 프레임(O2) 측정.
