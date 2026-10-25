@@ -287,3 +287,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - 결과: 판정 변화 0. "invariant only" 15개가 성질 위반이 됐다 (진짜 결함 AOR-03, SDL-06 포함). D13, D14, D14b, SB3도 성질 위반이다. hole을 느슨하게 해도 그렇다.
   - 두 절의 서명은 C1(ensures와 invariant의 `reviewed` 문법) 뒤에 받는다.
 - 파일럿 자료를 `pilot-c/`로 옮겼다 (`cbcfe79`). scratch 폴더는 세션과 함께 사라진다.
+- C0, C1 구현 시작 (feature-developer, 2026-10-25): 스냅숏(`kv spec snapshot`), `source` 줄, `kv spec stale`, 이름 있는 probe, 결과 없는 연산 호출, ensures·invariant·lemma·probe의 `reviewed`, opt-in `review intent` 줄 (UC4).
