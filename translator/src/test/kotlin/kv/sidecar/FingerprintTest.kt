@@ -106,7 +106,7 @@ class FingerprintTest {
     }
 
     @Test
-    fun `the five reviewed clauses of the specs keep their fingerprints, since their reviewed text is the clause text`() {
+    fun `the reviewed clauses of the specs keep their fingerprints, and without source lines the reviewed text is the clause text`() {
         val notes =
             specDir.listFiles()!!.filter { it.name.endsWith(".kv") }.sortedBy { it.name }.flatMap { f ->
                 parseSidecar(f.path, f.readText()).intentClauses().filter { (_, c) -> c.reviewed != null }.map { (what, c) -> "${f.name}: $what" to c }
@@ -116,16 +116,20 @@ class FingerprintTest {
                 "keylocallock.common.kv: the issue rule of tryLock" to "023e62e52c1fc231",
                 "keylocallock.common.kv: ends_only_if P3a of tryLock" to "1c0ae67dbfe9757d",
                 "keylocallock.common.kv: unbacked_only_if P3b of tryLock" to "23aa1de7c7b2dde4",
+                // Signed on 2026-10-25 with source lines (DESIGN-C.md 10, UC2 and UC3).
+                "keylocallock.common.kv: ensures refusal_keeps_entry of tryLock" to "94198e9729f7b868",
                 "keylocallock.common.kv: ends_only_if P3a of unLock" to "d679f5c705a959be",
                 "keylocallock.common.kv: ends_only_if P3a of sweep" to "1c0ae67dbfe9757d",
+                "keylocallock.common.kv: invariant entry_lease" to "c2ae43c5a13c3c35",
             ),
             notes.map { (what, c) -> what to c.sha256 },
         )
         for ((what, c) in notes) {
-            assertEquals(emptyList(), c.sources, what)
-            assertEquals(c.unit, c.reviewedText, what)
+            // The five notes of 2026-10-23 have no source lines, so their reviewed text did not change with C0.
+            if (c.sources.isEmpty()) assertEquals(c.unit, c.reviewedText, what) else assertTrue(c.reviewedText.startsWith(c.unit), what)
             assertEquals(c.sha256, reviewFingerprint(c.reviewedText), what)
         }
+        assertEquals(5, notes.count { (_, c) -> c.sources.isEmpty() })
     }
 
     private val p3a = "  ends_only_if P3a: qt == t && res\n"

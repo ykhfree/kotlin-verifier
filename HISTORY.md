@@ -291,3 +291,6 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - C0, C1 완료 (`aba91e7`, `8d8e17a`): `kv spec snapshot`(파일럿 128블록과 바이트 단위로 같음), `source` 줄, `kv spec stale`, 이름 있는 probe, 결과 없는 호출, 모든 의도 절의 `reviewed`, `review intent`.
   - 수락 테스트: 파일럿 인용 114개 통과, README 118행 수정 시 그 문구를 인용한 절 8개만 `stale-source`, 결정 probe는 결정을 담은 절이 약해질 때 FAILED.
   - 메인 세션 확인: 테스트 488개, gate 4개, 변이 63회 불일치 0. 열린 질문의 결정은 `DESIGN-C.md` 10.1.
+- 서명 (사용자 승인 2026-10-25): `entry_lease`(출처 README 118-119행 블록, CLAUDE.md lockTimeoutMillis 줄)와 `refusal_keeps_entry`(`source none`: 문장 없음, 사용자 결정 UC3)에 `reviewed` 메모와 지문을 달았다. 지문은 절 텍스트와 출처 줄을 함께 묶는다.
+  - 확인: 테스트 488개 통과, 세 변형 PROVEN, `kv spec stale` 오류 0, gate 3개 exit 0, mutantsReqShield 33회 불일치 0.
+  - 나머지 의도 절 13개는 아직 서명하지 않았다. 그래서 `review intent` 줄은 넣지 않았다.
