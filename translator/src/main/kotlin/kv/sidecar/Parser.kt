@@ -32,10 +32,11 @@ fun parseSidecar(
  * Parses a cell file (DESIGN-C.md 3.2, `kv spec check --cells`). Throws [SidecarException] with the first syntax
  * error. Grammar, with the probe step of DESIGN-C.md 7.2:
  * ```
- * cell    := "cell" NAME "(" [ NAME ":" TYPE { "," NAME ":" TYPE } ] ")" [ STRING ] "{" { step } { outcome } "}"
+ * cell    := "cell" NAME "(" [ NAME ":" TYPE { "," NAME ":" TYPE } ] ")" [ STRING ] [ "boundary" ] "{" { step } { outcome } "}"
  * step    := [ NAME { "," NAME } ":=" ] NAME "(" ARGS ")" | "assume" VEXPR
  * outcome := "outcome" NAME ":" VEXPR
  * ```
+ * `boundary` marks a cell whose clock reading equals a lease (DESIGN-C.md 3.3 rule 5: always a question).
  */
 fun parseCells(
     file: String,
@@ -601,7 +602,7 @@ private class SidecarParser(
 
     // ---- cell files (DESIGN-C.md 3.2) ----
 
-    /** A cell file: `cell ID(PARAMS) ["title"] { steps outcomes }`, any number of them. */
+    /** A cell file: `cell ID(PARAMS) ["title"] [boundary] { steps outcomes }`, any number of them. */
     fun cells(): List<CellDecl> {
         val cells = mutableListOf<CellDecl>()
         while (true) {
@@ -614,6 +615,8 @@ private class SidecarParser(
             val params = params()
             skipWs()
             val title = if (at("\"")) string() else null
+            val boundary = peekWord() == "boundary"
+            if (boundary) name()
             expect("{")
             val steps = mutableListOf<CellStep>()
             val outcomes = mutableListOf<CellOutcome>()
@@ -633,7 +636,7 @@ private class SidecarParser(
                     else -> steps += call(first)
                 }
             }
-            cells += CellDecl(id, params, title, steps, outcomes, posAt(start))
+            cells += CellDecl(id, params, title, steps, outcomes, posAt(start), boundary)
         }
     }
 

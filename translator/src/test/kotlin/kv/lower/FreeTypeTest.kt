@@ -41,7 +41,8 @@ class FreeTypeTest {
             assertEquals("t" to KType.Abs("Token", false), t.sidecarName to t.local.type, variant)
             assertEquals(Captured::class, t.origin::class, variant)
             val text = emitBound(m, s).text
-            assertTrue("method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)\n  requires MI(S)\n  requires t != NULL" in text, "$variant:\n$text")
+            // C4: the tool fact WITNESS follows MI in the preconditions.
+            assertTrue("method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)\n  requires MI(S)\n  requires MI_WITNESS(S)  // tool fact WITNESS\n  requires t != NULL" in text, "$variant:\n$text")
         }
     }
 

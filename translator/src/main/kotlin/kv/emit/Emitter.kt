@@ -110,11 +110,14 @@ fun emitViper(
 enum class AssumedFact(
     val option: String,
 ) {
-    /** DESIGN-C.md 7.3 WITNESS, in MI: a held backed token is carried by its key's entry. */
-    WITNESS("witness"),
-
     /** An action leaves every field of another key's entry as it was (FRAME says only that the entry is the same object). */
     FIELD_FRAME("field-frame"),
+
+    /** FRAME with the trigger set `{ qk in domain(S.m) }` too, so that `has(S, qk)` alone instantiates it (DESIGN-C.md 10.3). */
+    FRAME_DOMAIN("frame-domain"),
+
+    /** init issued no token: every ghost record's issued flag is false (kv verify's init inhales it). */
+    INIT_UNISSUED("init-unissued"),
 }
 
 /**
@@ -162,6 +165,8 @@ const val OVER_RELEASE = "kotlinx Semaphore.release may over-release"
 const val FACT_FRAME = "tool fact FRAME"
 const val FACT_END = "tool fact END"
 const val FACT_ISSUE = "tool fact ISSUE"
+const val FACT_WITNESS = "tool fact WITNESS"
+const val FACT_ISSUE_ONLY = "tool fact ISSUE_ONLY"
 
 /** Writes text and records which source each range comes from. */
 private class VprWriter {
@@ -442,7 +447,7 @@ private class Emitter(
         w.line("has(S, qk1) && has(S, qk2) && qk1 != qk2 ==> S.$ms[qk1] != S.$ms[qk2])", indent = 5)
         w.line(")")
         w.put("\n")
-        if (AssumedFact.WITNESS in assumed) witnessDefine()
+        if (witnessFact) witnessDefine()
         setOnce.forEach { d ->
             val src = Source.Sidecar(d.pos, d.id.text)
             w.comment("---- Sidecar: set-once ${d.id.text}: ${d.map.text}. A mapped key keeps its value (every action, DESIGN-B.md 2.4) ----")
@@ -470,8 +475,7 @@ private class Emitter(
         w.comment("@HOLE-END MI_INV")
         w.line("define MI_INV(S) (${hole.indices.joinToString(" && ") { "MI_INV_${it + 1}(S)" }})", Source.Generated("MI_INV"))
         w.put("\n")
-        val witnessPart = listOfNotNull("MI_WITNESS(S)".takeIf { AssumedFact.WITNESS in assumed })
-        w.line("define MI(S) (${(listOf("MI_PERMS(S)", "MI_OWN(S)") + witnessPart + invariants.map { "${it.id.text}(S)" } + "MI_INV(S)").joinToString(" && ")})", Source.Generated("MI"))
+        w.line("define MI(S) (${(listOf("MI_PERMS(S)", "MI_OWN(S)") + invariants.map { "${it.id.text}(S)" } + "MI_INV(S)").joinToString(" && ")})", Source.Generated("MI"))
         w.put("\n")
         if (!b) hist()
     }
@@ -484,16 +488,25 @@ private class Emitter(
         m.operations.flatMap { op -> op.action.commit.filterIsInstance<Issue>().flatMap { issue -> issue.fields.filterValues { (it as? Var)?.local == op.action.key.local }.keys } }.distinct().singleOrNull()
     }
 
-    /** DESIGN-C.md 7.3 WITNESS as a part of MI, assumed for a measurement (10.2 O1): a held backed token is carried. */
+    /**
+     * DESIGN-C.md 7.3 WITNESS, a tool fact (C4): an object module whose issue rules set the backed and the key field.
+     * END and ISSUE keep it, so init ensures it and every action requires and ensures it, proven with the body.
+     */
+    private val witnessFact: Boolean by lazy { !b && backed != null && keyField != null }
+
+    /** The WITNESS macro: a held backed token is carried by its key's entry. */
     private fun witnessDefine() {
         val index = stype(ghost.index.text)
-        val bk = backed ?: fail(ghost.pos, "WITNESS needs a frozen ghost field that the issue rule sets to carried(S, k, result)")
-        val kf = keyField ?: fail(ghost.pos, "WITNESS needs a frozen ghost field that the issue rule sets to the action key")
-        w.comment("Assumed for a measurement (DESIGN-C.md 10.2 O1), not proven: WITNESS, a held backed token is carried by its key's entry.")
-        w.line("define MI_WITNESS(S) (", Source.Generated("WITNESS"))
-        w.line("forall qt: $index :: { $g(qt).$held } $g(qt).$issued && $g(qt).$bk && $g(qt).$held ==> carried(S, $g(qt).$kf, qt)", indent = 2)
+        w.comment("Tool fact WITNESS (DESIGN-C.md 7.3): a held backed token is carried by its key's entry. END and ISSUE keep it.")
+        w.line("define MI_WITNESS(S) (", Source.Generated(FACT_WITNESS))
+        w.line("forall qt: $index :: { $g(qt).$held } $g(qt).$issued && $g(qt).$backed && $g(qt).$held ==> carried(S, $g(qt).$keyField, qt)", indent = 2)
         w.line(")")
         w.put("\n")
+    }
+
+    /** `requires MI_WITNESS(S)` after `requires MI(S)` of an action or a stray action, if the module has WITNESS. */
+    private fun requiresWitness() {
+        if (witnessFact) w.line("requires MI_WITNESS(S)", Source.Generated(FACT_WITNESS), 2, "$FACT_WITNESS")
     }
 
     /** HIST (DESIGN-v0.md 5.3 item 4): from the ghost field kinds, in declaration order. */
@@ -543,9 +556,13 @@ private class Emitter(
         method("init", MethodKind.INIT, "init", null) {
             w.line("method init() returns (S: Ref)")
             w.line("ensures MI(S)", Source.Generated("MI"), 2)
+            if (witnessFact) w.line("ensures MI_WITNESS(S)", Source.Generated(FACT_WITNESS), 2, "$FACT_WITNESS: no token is issued yet")
             if (contract != null) {
                 // No body: a cell assumes MI and an empty map. A counter's value is not stated (ContractOnly).
                 m.state.filterIsInstance<MapVar>().forEach { w.line("ensures S.${it.name} == ${initial(it)}", Source.Kotlin(it.pos), 2) }
+                if (AssumedFact.INIT_UNISSUED in assumed && !b) {
+                    w.line("ensures forall qt: ${stype(ghost.index.text)} :: { $g(qt) } !$g(qt).$issued", Source.Generated("INIT_UNISSUED"), 2, "assumed for a measurement: init issued no token")
+                }
                 return@method
             }
             m.state.forEach { w.line("ensures S.${it.name} == ${initial(it)}", Source.Kotlin(it.pos), 2) }
@@ -647,6 +664,7 @@ private class Emitter(
         op: Operation?,
     ) {
         w.line("requires MI(S)", Source.Generated("MI"), 2)
+        requiresWitness()
         val named = a.free.filter { it.sidecarName != null }
         val namedLocals = named.map { it.local }.toSet()
         (op?.body.orEmpty().walk() + a.body.walk()).filterIsInstance<Nondet>().filter { n -> n.outs.isNotEmpty() && n.outs.all { it in namedLocals } }.forEach { n ->
@@ -696,7 +714,7 @@ private class Emitter(
         w.line("ensures MI_PERMS(S)", Source.Generated("MI_PERMS"), 2)
         frameFact(a)
         w.line("ensures MI_OWN(S)", Source.Generated("MI_OWN"), 2)
-        if (AssumedFact.WITNESS in assumed) w.line("ensures MI_WITNESS(S)", Source.Generated("WITNESS"), 2, "assumed for a measurement (DESIGN-C.md 10.2 O1)")
+        if (witnessFact) w.line("ensures MI_WITNESS(S)", Source.Generated(FACT_WITNESS), 2, "$FACT_WITNESS: a held backed token is carried by its key's entry")
         if (AssumedFact.FIELD_FRAME in assumed) fieldFrame(a)
         // DESIGN-B.md 5.4 rule 1 (JB1): each set-once line right after MI_OWN.
         setOnce.forEach { d -> w.line("ensures ${d.id.text}(S)", Source.Sidecar(d.pos, d.id.text), 2) }
@@ -710,6 +728,7 @@ private class Emitter(
             w.line("ensures HIST", Source.Generated("HIST"), 2)
             endFacts(a)
             issueFact(a)
+            issueOnlyFact(a)
         }
     }
 
@@ -724,8 +743,9 @@ private class Emitter(
     private fun frameFact(a: Action) {
         val k = a.key.local.name
         val ms = map.name
+        val triggers = if (AssumedFact.FRAME_DOMAIN in assumed) "{ qk in domain(S.$ms) } { S.$ms[qk] }" else "{ S.$ms[qk] }"
         w.line(
-            "ensures forall qk: $keyType :: { S.$ms[qk] } qk != $k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.$ms[qk] == old(S.$ms[qk]))",
+            "ensures forall qk: $keyType :: $triggers qk != $k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.$ms[qk] == old(S.$ms[qk]))",
             Source.Generated(FACT_FRAME),
             2,
             "$FACT_FRAME: the action changes the map only at its key",
@@ -782,6 +802,20 @@ private class Emitter(
                     GhostKind.FROZEN -> issue.fields.getValue(f.name.text)
                 }
         }
+
+    /**
+     * ISSUE_ONLY (C4): the action issues no token but its result. The ghost binder sets the issued flag only in the
+     * issue commit of the result, so a token not issued before, other than the result, is not issued after.
+     */
+    private fun issueOnlyFact(a: Action) {
+        val notResult = a.commit.filterIsInstance<Issue>().singleOrNull()?.let { " && qt != ${expr(it.token)}" } ?: ""
+        w.line(
+            "ensures forall qt: ${stype(ghost.index.text)} :: { $g(qt).$issued } !old($g(qt).$issued)$notResult ==> !$g(qt).$issued",
+            Source.Generated(FACT_ISSUE_ONLY),
+            2,
+            "$FACT_ISSUE_ONLY: the action issues no token but its result",
+        )
+    }
 
     /** ISSUE: a non-null result was not issued before, and its ghost record holds the values the commit writes. */
     private fun issueFact(a: Action) {
@@ -863,6 +897,7 @@ private class Emitter(
         method(name, MethodKind.STRAY, label, a.pos) {
             w.line("method $name(S: Ref, ${a.key.local.name}: ${vtype(a.key.local.type)})")
             w.line("requires MI(S)", Source.Generated("MI"), 2)
+            requiresWitness()
             if (!reach) {
                 // DESIGN-B.md 5.4 rule 5: MI and every set-once line, and no allowance clause without a ghost record.
                 ensuresInvariant(a, label)
@@ -1413,6 +1448,9 @@ private class Emitter(
                         }
                     }
                 }
+                // Silicon instantiates the frame and set-once quantifiers only on terms it has: name each key
+                // parameter's entry after the steps. A local assignment assumes nothing (a cell on another key).
+                c.params.filter { stype(it.type.text) == keyType }.forEach { w.line("var has_${it.name.text}: Bool := has(S, ${it.name.text})", indent = 2) }
                 if (outcome == null) {
                     w.line("refute false", Source.Sidecar(c.pos, "$label reach"), 2, "fails exactly when the end is unreachable")
                 } else {

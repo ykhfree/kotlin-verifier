@@ -451,6 +451,11 @@ fun SpecCheckReport.json(): String {
             "stale" to stale?.findings?.map { mapOf("pos" to pos(it.pos), "code" to it.code, "error" to it.error, "message" to it.message) },
             "field_fixing" to fieldWarnings.map { mapOf("clause" to it.clause, "pos" to pos(it.pos), "fields" to it.fields) },
             "model" to mapOf("from_code" to (options.root != null), "assumptions" to modelAssumptions, "assumed_facts" to options.assumed.map { it.option }),
+            // The cells as the cell file has them, so that `spec.py questions` needs no cell parser (DESIGN-C.md 3.3).
+            "cell_list" to
+                cells.map { c ->
+                    linkedMapOf("id" to c.id.text, "title" to c.title, "boundary" to c.boundary, "outcomes" to c.outcomes.map { linkedMapOf("name" to it.name.text, "expr" to it.expr.text) })
+                },
             "cells" to
                 determinacy.associate { d ->
                     d.mode.letter to linkedMapOf("error" to d.error, "findings" to d.findings, "millis" to d.seconds?.let { (it * 1000).toLong() }, "cells" to d.cells)

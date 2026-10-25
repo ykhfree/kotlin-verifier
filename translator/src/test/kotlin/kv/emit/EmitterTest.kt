@@ -56,7 +56,7 @@ class EmitterTest {
         text.substringAfter("method $name(").substringBefore("\n{\n").lines().map { it.substringBefore("  //").trim() }.filter { it.startsWith("ensures") }
 
     @Test
-    fun `the tool facts FRAME, END and ISSUE follow MI_PERMS and HIST in each action, each with its report name`() {
+    fun `the tool facts FRAME, END, ISSUE, WITNESS and ISSUE_ONLY in each action, each with its report name`() {
         val e = emit("coroutine")
         val frame = "ensures forall qk: Key :: { S.m[qk] } qk != k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.m[qk] == old(S.m[qk]))"
         val kept = "ensures forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gHeld) && !old(carried(S, k, qt)) ==> tok(qt).gHeld"
@@ -65,14 +65,22 @@ class EmitterTest {
         val issue =
             "ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued && tok(res).gKey == k && tok(res).gBacked == carried(S, k, res) && " +
                 "tok(res).gHeld && tok(res).gLease == now + timeout"
-        val head = listOf("ensures MI_PERMS(S)", frame, "ensures MI_OWN(S)", "ensures P2(S)", "ensures entry_lease(S)", "ensures entry_held(S)") + (1..5).map { "ensures MI_INV_$it(S)" } + "ensures HIST"
+        // C4: WITNESS right after MI_OWN, ISSUE_ONLY right after ISSUE (after END in an action that issues nothing).
+        val witness = "ensures MI_WITNESS(S)"
+        val issueOnlyIssuing = "ensures forall qt: Int :: { tok(qt).gIssued } !old(tok(qt).gIssued) && qt != res ==> !tok(qt).gIssued"
+        val issueOnly = issueOnlyIssuing.replace(" && qt != res", "")
+        val head = listOf("ensures MI_PERMS(S)", frame, "ensures MI_OWN(S)", witness, "ensures P2(S)", "ensures entry_lease(S)", "ensures entry_held(S)") + (1..5).map { "ensures MI_INV_$it(S)" } + "ensures HIST"
         // tryLock issues its result: END leaves that token out, and ISSUE comes after END.
-        assertEquals(head + listOf(endedIssuing, kept, issue), e.ensures("tryLock").take(head.size + 3))
+        assertEquals(head + listOf(endedIssuing, kept, issue, issueOnlyIssuing), e.ensures("tryLock").take(head.size + 4))
         for (name in listOf("unLock", "sweep")) {
-            assertEquals(head + listOf(ended, kept), e.ensures(name).take(head.size + 2), name)
+            assertEquals(head + listOf(ended, kept, issueOnly), e.ensures(name).take(head.size + 3), name)
             assertFalse(issue in e.ensures(name), "$name has no issue rule")
         }
-        val names = mapOf(frame to FACT_FRAME, kept to FACT_END, endedIssuing to FACT_END, ended to FACT_END, issue to FACT_ISSUE)
+        val names =
+            mapOf(
+                frame to FACT_FRAME, kept to FACT_END, endedIssuing to FACT_END, ended to FACT_END, issue to FACT_ISSUE, witness to FACT_WITNESS,
+                issueOnlyIssuing to FACT_ISSUE_ONLY, issueOnly to FACT_ISSUE_ONLY,
+            )
         val facts =
             e.text.lines().withIndex().mapNotNull { (i, l) ->
                 val name = names[l.substringBefore("  //").trim()] ?: return@mapNotNull null
@@ -80,7 +88,8 @@ class EmitterTest {
                 assertEquals(Source.Generated(name), e.sourceAt(i + 1, l.indexOf("ensures") + 9)?.source, l)
                 name
             }
-        assertEquals(listOf(3, 6, 1), listOf(FACT_FRAME, FACT_END, FACT_ISSUE).map { n -> facts.count { it == n } })
+        // WITNESS: init and the three actions ensure it.
+        assertEquals(listOf(3, 6, 1, 4, 3), listOf(FACT_FRAME, FACT_END, FACT_ISSUE, FACT_WITNESS, FACT_ISSUE_ONLY).map { n -> facts.count { it == n } })
     }
 
     @Test
@@ -123,7 +132,7 @@ class EmitterTest {
     fun `init ensures one initial value per state field, in the three variants`() {
         for (variant in listOf("coroutine", "core", "reactor")) {
             val init = emit(variant).text.substringAfter("method init() returns (S: Ref)").substringBefore("{")
-            assertEquals(listOf("ensures MI(S)", "ensures S.m == Map[Key, Ref]()", "ensures S.seq == 0"), init.lines().map { it.trim() }.filter { it.isNotEmpty() }, variant)
+            assertEquals(listOf("ensures MI(S)", "ensures MI_WITNESS(S)", "ensures S.m == Map[Key, Ref]()", "ensures S.seq == 0"), init.lines().map { it.substringBefore("  //").trim() }.filter { it.isNotEmpty() }, variant)
         }
     }
 
@@ -135,8 +144,9 @@ class EmitterTest {
         val (src, pos) = e.sidecarAt(line, "rej ==>")
         assertEquals("trusted rejectsNewEntry", src.id)
         assertEquals(Workspace(dir).at("keylocallock.common.kv", "ensures rej ==> limit != 0", "rej"), pos.line to pos.col)
-        assertTrue("method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)\n  requires MI(S)\n  requires t != NULL" in e.text, e.text)
-        assertTrue("method sweep(S: Ref, k: Key, now: Int)\n  requires MI(S)\n  ensures MI_PERMS(S)" in e.text, e.text)
+        val witness = "  requires MI_WITNESS(S)  // tool fact WITNESS"
+        assertTrue("method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)\n  requires MI(S)\n$witness\n  requires t != NULL" in e.text, e.text)
+        assertTrue("method sweep(S: Ref, k: Key, now: Int)\n  requires MI(S)\n$witness\n  ensures MI_PERMS(S)" in e.text, e.text)
     }
 
     // ---- construct fixtures ----

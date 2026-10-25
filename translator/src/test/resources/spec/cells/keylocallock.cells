@@ -1,7 +1,8 @@
 // The KeyLocalLock scenario cells of the DESIGN-C pilot (DESIGN-C.md 3.2), for `kv spec check --cells`.
 // Source: pilot-c/packet/SCENARIOS.md (the text the drafters answered) and the Viper form CELLS of
-// pilot-c/tools/determinacy.py (steps, setup conditions, outcomes and their names). C4 will generate cells; until
-// then this file is written by hand. 19 formal cells: C09 is dropped (see below).
+// pilot-c/tools/determinacy.py (steps, setup conditions, outcomes and their names). Written by hand for the pilot;
+// `kv spec cells` generates cells since C4. 19 formal cells: C09 is dropped (see below). C04 and C15 are the boundary
+// cells of the pilot's question rule 5 (pilot-c/tools/questions.py BOUNDARY).
 //
 // Common setup: lockTimeoutMillis = 10, one key k. "Acquired at time 0": tryLock(k) at clock 0 on the empty map with
 // no cap returned the backed token t1.
@@ -28,7 +29,7 @@ cell C03(k: Key) "Acquired at time 0, not released: tryLock(k) at time 5" {
   outcome token: r != NULL
 }
 
-cell C04(k: Key) "Acquired at time 0, not released: tryLock(k) at time 10 (the lease end)" {
+cell C04(k: Key) "Acquired at time 0, not released: tryLock(k) at time 10 (the lease end)" boundary {
   t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
   assume t1 != NULL && tok(t1).gBacked
   r := tryLock(k, now = 10, timeout = 10, rej = false, limit = 0)
@@ -119,7 +120,7 @@ cell C14(k: Key) "Acquired at time 0: a monitor pass at time 5 looks at k" {
   outcome dropped: !has(S, k)
 }
 
-cell C15(k: Key) "Acquired at time 0: a monitor pass at time 10 looks at k" {
+cell C15(k: Key) "Acquired at time 0: a monitor pass at time 10 looks at k" boundary {
   t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
   assume t1 != NULL && tok(t1).gBacked
   sweep(k, now = 10)

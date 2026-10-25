@@ -25,6 +25,7 @@ import kv.spec.SOURCES_JSON
 import kv.spec.SnapshotException
 import kv.spec.SnapshotInput
 import kv.spec.SpecCheckOptions
+import kv.spec.generateCells
 import kv.spec.readSnapshot
 import kv.spec.render
 import kv.spec.specCheck
@@ -86,10 +87,15 @@ private const val USAGE = """usage:
       each scenario cell on it: DETERMINED(outcome), OPEN or INFEASIBLE, in mode a (with the hole) and mode b (the
       hole is true). Without --root only mode b runs: no code proves the hole. With --root, clause isolation: one
       Silicon run per clause index, each action keeping one sidecar clause, so that every failing clause shows. The
-      Viper files and check.json go to --out (default: a temp directory). --assume-fact witness|field-frame adds a fact to the
-      contract-only model for a measurement (DESIGN-C.md 10.2 O1, O2); it is assumed, not proven. Exit 0 if no
+      Viper files and check.json go to --out (default: a temp directory). --assume-fact field-frame|frame-domain|init-unissued
+      adds a fact to the contract-only model for a measurement (DESIGN-C.md 10.2 O2, 10.3); it is assumed, not proven. Exit 0 if no
       error (OPEN cells and failing clauses are findings), 2 usage error, 4 error (sidecar, cell file, stale-source,
       or a Silicon run that counts for nothing).
+  kv spec cells [--out FILE] SIDECAR.kv
+      Writes the scenario cells of the sidecar (DESIGN-C.md 3.2) in the cell file grammar of kv spec check --cells, to
+      stdout or FILE. The rule reads the sidecar alone: the state map, the ghost record, the operations, their free
+      values and types, the trusted contracts and the issue rule. Exit 0, 2 usage error, 4 if the sidecar has an error
+      or a shape the rule does not read.
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
@@ -342,7 +348,7 @@ private fun hole(
     }
 }
 
-/** `kv spec snapshot`, `kv spec stale` and `kv spec check` (DESIGN-C.md 7.1). */
+/** `kv spec snapshot`, `kv spec stale`, `kv spec check` and `kv spec cells` (DESIGN-C.md 7.1). */
 private fun spec(
     args: List<String>,
     out: PrintStream,
@@ -392,7 +398,27 @@ private fun spec(
             if (report.errors > 0) 4 else 0
         }
         "check" -> specCheckCommand(rest, out, err)
-        else -> usage("spec needs 'snapshot', 'stale' or 'check'")
+        "cells" -> {
+            val target = if (rest.firstOrNull() == "--out") rest.getOrNull(1)?.let(::File) ?: return usage("--out needs a value") else null
+            val files = if (target != null) rest.drop(2) else rest
+            val file = files.singleOrNull()?.let(::File) ?: return usage("spec cells needs one sidecar file")
+            if (!file.isFile) return usage("no file ${file.path}")
+            val generated =
+                try {
+                    generateCells(SidecarLoader.load(file))
+                } catch (e: SidecarException) {
+                    e.errors.forEach { err.println(it) }
+                    return 4
+                }
+            if (target == null) {
+                out.print(generated.text)
+            } else {
+                target.writeText(generated.text)
+                out.println("kv: wrote ${target.path}: ${generated.cells.size} cells, ${generated.cells.count { it.boundary }} boundary")
+            }
+            0
+        }
+        else -> usage("spec needs 'snapshot', 'stale', 'check' or 'cells'")
     }
 }
 
