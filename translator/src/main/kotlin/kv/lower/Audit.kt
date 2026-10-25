@@ -64,9 +64,19 @@ internal class Audit(
     private val cells: Set<FirBasedSymbol<*>> = lowered.flatMap { it.second.cellSymbols }.toSet()
     private val reach = mutableMapOf<FirNamedFunctionSymbol, String?>()
 
-    /** Nodes an operation section translated (DESIGN-B.md 2.6), and the default-value lambdas of getOrPut actions, which belong to the section. */
+    /**
+     * Nodes an operation section translated (DESIGN-B.md 2.6), and the parts of an action call that run before the
+     * action: the default-value lambda of getOrPut and the value argument of put. Their untranslated nodes are audited.
+     */
     private val translated: Set<Int> = lowered.flatMap { it.second.action.translated }.toSet()
-    private val sectionRoots: Set<FirElement> = lowered.mapNotNull { (found, _) -> found.lambda?.takeIf { found.kind == MapCall.GET_OR_PUT } }.toSet()
+    private val outsideRoots: Set<FirElement> =
+        lowered.mapNotNull { (found, _) ->
+            when (found.kind) {
+                MapCall.GET_OR_PUT -> found.lambda
+                MapCall.PUT, MapCall.PUT_IF_ABSENT, MapCall.SET -> found.call.argumentList.arguments.getOrNull(1)
+                else -> null
+            }
+        }.toSet()
 
     /** The trusted functions whose bodies are in the audited files (DESIGN-B.md 3.3 rule 5), by symbol. */
     private val trustedFns = ctx.trusted.keys
@@ -105,7 +115,7 @@ internal class Audit(
         while (x != null) {
             when {
                 x in keyArgs -> return Region.KEY_ARG
-                x in sectionRoots -> return Region.OUTSIDE
+                x in outsideRoots -> return Region.OUTSIDE
                 x in actionCalls -> return Region.ACTION
                 x in helpers -> return Region.HELPER
             }

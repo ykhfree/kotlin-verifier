@@ -196,6 +196,22 @@ class SectionTest {
     }
 
     @Test
+    fun `a statement that assigns a local the result reads is in the section`() {
+        val op = "    fun getOrCreate(jp: Any): Shield? {\n        var r: Shield? = shieldMap.computeIfAbsent(target(jp)) { create(jp) }\n        if (calls > 0L) r = shared\n        return r\n    }"
+        val m = AspectFixture(op = op).lowered()
+        assertSupportedOp(m)
+        assertTrue(m.sectionShape.any { it.startsWith("if ") } && m.sectionShape.any { "shared" in it }, m.getOrCreateText)
+    }
+
+    @Test
+    fun `a statement that assigns a local the result does not read stays in the ledger`() {
+        val f = AspectFixture(op = op("        var n = 0L\n        if (calls > 0L) n = 1L\n        return shieldMap.computeIfAbsent(target(jp)) { create(jp) }"))
+        val m = f.lowered()
+        assertSupportedOp(m)
+        assertEquals(listOf("run action getOrCreate#${f.at("shieldMap.computeIfAbsent").first}", "return out_${f.at("shieldMap.computeIfAbsent").let { "${it.first}_${it.second}" }}"), m.sectionShape)
+    }
+
+    @Test
     fun `a return inside a loop of the section is unsupported`() {
         val f = AspectFixture(op = op("        while (true) {\n            return shieldMap.computeIfAbsent(target(jp)) { create(jp) }\n        }"))
         assertUnsupportedOp(f.lowered(), "loop", f.at("while (true)"))
@@ -283,6 +299,25 @@ class SectionTest {
         assertTrue(stray.map in m.state)
         assertEquals("drop#${f.at("shieldMap.remove").first}", stray.id)
         assertEquals(emptyList(), stray.body)
+    }
+
+    @Test
+    fun `a stray putIfAbsent whose value constructs a Shield is unsupported, so P_once cannot miss it`() {
+        val f = AspectFixture(members = "    fun stash(jp: Any) {\n        shieldMap.putIfAbsent(target(jp), Shield(prefix))\n    }")
+        val m = f.lowered()
+        // The value runs before the action, so the audit sees the constructor (DESIGN-B.md 3.3 rule 4).
+        assertTrue(m.ledger.any { it.kind == DispositionKind.UNSUPPORTED && "Shield constructor outside" in it.what && it.pos.line to it.pos.col == f.at("Shield(prefix)") }, m.ledger.joinToString("\n"))
+        assertTrue(m.incomplete)
+        assertEquals(emptyList(), checkWellFormed(m))
+    }
+
+    @Test
+    fun `a stray putIfAbsent of an instance val adds nothing to the ledger`() {
+        val f = AspectFixture(members = "    fun stash(jp: Any) {\n        shieldMap.putIfAbsent(target(jp), shared)\n    }")
+        val m = f.lowered()
+        assertSupportedOp(m)
+        assertEquals(ActionKind.PUT_IF_ABSENT, m.strayActions.single().kind)
+        assertTrue(!m.incomplete, m.ledger.joinToString("\n"))
     }
 
     @Test

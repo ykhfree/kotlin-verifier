@@ -447,12 +447,15 @@ internal class ActionLowering(
     private fun actionValueOutside(): Expr? {
         if (kind != ActionKind.PUT && kind != ActionKind.PUT_IF_ABSENT) return null
         val arg = call.arguments.getOrNull(1) ?: return unsupported("${found.kind.method} value", "the call has no value argument", call)
-        markAll(arg)
         val read = unwrap(arg) as? FirPropertyAccessExpression
         val sym = read?.let { ctx.calleeOf(it) }
-        if (read != null && sym != null && (sym is FirValueParameterSymbol || sym is FirPropertySymbol && (sym.isLocal || instanceVal(read, sym)))) return read(read)
+        if (read != null && sym != null && (sym is FirValueParameterSymbol || sym is FirPropertySymbol && (sym.isLocal || instanceVal(read, sym)))) {
+            markAll(arg)
+            return read(read)
+        }
         val type = ktype(arg.resolvedType, null, arg) ?: return null
         if (!opaque(type)) return unsupported("${found.kind.method} value", "a value of a class with modeled fields that the action does not create", arg)
+        // The model does not translate the computation, so its nodes stay in the ledger: the audit sees its state accesses.
         return computed(arg, type)
     }
 
@@ -1603,8 +1606,8 @@ internal class ActionLowering(
     /**
      * DESIGN-B.md 2.6: the statements of [fn] the section translates. A statement counts if it holds a return of
      * [fn], the action call or a call of a `returns fresh` or `throws` trusted function (not counting the action's
-     * own lambda), or if it declares a local that a counted statement reads (the action's lambda and key argument
-     * read free values, DESIGN-v0.md 2.12, so their reads do not count). Everything else stays in the ledger.
+     * own lambda), or if it declares or assigns a local that a counted statement reads (the action's lambda and key
+     * argument read free values, DESIGN-v0.md 2.12, so their reads do not count). Everything else stays in the ledger.
      */
     private fun relevance(fn: FirNamedFunction): Set<FirElement> {
         val skip = setOfNotNull(lambda.takeIf { kind == ActionKind.COMPUTE || kind == ActionKind.COMPUTE_IF_ABSENT }, call.arguments.firstOrNull())
@@ -1623,19 +1626,22 @@ internal class ActionLowering(
                 }
             },
         )
-        fun holdsSeed(s: FirElement): Boolean {
+        fun holds(
+            s: FirElement,
+            hit: (FirElement) -> Boolean,
+        ): Boolean {
             var found = false
             s.accept(
                 object : FirVisitorVoid() {
                     override fun visitElement(element: FirElement) {
                         if (found || element in skip) return
-                        if (element in seeds) found = true else element.acceptChildren(this)
+                        if (hit(element)) found = true else element.acceptChildren(this)
                     }
                 },
             )
             return found
         }
-        val holding = statements.filter(::holdsSeed).toSet()
+        val holding = statements.filter { s -> holds(s) { it in seeds } }.toSet()
         val needed = mutableSetOf<FirBasedSymbol<*>>()
         val relevant = Collections.newSetFromMap(IdentityHashMap<FirElement, Boolean>()).apply { addAll(holding) }
         while (true) {
@@ -1654,6 +1660,8 @@ internal class ActionLowering(
                 )
             }
             statements.filter { it is FirProperty && it.symbol in needed }.forEach { relevant += it }
+            // A statement that assigns a needed local counts too: a counted read may see the assigned value.
+            statements.filter { s -> holds(s) { it is FirVariableAssignment && (it.lValue as? FirQualifiedAccessExpression)?.let(ctx::calleeOf)?.let { sym -> sym in needed } == true } }.forEach { relevant += it }
             if (relevant.size == before) return relevant
         }
     }
