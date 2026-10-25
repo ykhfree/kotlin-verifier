@@ -1,0 +1,15 @@
+tryLock  FAILED  // ends_only_if (default false): this action may end no acquisition. ensures forall qt: Int :: { tok(qt).gHeld }
+tryLock  PROVEN  // unbacked_only_if tryLock_unbacked_only_on_cap_refusal (sidecar, reviewed) ensures res != NULL && !tok(res).gBacked ==> (rej)
+tryLock  FAILED  ensures old(has(S, k)) ==> res == NULL
+tryLock  FAILED  ensures old(has(S, k)) ==>
+tryLock  PROVEN  ensures !old(has(S, k)) && !rej ==>
+tryLock  PROVEN  ensures res != NULL && has(S, k) && carried(S, k, res) ==>
+tryLock  PROVEN  ensures !old(has(S, k)) && rej ==>
+unLock   PROVEN  // ends_only_if unLock_ends_only_presented_token (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }
+unLock   PROVEN  ensures res ==> old(carried(S, k, t))
+unLock   PROVEN  ensures old(carried(S, k, t)) ==> res && !has(S, k)
+unLock   PROVEN  ensures !res ==>
+sweep    PROVEN  // ends_only_if sweep_ends_only_expired (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }
+sweep    PROVEN  ensures has(S, k) ==>
+sweep    FAILED  ensures old(has(S, k)) && old(S.m[k].expiresAt) <= now ==> !has(S, k)
+sweep    PROVEN  ensures old(has(S, k)) && now < old(S.m[k].expiresAt) ==> has(S, k)

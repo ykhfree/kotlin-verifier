@@ -467,6 +467,7 @@ feature-developer가 순서대로 구현한다. 마일스톤은 수락 테스트
 ## 부록 A. 파일럿 재현
 
 위치: `/private/tmp/claude-501/-Users-ykhfree-AI/9a7562f5-114a-4bd1-9a46-6cd88dafecdb/scratchpad/spec-design/`.
+저장소 사본 (2026-10-25, 메인 세션): `pilot-c/`. scratch 폴더는 세션이 끝나면 사라지므로 옮겼다. 빠진 것: `kv-frozen/`(고정한 kv, 64 MB), `mutants/`(변이 뿌리, `tools/mutset.py roots`로 다시 만듦), `runs/`와 `*.vpr`(생성 모델), `drafts/`(작성자 작업 폴더; 결과는 `frozen-*`에 있음), `*.work`. `tools/mutset.py`는 `kv-frozen/bin/kv`를 부르므로, 다시 돌리려면 그 자리에 kv 설치본을 둔다.
 
 | 파일 | 내용 |
 |---|---|

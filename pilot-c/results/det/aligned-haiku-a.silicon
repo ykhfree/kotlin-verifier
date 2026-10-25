@@ -1,0 +1,52 @@
+Silicon 1.1-SNAPSHOT (6b540aa4@(detached))
+Silicon found 25 errors in 15.11s:
+  [ 0] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-a.vpr@207.10--207.19)
+
+  [ 1] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-haiku-a.vpr@233.10--233.38)
+
+  [ 2] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-a.vpr@259.10--259.19)
+
+  [ 3] Assert might fail. Assertion tok(r).gBacked might not hold. (aligned-haiku-a.vpr@272.10--272.37)
+
+  [ 4] Assert might fail. Assertion r != -1 might not hold. (aligned-haiku-a.vpr@328.10--328.19)
+
+  [ 5] Assert might fail. Assertion r != -1 might not hold. (aligned-haiku-a.vpr@373.10--373.19)
+
+  [ 6] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-a.vpr@403.10--403.19)
+
+  [ 7] Assert might fail. Assertion b might not hold. (aligned-haiku-a.vpr@450.10--450.11)
+
+  [ 8] Assert might fail. Assertion !b might not hold. (aligned-haiku-a.vpr@518.10--518.12)
+
+  [ 9] Assert might fail. Assertion !b might not hold. (aligned-haiku-a.vpr@565.10--565.12)
+
+  [10] Assert might fail. Assertion b might not hold. (aligned-haiku-a.vpr@597.10--597.11)
+
+  [11] Assert might fail. Assertion b might not hold. (aligned-haiku-a.vpr@647.10--647.11)
+
+  [12] Assert might fail. Assertion b might not hold. (aligned-haiku-a.vpr@694.10--694.11)
+
+  [13] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-a.vpr@739.10--739.19)
+
+  [14] Assert might fail. Assertion tok(r).gBacked might not hold. (aligned-haiku-a.vpr@754.10--754.37)
+
+  [15] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (aligned-haiku-a.vpr@814.10--814.20)
+
+  [16] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (aligned-haiku-a.vpr@859.10--859.20)
+
+  [17] Assert might fail. Assertion (k in domain(S.m)) might not hold. (aligned-haiku-a.vpr@889.10--889.27)
+
+  [18] Assert might fail. Assertion S.m[k] != null might not hold. (aligned-haiku-a.vpr@889.10--889.27)
+
+  [19] Assert might fail. Assertion b might not hold. (aligned-haiku-a.vpr@936.10--936.11)
+
+  [20] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-a.vpr@983.10--983.19)
+
+  [21] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-haiku-a.vpr@1009.10--1009.38)
+
+  [22] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-a.vpr@1037.10--1037.19)
+
+  [23] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-haiku-a.vpr@1067.10--1067.38)
+
+  [24] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-a.vpr@1098.10--1098.19)
+

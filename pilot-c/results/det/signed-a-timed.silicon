@@ -1,0 +1,56 @@
+Silicon 1.1-SNAPSHOT (6b540aa4@(detached))
+Silicon found 27 errors in 16.00s:
+  [ 0] Assert might fail. Assertion r == -1 might not hold. (signed-a-timed.vpr@204.10--204.19)
+
+  [ 1] Assert might fail. Assertion !tok(r).gBacked might not hold. (signed-a-timed.vpr@230.10--230.38)
+
+  [ 2] Assert might fail. Assertion r == -1 might not hold. (signed-a-timed.vpr@256.10--256.19)
+
+  [ 3] Assert might fail. Assertion tok(r).gBacked might not hold. (signed-a-timed.vpr@269.10--269.37)
+
+  [ 4] Assert might fail. Assertion r != -1 might not hold. (signed-a-timed.vpr@325.10--325.19)
+
+  [ 5] Assert might fail. Assertion r != -1 might not hold. (signed-a-timed.vpr@370.10--370.19)
+
+  [ 6] Assert might fail. Assertion r == -1 might not hold. (signed-a-timed.vpr@400.10--400.19)
+
+  [ 7] Assert might fail. Assertion b might not hold. (signed-a-timed.vpr@447.10--447.11)
+
+  [ 8] Assert might fail. Assertion !b might not hold. (signed-a-timed.vpr@515.10--515.12)
+
+  [ 9] Assert might fail. Assertion !b might not hold. (signed-a-timed.vpr@562.10--562.12)
+
+  [10] Assert might fail. Assertion b might not hold. (signed-a-timed.vpr@594.10--594.11)
+
+  [11] Assert might fail. Assertion b might not hold. (signed-a-timed.vpr@644.10--644.11)
+
+  [12] Assert might fail. Assertion b might not hold. (signed-a-timed.vpr@691.10--691.11)
+
+  [13] Assert might fail. Assertion r == -1 might not hold. (signed-a-timed.vpr@736.10--736.19)
+
+  [14] Assert might fail. Assertion tok(r).gBacked might not hold. (signed-a-timed.vpr@751.10--751.37)
+
+  [15] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (signed-a-timed.vpr@811.10--811.20)
+
+  [16] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (signed-a-timed.vpr@856.10--856.20)
+
+  [17] Assert might fail. Assertion (k in domain(S.m)) might not hold. (signed-a-timed.vpr@886.10--886.27)
+
+  [18] Assert might fail. Assertion S.m[k] != null might not hold. (signed-a-timed.vpr@886.10--886.27)
+
+  [19] Assert might fail. Assertion S.m[k].token == t1 might not hold. (signed-a-timed.vpr@886.10--886.27)
+
+  [20] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (signed-a-timed.vpr@901.10--901.20)
+
+  [21] Assert might fail. Assertion b might not hold. (signed-a-timed.vpr@933.10--933.11)
+
+  [22] Assert might fail. Assertion r == -1 might not hold. (signed-a-timed.vpr@980.10--980.19)
+
+  [23] Assert might fail. Assertion !tok(r).gBacked might not hold. (signed-a-timed.vpr@1006.10--1006.38)
+
+  [24] Assert might fail. Assertion r == -1 might not hold. (signed-a-timed.vpr@1034.10--1034.19)
+
+  [25] Assert might fail. Assertion !tok(r).gBacked might not hold. (signed-a-timed.vpr@1064.10--1064.38)
+
+  [26] Assert might fail. Assertion r == -1 might not hold. (signed-a-timed.vpr@1095.10--1095.19)
+

@@ -1,0 +1,103 @@
+{
+ "tryLock": [
+  {
+   "index": 0,
+   "clause": "// ends_only_if tryLock_takeover (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 1,
+   "clause": "// unbacked_only_if ub_capped_new_key (sidecar, reviewed) ensures res != NULL && !tok(res).gBacked ==> (rej && !old(has(S, k)))",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 2,
+   "clause": "ensures !old(has(S, k)) ==> res != NULL",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 3,
+   "clause": "ensures old(has(S, k)) && old(S.m[k].expiresAt) <= now ==> res != NULL",
+   "verdict": "FAILED"
+  },
+  {
+   "index": 4,
+   "clause": "ensures old(has(S, k)) && old(S.m[k].expiresAt) > now ==> res == NULL",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 5,
+   "clause": "ensures res == NULL ==> (old(has(S, k)) && old(S.m[k].expiresAt) > now)",
+   "verdict": "FAILED"
+  },
+  {
+   "index": 6,
+   "clause": "ensures res == NULL ==> (old(has(S, k)) && has(S, k) && S.m[k].token == old(S.m[k].token) && S.m[k].expiresAt == old(S.m[k].expiresAt))",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 7,
+   "clause": "ensures res != NULL && !(rej && !old(has(S, k))) ==> carried(S, k, res)",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 8,
+   "clause": "ensures res != NULL && carried(S, k, res) ==> S.m[k].expiresAt == now + timeout",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 9,
+   "clause": "ensures rej && !old(has(S, k)) ==> !has(S, k)",
+   "verdict": "PROVEN"
+  }
+ ],
+ "unLock": [
+  {
+   "index": 0,
+   "clause": "// ends_only_if unLock_release (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 1,
+   "clause": "ensures res == old(carried(S, k, t))",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 2,
+   "clause": "ensures res ==> !has(S, k)",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 3,
+   "clause": "ensures !res ==> (has(S, k) == old(has(S, k)))",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 4,
+   "clause": "ensures !res && old(has(S, k)) ==> (has(S, k) && S.m[k].token == old(S.m[k].token))",
+   "verdict": "PROVEN"
+  }
+ ],
+ "sweep": [
+  {
+   "index": 0,
+   "clause": "// ends_only_if sweep_drops_expired (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 1,
+   "clause": "ensures !old(has(S, k)) ==> !has(S, k)",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 2,
+   "clause": "ensures old(has(S, k)) && old(S.m[k].expiresAt) > now ==> (has(S, k) && S.m[k].token == old(S.m[k].token))",
+   "verdict": "PROVEN"
+  },
+  {
+   "index": 3,
+   "clause": "ensures old(has(S, k)) && old(S.m[k].expiresAt) <= now ==> !has(S, k)",
+   "verdict": "FAILED"
+  }
+ ]
+}

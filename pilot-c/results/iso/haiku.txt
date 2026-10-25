@@ -1,0 +1,19 @@
+tryLock  PROVEN  // ends_only_if tryLock_takeover (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }
+tryLock  PROVEN  // unbacked_only_if ub_capped_new_key (sidecar, reviewed) ensures res != NULL && !tok(res).gBacked ==> (rej && !old(has(S, k)))
+tryLock  PROVEN  ensures !old(has(S, k)) ==> res != NULL
+tryLock  FAILED  ensures old(has(S, k)) && old(S.m[k].expiresAt) <= now ==> res != NULL
+tryLock  PROVEN  ensures old(has(S, k)) && old(S.m[k].expiresAt) > now ==> res == NULL
+tryLock  FAILED  ensures res == NULL ==> (old(has(S, k)) && old(S.m[k].expiresAt) > now)
+tryLock  PROVEN  ensures res == NULL ==> (old(has(S, k)) && has(S, k) && S.m[k].token == old(S.m[k].token) && S.m[k].expiresAt == old(S.m[k].expiresAt))
+tryLock  PROVEN  ensures res != NULL && !(rej && !old(has(S, k))) ==> carried(S, k, res)
+tryLock  PROVEN  ensures res != NULL && carried(S, k, res) ==> S.m[k].expiresAt == now + timeout
+tryLock  PROVEN  ensures rej && !old(has(S, k)) ==> !has(S, k)
+unLock   PROVEN  // ends_only_if unLock_release (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }
+unLock   PROVEN  ensures res == old(carried(S, k, t))
+unLock   PROVEN  ensures res ==> !has(S, k)
+unLock   PROVEN  ensures !res ==> (has(S, k) == old(has(S, k)))
+unLock   PROVEN  ensures !res && old(has(S, k)) ==> (has(S, k) && S.m[k].token == old(S.m[k].token))
+sweep    PROVEN  // ends_only_if sweep_drops_expired (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }
+sweep    PROVEN  ensures !old(has(S, k)) ==> !has(S, k)
+sweep    PROVEN  ensures old(has(S, k)) && old(S.m[k].expiresAt) > now ==> (has(S, k) && S.m[k].token == old(S.m[k].token))
+sweep    FAILED  ensures old(has(S, k)) && old(S.m[k].expiresAt) <= now ==> !has(S, k)

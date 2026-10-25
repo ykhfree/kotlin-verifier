@@ -1,0 +1,2 @@
+{"mutant": "dm:D13-renew-on-refusal", "verdict": "FAILED", "seconds": 65.0, "actions": {"tryLock": ["FAILED", ["MI_INV_4"]], "unLock": ["PROVEN", []], "sweep": ["PROVEN", []]}, "others": ["init PROVEN", "lemma P3c PROVEN", "probe PROVEN"], "pass2": {"tryLock": ["invariant only", []]}}
+{"mutant": "dm:D14-lease-twice", "verdict": "FAILED", "seconds": 65.6, "actions": {"tryLock": ["FAILED", ["MI_INV_4"]], "unLock": ["PROVEN", []], "sweep": ["PROVEN", []]}, "others": ["init PROVEN", "lemma P3c PROVEN", "probe PROVEN"], "pass2": {"tryLock": ["invariant only", []]}}

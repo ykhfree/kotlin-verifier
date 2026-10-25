@@ -1,0 +1,57 @@
+Silicon 1.1-SNAPSHOT (6b540aa4@(detached))
+Parse warning: in macro `MI_INV_1`, the following parameters were defined but not used: S (aligned-sonnet-b.vpr@77.1--77.26)
+Parse warning: in macro `MI_INV_2`, the following parameters were defined but not used: S (aligned-sonnet-b.vpr@78.1--78.26)
+Parse warning: in macro `MI_INV_3`, the following parameters were defined but not used: S (aligned-sonnet-b.vpr@79.1--79.26)
+Parse warning: in macro `MI_INV_4`, the following parameters were defined but not used: S (aligned-sonnet-b.vpr@80.1--80.26)
+Parse warning: in macro `MI_INV_5`, the following parameters were defined but not used: S (aligned-sonnet-b.vpr@81.1--81.26)
+Silicon found 25 errors in 10.69s:
+  [ 0] Assert might fail. Assertion r == -1 might not hold. (aligned-sonnet-b.vpr@223.10--223.19)
+
+  [ 1] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-sonnet-b.vpr@249.10--249.38)
+
+  [ 2] Assert might fail. Assertion r == -1 might not hold. (aligned-sonnet-b.vpr@275.10--275.19)
+
+  [ 3] Assert might fail. Assertion tok(r).gBacked might not hold. (aligned-sonnet-b.vpr@288.10--288.37)
+
+  [ 4] Assert might fail. Assertion r != -1 might not hold. (aligned-sonnet-b.vpr@344.10--344.19)
+
+  [ 5] Assert might fail. Assertion r != -1 might not hold. (aligned-sonnet-b.vpr@389.10--389.19)
+
+  [ 6] Assert might fail. Assertion r == -1 might not hold. (aligned-sonnet-b.vpr@419.10--419.19)
+
+  [ 7] Assert might fail. Assertion b might not hold. (aligned-sonnet-b.vpr@466.10--466.11)
+
+  [ 8] Assert might fail. Assertion !b might not hold. (aligned-sonnet-b.vpr@534.10--534.12)
+
+  [ 9] Assert might fail. Assertion !b might not hold. (aligned-sonnet-b.vpr@581.10--581.12)
+
+  [10] Assert might fail. Assertion b might not hold. (aligned-sonnet-b.vpr@613.10--613.11)
+
+  [11] Assert might fail. Assertion b might not hold. (aligned-sonnet-b.vpr@663.10--663.11)
+
+  [12] Assert might fail. Assertion b might not hold. (aligned-sonnet-b.vpr@710.10--710.11)
+
+  [13] Assert might fail. Assertion r == -1 might not hold. (aligned-sonnet-b.vpr@755.10--755.19)
+
+  [14] Assert might fail. Assertion tok(r).gBacked might not hold. (aligned-sonnet-b.vpr@770.10--770.37)
+
+  [15] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (aligned-sonnet-b.vpr@830.10--830.20)
+
+  [16] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (aligned-sonnet-b.vpr@875.10--875.20)
+
+  [17] Assert might fail. Assertion (k in domain(S.m)) might not hold. (aligned-sonnet-b.vpr@905.10--905.27)
+
+  [18] Assert might fail. Assertion S.m[k] != null might not hold. (aligned-sonnet-b.vpr@905.10--905.27)
+
+  [19] Assert might fail. Assertion b might not hold. (aligned-sonnet-b.vpr@952.10--952.11)
+
+  [20] Assert might fail. Assertion r == -1 might not hold. (aligned-sonnet-b.vpr@999.10--999.19)
+
+  [21] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-sonnet-b.vpr@1025.10--1025.38)
+
+  [22] Assert might fail. Assertion r == -1 might not hold. (aligned-sonnet-b.vpr@1053.10--1053.19)
+
+  [23] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-sonnet-b.vpr@1083.10--1083.38)
+
+  [24] Assert might fail. Assertion r == -1 might not hold. (aligned-sonnet-b.vpr@1114.10--1114.19)
+

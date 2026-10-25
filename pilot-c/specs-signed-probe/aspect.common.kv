@@ -1,0 +1,52 @@
+// Declarations the three req-shield Spring aspect modules share (DESIGN-B.md 6.1 and 6.2). Format: kv-sidecar/0 with
+// the B additions (DESIGN-B.md 5.1). Expressions are Viper text over DESIGN-v0.md 4.6 and DESIGN-B.md 5.1.
+// The module files aspect.core-spring.kv, aspect.webflux.kv and aspect.coroutine.kv add module, source and the
+// trusted fun, whose body differs per module.
+
+// ---- Abstract types ----
+type MethodKey = opaque java.lang.reflect.Method                    // == is Method.equals
+
+// ---- Module state ----
+state m: Map<MethodKey, Shield> = reqShieldMap
+set-once P_stable: m                    // a mapped method keeps its ReqShield (checked in every action)
+
+// ---- Classes reachable from the state ----
+class Shield = ReqShield { }            // ReqShield<T>: no field is modeled; each module file imports its ReqShield
+
+// ---- Trusted models (built-in, DESIGN-B.md 2.3) ----
+use jdk.ConcurrentHashMap.computeIfAbsent
+use jdk.ConcurrentHashMap.compute
+use jdk.ConcurrentHashMap.putIfAbsent
+use jdk.ConcurrentHashMap.put           // also kotlin.collections.set on a state map
+use jdk.ConcurrentHashMap.remove
+use jdk.ConcurrentHashMap.racyRead
+use kotlin.collections.getOrPut
+
+// ---- Operations: exactly one atomic action each ----
+operation getOrCreate = fun ReqShieldAspect.getOrCreateReqShield {
+  free thrown = call createReqShield    // named, so the probe can fix it
+  result res
+  ensures P_same: !exc ==> res != null && has(S, k) && S.m[k] == res
+  ensures progress_ok: !thrown ==> !exc
+}
+
+// ---- State properties ----
+invariant P_once: forall qr1: Ref, qr2: Ref :: { qr1 in S.created, qr2 in S.created }
+    qr1 in S.created && qr2 in S.created && qr1.gFor == qr2.gFor ==> qr1 == qr2
+
+// ---- Inductive invariant: written by an LLM (E3 workflow), checked by the tool ----
+hole MI_INV """
+  // Every created object is the value the map holds for the method it was created for.
+  (forall qr: Ref :: { qr in S.created } qr in S.created ==> has(S, qr.gFor) && S.m[qr.gFor] == qr)
+"""
+
+// ---- Non-vacuity probe: a scenario from init ----
+probe(k1: MethodKey, k2: MethodKey) requires k1 != k2 {
+  r1, e1 := getOrCreate(k1, thrown = false)
+  assert !e1 && r1 != null
+  r2, e2 := getOrCreate(k1, thrown = false)              // the same method again: the same object
+  assert !e2 && r2 == r1
+  r3, e3 := getOrCreate(k2, thrown = false)              // another method: its own object
+  assert has(S, k1) && S.m[k1] == r1                     // trigger for P_stable (DESIGN-B.md 6.1 note 3)
+  assert !e3 && r3 != r1
+}

@@ -1,0 +1,57 @@
+Silicon 1.1-SNAPSHOT (6b540aa4@(detached))
+Parse warning: in macro `MI_INV_1`, the following parameters were defined but not used: S (aligned-haiku-b.vpr@63.1--63.26)
+Parse warning: in macro `MI_INV_2`, the following parameters were defined but not used: S (aligned-haiku-b.vpr@64.1--64.26)
+Parse warning: in macro `MI_INV_3`, the following parameters were defined but not used: S (aligned-haiku-b.vpr@65.1--65.26)
+Parse warning: in macro `MI_INV_4`, the following parameters were defined but not used: S (aligned-haiku-b.vpr@66.1--66.26)
+Parse warning: in macro `MI_INV_5`, the following parameters were defined but not used: S (aligned-haiku-b.vpr@67.1--67.26)
+Silicon found 25 errors in 9.40s:
+  [ 0] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-b.vpr@195.10--195.19)
+
+  [ 1] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-haiku-b.vpr@221.10--221.38)
+
+  [ 2] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-b.vpr@247.10--247.19)
+
+  [ 3] Assert might fail. Assertion tok(r).gBacked might not hold. (aligned-haiku-b.vpr@260.10--260.37)
+
+  [ 4] Assert might fail. Assertion r != -1 might not hold. (aligned-haiku-b.vpr@316.10--316.19)
+
+  [ 5] Assert might fail. Assertion r != -1 might not hold. (aligned-haiku-b.vpr@361.10--361.19)
+
+  [ 6] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-b.vpr@391.10--391.19)
+
+  [ 7] Assert might fail. Assertion b might not hold. (aligned-haiku-b.vpr@438.10--438.11)
+
+  [ 8] Assert might fail. Assertion !b might not hold. (aligned-haiku-b.vpr@506.10--506.12)
+
+  [ 9] Assert might fail. Assertion !b might not hold. (aligned-haiku-b.vpr@553.10--553.12)
+
+  [10] Assert might fail. Assertion b might not hold. (aligned-haiku-b.vpr@585.10--585.11)
+
+  [11] Assert might fail. Assertion b might not hold. (aligned-haiku-b.vpr@635.10--635.11)
+
+  [12] Assert might fail. Assertion b might not hold. (aligned-haiku-b.vpr@682.10--682.11)
+
+  [13] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-b.vpr@727.10--727.19)
+
+  [14] Assert might fail. Assertion tok(r).gBacked might not hold. (aligned-haiku-b.vpr@742.10--742.37)
+
+  [15] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (aligned-haiku-b.vpr@802.10--802.20)
+
+  [16] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (aligned-haiku-b.vpr@847.10--847.20)
+
+  [17] Assert might fail. Assertion (k in domain(S.m)) might not hold. (aligned-haiku-b.vpr@877.10--877.27)
+
+  [18] Assert might fail. Assertion S.m[k] != null might not hold. (aligned-haiku-b.vpr@877.10--877.27)
+
+  [19] Assert might fail. Assertion b might not hold. (aligned-haiku-b.vpr@924.10--924.11)
+
+  [20] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-b.vpr@971.10--971.19)
+
+  [21] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-haiku-b.vpr@997.10--997.38)
+
+  [22] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-b.vpr@1025.10--1025.19)
+
+  [23] Assert might fail. Assertion !tok(r).gBacked might not hold. (aligned-haiku-b.vpr@1055.10--1055.38)
+
+  [24] Assert might fail. Assertion r == -1 might not hold. (aligned-haiku-b.vpr@1086.10--1086.19)
+

@@ -1,0 +1,67 @@
+Silicon 1.1-SNAPSHOT (6b540aa4@(detached))
+Parse warning: in macro `MI_INV_1`, the following parameters were defined but not used: S (signed-b.vpr@63.1--63.26)
+Parse warning: in macro `MI_INV_2`, the following parameters were defined but not used: S (signed-b.vpr@64.1--64.26)
+Parse warning: in macro `MI_INV_3`, the following parameters were defined but not used: S (signed-b.vpr@65.1--65.26)
+Parse warning: in macro `MI_INV_4`, the following parameters were defined but not used: S (signed-b.vpr@66.1--66.26)
+Parse warning: in macro `MI_INV_5`, the following parameters were defined but not used: S (signed-b.vpr@67.1--67.26)
+Silicon found 30 errors in 13.71s:
+  [ 0] Assert might fail. Assertion r == -1 might not hold. (signed-b.vpr@192.10--192.19)
+
+  [ 1] Assert might fail. Assertion !tok(r).gBacked might not hold. (signed-b.vpr@218.10--218.38)
+
+  [ 2] Assert might fail. Assertion r == -1 might not hold. (signed-b.vpr@244.10--244.19)
+
+  [ 3] Assert might fail. Assertion tok(r).gBacked might not hold. (signed-b.vpr@257.10--257.37)
+
+  [ 4] Assert might fail. Assertion r != -1 might not hold. (signed-b.vpr@313.10--313.19)
+
+  [ 5] Assert might fail. Assertion r != -1 might not hold. (signed-b.vpr@358.10--358.19)
+
+  [ 6] Assert might fail. Assertion r == -1 might not hold. (signed-b.vpr@388.10--388.19)
+
+  [ 7] Assert might fail. Assertion r != -1 might not hold. (signed-b.vpr@403.10--403.19)
+
+  [ 8] Assert might fail. Assertion b might not hold. (signed-b.vpr@435.10--435.11)
+
+  [ 9] Assert might fail. Assertion !b might not hold. (signed-b.vpr@503.10--503.12)
+
+  [10] Assert might fail. Assertion !b might not hold. (signed-b.vpr@550.10--550.12)
+
+  [11] Assert might fail. Assertion b might not hold. (signed-b.vpr@582.10--582.11)
+
+  [12] Assert might fail. Assertion b might not hold. (signed-b.vpr@632.10--632.11)
+
+  [13] Assert might fail. Assertion b might not hold. (signed-b.vpr@679.10--679.11)
+
+  [14] Assert might fail. Assertion r == -1 might not hold. (signed-b.vpr@724.10--724.19)
+
+  [15] Assert might fail. Assertion tok(r).gBacked might not hold. (signed-b.vpr@739.10--739.37)
+
+  [16] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (signed-b.vpr@799.10--799.20)
+
+  [17] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (signed-b.vpr@844.10--844.20)
+
+  [18] Assert might fail. Assertion (k in domain(S.m)) might not hold. (signed-b.vpr@874.10--874.27)
+
+  [19] Assert might fail. Assertion S.m[k] != null might not hold. (signed-b.vpr@874.10--874.27)
+
+  [20] Assert might fail. Assertion S.m[k].token == t1 might not hold. (signed-b.vpr@874.10--874.27)
+
+  [21] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (signed-b.vpr@889.10--889.20)
+
+  [22] Assert might fail. Assertion b might not hold. (signed-b.vpr@921.10--921.11)
+
+  [23] Assert might fail. Assertion r == -1 might not hold. (signed-b.vpr@968.10--968.19)
+
+  [24] Assert might fail. Assertion !tok(r).gBacked might not hold. (signed-b.vpr@994.10--994.38)
+
+  [25] Assert might fail. Assertion r == -1 might not hold. (signed-b.vpr@1022.10--1022.19)
+
+  [26] Assert might fail. Assertion r != -1 might not hold. (signed-b.vpr@1037.10--1037.37)
+
+  [27] Assert might fail. Assertion r != -1 might not hold. (signed-b.vpr@1052.10--1052.38)
+
+  [28] Assert might fail. Assertion !tok(r).gBacked might not hold. (signed-b.vpr@1052.10--1052.38)
+
+  [29] Assert might fail. Assertion r == -1 might not hold. (signed-b.vpr@1083.10--1083.19)
+

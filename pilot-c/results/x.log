@@ -1,0 +1,7 @@
+2 runs, 66 s wall clock -> results/x-signed.jsonl
+3 runs, 61 s wall clock -> results/x-signed-holeLE.jsonl
+2 runs, 10 s wall clock -> results/x-haiku.jsonl
+15 runs, 68 s wall clock -> results/sonnet.jsonl
+15 runs, 137 s wall clock -> results/opus.jsonl
+91 runs, 564 s wall clock -> results/aligned-haiku.jsonl
+91 runs, 1499 s wall clock -> results/aligned-sonnet.jsonl
