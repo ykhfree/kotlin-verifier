@@ -115,6 +115,11 @@ private fun fail(
 /** The report's name of the proof obligation of a kotlinx Semaphore.release (TrustedModels, kotlinx.Semaphore). */
 const val OVER_RELEASE = "kotlinx Semaphore.release may over-release"
 
+/** The report's names of the tool facts of DESIGN-C.md 7.3: generated ensures of the action methods. */
+const val FACT_FRAME = "tool fact FRAME"
+const val FACT_END = "tool fact END"
+const val FACT_ISSUE = "tool fact ISSUE"
+
 /** Writes text and records which source each range comes from. */
 private class VprWriter {
     private val sb = StringBuilder()
@@ -497,7 +502,7 @@ private class Emitter(
             w.line("method ${op.name}($params)$returns")
             requires(a, op)
             if (!reach) {
-                ensuresInvariant(op.name)
+                ensuresInvariant(a, op.name)
                 if (!b) allowances(decl, op)
                 decl.items.filterIsInstance<EnsuresItem>().forEach { e ->
                     w.put("  ensures ")
@@ -569,11 +574,15 @@ private class Emitter(
     ): String = Regex("""(?<![.\w])[A-Za-z_]\w*""").replace(text) { renaming[it.value] ?: it.value }
 
     /**
-     * The ensures every action method has: the module invariant, one clause per part (5.7). The method [label] has no
-     * hole ensures if it is in [withoutHole].
+     * The ensures every action method has: the module invariant, one clause per part (5.7), and the tool facts of
+     * DESIGN-C.md 7.3 for action [a]. The method [label] has no hole ensures if it is in [withoutHole].
      */
-    private fun ensuresInvariant(label: String) {
+    private fun ensuresInvariant(
+        a: Action,
+        label: String,
+    ) {
         w.line("ensures MI_PERMS(S)", Source.Generated("MI_PERMS"), 2)
+        frameFact(a)
         w.line("ensures MI_OWN(S)", Source.Generated("MI_OWN"), 2)
         // DESIGN-B.md 5.4 rule 1 (JB1): each set-once line right after MI_OWN.
         setOnce.forEach { d -> w.line("ensures ${d.id.text}(S)", Source.Sidecar(d.pos, d.id.text), 2) }
@@ -583,7 +592,81 @@ private class Emitter(
         } else {
             hole.forEachIndexed { i, c -> w.line("ensures MI_INV_${i + 1}(S)", Source.Sidecar(c.expr.pos, "MI_INV_${i + 1}", c.name), 2) }
         }
-        if (!b) w.line("ensures HIST", Source.Generated("HIST"), 2)
+        if (!b) {
+            w.line("ensures HIST", Source.Generated("HIST"), 2)
+            endFacts(a)
+            issueFact(a)
+        }
+    }
+
+    // ---- DESIGN-C.md 7.3: tool facts in the contract, proven with the body ----
+    // A contract-only model (DESIGN-C.md 8, C3) needs them: without them it cannot decide the other keys, the ended
+    // acquisitions or the issued values. Each fact holds by construction, so a failure points at the tool.
+
+    /**
+     * FRAME: the action maps every other key as before. It follows MI_PERMS, which gives the permission to read the
+     * map in the post-state. It says nothing about other state variables or object fields.
+     */
+    private fun frameFact(a: Action) {
+        val k = a.key.local.name
+        val ms = map.name
+        w.line(
+            "ensures forall qk: $keyType :: { S.$ms[qk] } qk != $k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.$ms[qk] == old(S.$ms[qk]))",
+            Source.Generated(FACT_FRAME),
+            2,
+            "$FACT_FRAME: the action changes the map only at its key",
+        )
+    }
+
+    /**
+     * END: the ghost rule of [EndIfNotCarried] as two facts. A token the entry of the key no longer carries is not
+     * held, except the token the action issues (ISSUE sets it held). A held token the entry did not carry stays held.
+     */
+    private fun endFacts(a: Action) {
+        if (a.commit.none { it is EndIfNotCarried }) return
+        val k = a.key.local.name
+        val index = stype(ghost.index.text)
+        val notIssued = a.commit.filterIsInstance<Issue>().singleOrNull()?.let { " && qt != ${expr(it.token)}" } ?: ""
+        val src = Source.Generated(FACT_END)
+        w.line(
+            "ensures forall qt: $index :: { $g(qt).$held } qt != NULL && old(carried(S, $k, qt)) && !carried(S, $k, qt)$notIssued ==> !$g(qt).$held",
+            src,
+            2,
+            "$FACT_END: the acquisition of a token the entry no longer carries ended",
+        )
+        w.line(
+            "ensures forall qt: $index :: { $g(qt).$held } old($g(qt).$held) && !old(carried(S, $k, qt)) ==> $g(qt).$held",
+            src,
+            2,
+            "$FACT_END: only the token the entry carried can end",
+        )
+    }
+
+    /**
+     * The ghost writes of ISSUE in ghost field declaration order: each field name and its value, `true` for the
+     * set-once and ends fields and the issue rule's value for a frozen field.
+     */
+    private fun issueWrites(issue: Issue): List<Pair<String, Expr>> =
+        ghost.fields.map { f ->
+            f.name.text to
+                when (f.kind) {
+                    GhostKind.SET_ONCE, GhostKind.ENDS -> BoolLit(true, issue.pos)
+                    GhostKind.FROZEN -> issue.fields.getValue(f.name.text)
+                }
+        }
+
+    /** ISSUE: a non-null result was not issued before, and its ghost record holds the values the commit writes. */
+    private fun issueFact(a: Action) {
+        val issue = a.commit.filterIsInstance<Issue>().singleOrNull() ?: return
+        val t = expr(issue.token)
+        // A value `true` is the field itself: `tok(res).gHeld`, not `tok(res).gHeld == true`.
+        val values = issueWrites(issue).map { (f, v) -> if ((v as? BoolLit)?.value == true) "$g($t).$f" else "$g($t).$f == ${operand(v, PREC_EQ + 1)}" }
+        w.line(
+            "ensures $t != NULL ==> ${(listOf("!old($g($t).$issued)") + values).joinToString(" && ")}",
+            Source.Generated(FACT_ISSUE),
+            2,
+            "$FACT_ISSUE: the values of the issue rule",
+        )
     }
 
     /**
@@ -649,7 +732,7 @@ private class Emitter(
             w.line("requires MI(S)", Source.Generated("MI"), 2)
             if (!reach) {
                 // DESIGN-B.md 5.4 rule 5: MI and every set-once line, and no allowance clause without a ghost record.
-                ensuresInvariant(label)
+                ensuresInvariant(a, label)
                 if (!b) allowances(null, null)
             }
             w.line("{")
@@ -727,14 +810,7 @@ private class Emitter(
             a.commit.filterIsInstance<AssertFresh>().forEach {
                 w.line("assert !$g(${expr(it.token)}).$issued", Source.Sidecar(item.pos, "issue ${op.name}: set-once $issued"), 4, "set-once $issued: a new acquisition gets a fresh token")
             }
-            ghost.fields.forEach { f ->
-                val value =
-                    when (f.kind) {
-                        GhostKind.SET_ONCE, GhostKind.ENDS -> "true"
-                        GhostKind.FROZEN -> expr(issue.fields.getValue(f.name.text))
-                    }
-                w.line("$g($t).${f.name.text} := $value", src, 4)
-            }
+            issueWrites(issue).forEach { (f, v) -> w.line("$g($t).$f := ${expr(v)}", src, 4) }
             w.line("}", indent = 2)
         }
 

@@ -30,9 +30,15 @@ class InstanceEmitterTest {
     @Test
     fun `an instance module has no ghost record parts, and set-once comes right after MI_OWN`() {
         val e = AspectFixture().emitted()
-        for (v0 in listOf("GHOST_PERMS", "HIST", "carried(", "define NULL", "inhale GHOST_PERMS", "ends_only_if")) assertFalse(v0 in e.text, "$v0 in:\n${e.text}")
-        val ensures = e.text.substringAfter("method getOrCreate(").substringBefore("\n{").lines().filter { it.trim().startsWith("ensures") }.map { it.trim() }
-        assertEquals(listOf("ensures MI_PERMS(S)", "ensures MI_OWN(S)", "ensures P_stable(S)", "ensures P_once(S)", "ensures MI_INV_1(S)"), ensures.take(5))
+        for (v0 in listOf("GHOST_PERMS", "HIST", "carried(", "define NULL", "inhale GHOST_PERMS", "ends_only_if", FACT_END, FACT_ISSUE)) assertFalse(v0 in e.text, "$v0 in:\n${e.text}")
+        val ensures = e.text.substringAfter("method getOrCreate(").substringBefore("\n{").lines().filter { it.trim().startsWith("ensures") }.map { it.substringBefore("  //").trim() }
+        // DESIGN-C.md 7.3: the tool fact FRAME follows MI_PERMS; without a ghost record there is no END or ISSUE.
+        val frame = "ensures forall qk: MethodKey :: { S.m[qk] } qk != k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.m[qk] == old(S.m[qk]))"
+        assertEquals(listOf("ensures MI_PERMS(S)", frame, "ensures MI_OWN(S)", "ensures P_stable(S)", "ensures P_once(S)", "ensures MI_INV_1(S)"), ensures.take(6))
+        // A stray action gets FRAME at its own key too (AspectVerifyTest M6 verifies it).
+        val stray = AspectFixture(members = "    fun drop(jp: Any) {\n        shieldMap.remove(target(jp))\n    }").emitted()
+        val contract = stray.text.substringAfter("method stray_drop_").substringBefore("\n{").lines().map { it.substringBefore("  //").trim() }
+        assertEquals(listOf("ensures MI_PERMS(S)", frame, "ensures MI_OWN(S)"), contract.filter { it.startsWith("ensures") }.take(3))
         assertTrue("method getOrCreate(S: Ref, k: MethodKey, thrown: Bool) returns (res: Ref, exc: Bool)" in e.text, e.text)
     }
 
