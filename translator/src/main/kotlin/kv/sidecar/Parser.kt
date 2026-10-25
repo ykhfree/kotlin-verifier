@@ -28,6 +28,12 @@ fun parseSidecar(
     text: String,
 ): Sidecar = SidecarParser(file, text).parse()
 
+/** A source line in a place where none may be. */
+private const val MISPLACED_SOURCE = "a source line must follow an issue rule, an ensures, an allowance clause, an invariant, a lemma or a probe (DESIGN-C.md 5.2)"
+
+/** The start of a source line: `source "` or `source none`. */
+private val SOURCE_LINE = Regex("""^source[ \t]+("|none(?!\w))""")
+
 private class SidecarParser(
     private val file: String,
     private val text: String,
@@ -165,8 +171,9 @@ private class SidecarParser(
 
     /**
      * Viper expression text from here. It goes on over the following lines that are indented deeper than
-     * [itemIndent], and stops before an unmatched closing bracket, before `;` if [stopAtSemicolon], and before a
-     * `{` that ends its line if [stopAtBodyBrace]. Comments become spaces, so columns stay the same.
+     * [itemIndent], except a line that starts a source line (DESIGN-C.md 5.2). It stops before an unmatched closing
+     * bracket, before `;` if [stopAtSemicolon], and before a `{` that ends its line if [stopAtBodyBrace]. Comments
+     * become spaces, so columns stay the same.
      */
     private fun vexpr(
         itemIndent: Int,
@@ -188,7 +195,7 @@ private class SidecarParser(
             }
             if (c == '\n') {
                 val next = i + 1
-                if (next >= text.length || restOfLineBlank(next) && !commentLine(next) || indentOf(next) <= itemIndent) break
+                if (next >= text.length || restOfLineBlank(next) && !commentLine(next) || indentOf(next) <= itemIndent || startsSourceLine(next)) break
                 sb.append(c)
                 i++
                 continue
@@ -210,6 +217,17 @@ private class SidecarParser(
         val first = sb.indexOfFirst { !it.isWhitespace() }
         if (first < 0) fail(start, "expected an expression")
         return Vexpr(sb.substring(first).trimEnd(), posAt(start + first))
+    }
+
+    /**
+     * True if the line at [index] starts with `source "` or `source none`: a source line, which no Viper expression
+     * can start with, so it ends the expression above it at any indentation.
+     */
+    private fun startsSourceLine(index: Int): Boolean {
+        var j = index
+        while (j < text.length && (text[j] == ' ' || text[j] == '\t')) j++
+        val end = text.indexOf('\n', j).let { if (it < 0) text.length else it }
+        return SOURCE_LINE.containsMatchIn(text.substring(j, end))
     }
 
     /** True if the line at [index] holds only a comment (a comment line inside a multi-line expression). */
@@ -237,7 +255,13 @@ private class SidecarParser(
         val indent = indentOf(start)
         return when (val kw = name("a declaration").text) {
             "module" -> ModuleDecl(dotted("a module FQN"), pos)
-            "source" -> SourceDecl(string(), pos)
+            "source" -> {
+                // The module's `source "File.kt"`; a source line here follows no intent clause.
+                if (peekWord() == "none") fail(start, MISPLACED_SOURCE)
+                val path = string()
+                if (peekWord() == "quote") fail(start, MISPLACED_SOURCE)
+                SourceDecl(path, pos)
+            }
             "include" -> IncludeDecl(string(), pos)
             "type" -> {
                 val n = name("a type name")
@@ -323,7 +347,9 @@ private class SidecarParser(
             "invariant", "lemma" -> {
                 val id = name("a property ID")
                 expect(":")
-                PropertyDecl(if (kw == "invariant") PropertyKind.INVARIANT else PropertyKind.LEMMA, id, vexpr(indent), pos)
+                val e = vexpr(indent)
+                val unit = text.substring(start, endOf(e))
+                PropertyDecl(if (kw == "invariant") PropertyKind.INVARIANT else PropertyKind.LEMMA, id, e, pos, unit = unit, sources = topSources())
             }
             "hole" -> {
                 val n = name("MI_INV")
@@ -331,7 +357,7 @@ private class SidecarParser(
                 val (body, bodyPos) = tripleString()
                 HoleDecl(n, body, pos, bodyPos)
             }
-            "probe" -> probe(pos, indent)
+            "probe" -> probe(start, indent)
             else -> fail(start, "unknown declaration '$kw'")
         }
     }
@@ -464,19 +490,20 @@ private class SidecarParser(
                         fields += f to vexpr(indent, stopAtSemicolon = true)
                     } while (accept(";"))
                     expect("}")
-                    items += IssueItem(result, fields, null, itemPos, unit = text.substring(start, i))
+                    items += IssueItem(result, fields, null, itemPos, unit = text.substring(start, i), sources = sources())
                 }
                 "ends_only_if", "unbacked_only_if" -> {
                     val id = name("a property ID")
                     expect(":")
                     val kind = if (kw == "ends_only_if") Allowance.ENDS_ONLY_IF else Allowance.UNBACKED_ONLY_IF
                     val e = vexpr(indent)
-                    items += AllowanceItem(kind, id, e, null, itemPos, unit = text.substring(start, endOf(e)))
+                    items += AllowanceItem(kind, id, e, null, itemPos, unit = text.substring(start, endOf(e)), sources = sources())
                 }
                 "ensures" -> {
                     val id = name("a property ID")
                     expect(":")
-                    items += EnsuresItem(id, vexpr(indent), itemPos)
+                    val e = vexpr(indent)
+                    items += EnsuresItem(id, e, itemPos, unit = text.substring(start, endOf(e)), sources = sources())
                 }
                 // U7: `reviewed` marks the issue rule or allowance clause right before it as read by a person.
                 "reviewed" -> {
@@ -489,6 +516,11 @@ private class SidecarParser(
                         }
                     items[items.lastIndex] = reviewed
                 }
+                // A source line right after its clause is read with the clause ([sources]).
+                "source" -> {
+                    val last = items.lastOrNull()
+                    fail(start, if (last is ReviewedItem && last.reviewed != null) "a source line comes before the 'reviewed' note of its clause" else MISPLACED_SOURCE)
+                }
                 "requires" -> fail(start, "an operation may not have a free-form 'requires' in v0 (DESIGN-v0.md 4.2, restriction 1)")
                 else -> fail(start, "unknown operation item '$kw'")
             }
@@ -497,7 +529,7 @@ private class SidecarParser(
     }
 
     private fun probe(
-        pos: SPos,
+        start: Int,
         indent: Int,
     ): ProbeDecl {
         expect("(")
@@ -529,7 +561,48 @@ private class SidecarParser(
                 steps += ProbeCall(outs, op, args(), first.pos)
             }
         }
-        return ProbeDecl(params, requires, steps, pos)
+        return ProbeDecl(params, requires, steps, posAt(start), unit = text.substring(start, i), sources = topSources())
+    }
+
+    // ---- source lines (DESIGN-C.md 5.2) ----
+
+    /** The source lines from here, inside an operation: there every `source` word starts one. */
+    private fun sources(): List<SourceLine> = buildList { while (peekWord() == "source") add(sourceLine()) }
+
+    /**
+     * The source lines from here, at the top level: `source none` or `source "..." quote` starts one, and
+     * `source "File.kt"` alone is the next declaration.
+     */
+    private fun topSources(): List<SourceLine> =
+        buildList {
+            while (peekWord() == "source") {
+                val save = i
+                name()
+                val line = peekWord() == "none" || at("\"") && string().let { peekWord() == "quote" }
+                i = save
+                if (!line) break
+                add(sourceLine())
+            }
+        }
+
+    /** `source "<anchor>" quote "<quote>" [sha256 "<hex>"]` or `source none "<reason>"`, from its `source` word. */
+    private fun sourceLine(): SourceLine {
+        skipWs()
+        val start = i
+        name()
+        if (peekWord() == "none") {
+            name()
+            val reason = string()
+            return SourceNone(reason, posAt(start), text.substring(start, i))
+        }
+        val anchor = string()
+        keyword("quote")
+        skipWs()
+        val quoteAt = i
+        val quote = string()
+        if (quote.isBlank()) fail(quoteAt, "a quote must not be empty")
+        val sha = if (peekWord() == "sha256") name().let { string() } else null
+        return SourceQuote(anchor, quote, sha, posAt(start), text.substring(start, i))
     }
 
     /** Arguments up to the closing `)`: `VALUE` or `NAME = VALUE`, separated by top-level commas. */

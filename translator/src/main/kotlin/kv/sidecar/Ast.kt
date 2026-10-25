@@ -229,15 +229,56 @@ data class ResultItem(
 ) : OpItem
 
 /**
- * A clause a person reviews (U7, B6): [reviewed] is its note, [sha256] the fingerprint the note records, [reviewPos]
- * the `reviewed` keyword, and [unit] the reviewed text: the sidecar text from the clause keyword through the end of
- * its expression, without the `reviewed` line.
+ * A source line of an intent clause (DESIGN-C.md 5.2): `source "<anchor>" quote "<quote>" [sha256 "<hex>"]` or
+ * `source none "<reason>"`. [text] is the line as written, from `source` through its last string.
  */
-sealed interface ReviewedItem : OpItem {
+sealed interface SourceLine {
+    val pos: SPos
+    val text: String
+}
+
+/** `source "<anchor>" quote "<quote>" [sha256 "<hex>"]`: [sha256] is the fingerprint of the whole block at review. */
+data class SourceQuote(
+    val anchor: String,
+    val quote: String,
+    val sha256: String?,
+    override val pos: SPos,
+    override val text: String,
+) : SourceLine
+
+/** `source none "<reason>"`: the clause cites no text, for [reason]. */
+data class SourceNone(
+    val reason: String,
+    override val pos: SPos,
+    override val text: String,
+) : SourceLine
+
+/**
+ * An intent clause (DESIGN-C.md 2.1, layer 4): an issue rule, an `ensures`, an allowance clause, an `invariant`, a
+ * `lemma` or a probe. [reviewed] is its note, [sha256] the fingerprint the note records, [reviewPos] the `reviewed`
+ * keyword, [unit] the clause text from its keyword through the end of its expression or body, and [sources] its
+ * source lines.
+ */
+sealed interface IntentClause {
+    val pos: SPos
     val reviewed: String?
     val sha256: String?
     val reviewPos: SPos?
     val unit: String
+    val sources: List<SourceLine>
+
+    /**
+     * The text a `reviewed` fingerprint covers (DESIGN-v0.md 8.3 "reviewed 지문", DESIGN-C.md 5.2 rule 4): the clause
+     * text, then each source line on its own line. Without source lines it is the clause text alone.
+     */
+    val reviewedText: String get() = (listOf(unit) + sources.map { it.text }).joinToString("\n")
+}
+
+/** An intent clause inside an operation: an issue rule, an `ensures` or an allowance clause. */
+sealed interface ReviewedItem :
+    OpItem,
+    IntentClause {
+    override val pos: SPos
 }
 
 data class IssueItem(
@@ -248,6 +289,7 @@ data class IssueItem(
     override val sha256: String? = null,
     override val reviewPos: SPos? = null,
     override val unit: String = "",
+    override val sources: List<SourceLine> = emptyList(),
 ) : ReviewedItem
 
 data class AllowanceItem(
@@ -259,13 +301,19 @@ data class AllowanceItem(
     override val sha256: String? = null,
     override val reviewPos: SPos? = null,
     override val unit: String = "",
+    override val sources: List<SourceLine> = emptyList(),
 ) : ReviewedItem
 
 data class EnsuresItem(
     val id: Name,
     val expr: Vexpr,
     override val pos: SPos,
-) : OpItem
+    override val reviewed: String? = null,
+    override val sha256: String? = null,
+    override val reviewPos: SPos? = null,
+    override val unit: String = "",
+    override val sources: List<SourceLine> = emptyList(),
+) : ReviewedItem
 
 data class OperationDecl(
     val name: Name,
@@ -284,7 +332,13 @@ data class PropertyDecl(
     val id: Name,
     val expr: Vexpr,
     override val pos: SPos,
-) : Decl
+    override val reviewed: String? = null,
+    override val sha256: String? = null,
+    override val reviewPos: SPos? = null,
+    override val unit: String = "",
+    override val sources: List<SourceLine> = emptyList(),
+) : Decl,
+    IntentClause
 
 /** [text] is the hole body between the triple quotes; [textPos] is the position of its first character. */
 data class HoleDecl(
@@ -322,7 +376,13 @@ data class ProbeDecl(
     val requires: Vexpr?,
     val steps: List<ProbeStep>,
     override val pos: SPos,
-) : Decl
+    override val reviewed: String? = null,
+    override val sha256: String? = null,
+    override val reviewPos: SPos? = null,
+    override val unit: String = "",
+    override val sources: List<SourceLine> = emptyList(),
+) : Decl,
+    IntentClause
 
 /** A parsed sidecar, includes resolved. [file] is the file the user named. */
 data class Sidecar(
@@ -344,3 +404,28 @@ data class Sidecar(
     val holes get() = decls.filterIsInstance<HoleDecl>()
     val probes get() = decls.filterIsInstance<ProbeDecl>()
 }
+
+/**
+ * Every intent clause of [this] in file order, with the name messages give it: `the issue rule of tryLock`,
+ * `ensures progress_live of tryLock`, `ends_only_if P3a of sweep`, `invariant P2`, `lemma P3c` or `the probe`.
+ */
+fun Sidecar.intentClauses(): List<Pair<String, IntentClause>> =
+    decls.flatMap { d ->
+        when (d) {
+            is OperationDecl -> d.items.filterIsInstance<ReviewedItem>().map { describe(it, d) to it }
+            is PropertyDecl -> listOf("${d.kind.name.lowercase()} ${d.id.text}" to d)
+            is ProbeDecl -> listOf("the probe" to d)
+            else -> emptyList()
+        }
+    }
+
+/** The name messages give [item] of operation [op]. */
+fun describe(
+    item: ReviewedItem,
+    op: OperationDecl,
+): String =
+    when (item) {
+        is IssueItem -> "the issue rule of ${op.name.text}"
+        is AllowanceItem -> "${item.kind.keyword} ${item.id.text} of ${op.name.text}"
+        is EnsuresItem -> "ensures ${item.id.text} of ${op.name.text}"
+    }

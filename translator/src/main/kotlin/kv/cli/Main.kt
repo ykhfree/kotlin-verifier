@@ -17,8 +17,15 @@ import kv.mutation.moduleSites
 import kv.mutation.properties
 import kv.mutation.sitesJson
 import kv.sidecar.SidecarException
+import kv.sidecar.SidecarLoader
 import kv.sidecar.checkHoleEdit
 import kv.sidecar.holeSkeleton
+import kv.spec.SOURCES_JSON
+import kv.spec.SnapshotException
+import kv.spec.SnapshotInput
+import kv.spec.readSnapshot
+import kv.spec.staleCheck
+import kv.spec.writeSnapshot
 import kv.verify.ModuleVerdict
 import kv.verify.Silicon
 import kv.verify.SiliconBudget
@@ -58,6 +65,14 @@ private const val USAGE = """usage:
       Accepts AFTER only if it equals BEFORE outside the hole text and its hole has no forbidden word (assume,
       inhale, exhale, refute, method, function, predicate, axiom, domain, field, import). Exit 0 accepted,
       1 rejected (each reason with its AFTER.kv line and column).
+  kv spec snapshot --out DIR NAME=FILE...
+      Splits each FILE into blocks with anchors and fingerprints (DESIGN-C.md 5.2): a .kt file gives its KDoc, any
+      other file is Markdown. Writes DIR/sources.json and DIR/SOURCES.md. NAME is the anchor's source name.
+  kv spec stale --snapshot DIR SIDECAR.kv
+      Checks every `source "<anchor>" quote "<quote>"` line of the sidecar (includes too) against the snapshot in DIR
+      (DESIGN-C.md 5.3): warning source-context-changed (the block changed, the quote is still in it), warning
+      source-moved (the quote is only in another block), error stale-source (the quote is in no block). Exit 0 if
+      no error, 2 usage error, 4 if a quote is stale or the sidecar has a syntax error.
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
@@ -75,6 +90,7 @@ fun runCli(
 ): Int {
     val command = args.firstOrNull()
     if (command == "hole") return hole(args.drop(1), out, err)
+    if (command == "spec") return spec(args.drop(1), out, err)
     val options =
         try {
             Options.parse(args.drop(1))
@@ -306,6 +322,59 @@ private fun hole(
     } catch (e: SidecarException) {
         e.errors.forEach { err.println(it) }
         1
+    }
+}
+
+/** `kv spec snapshot --out DIR NAME=FILE...` and `kv spec stale --snapshot DIR SIDECAR.kv` (DESIGN-C.md 7.1). */
+private fun spec(
+    args: List<String>,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    fun usage(message: String): Int {
+        err.println("kv: $message")
+        err.println(USAGE)
+        return 2
+    }
+    val sub = args.firstOrNull()
+    val rest = args.drop(1)
+    return when (sub) {
+        "snapshot" -> {
+            if (rest.size < 3 || rest[0] != "--out") return usage("spec snapshot needs --out DIR and at least one NAME=FILE")
+            val inputs = rest.drop(2).map { a -> if ('=' in a) SnapshotInput(a.substringBefore('='), a.substringAfter('=')) else return usage("'$a' is not NAME=FILE") }
+            inputs.firstOrNull { !File(it.path).isFile }?.let { return usage("no file ${it.path}") }
+            val dir = File(rest[1])
+            val blocks = writeSnapshot(dir, inputs)
+            out.println("kv: wrote ${File(dir, SOURCES_JSON).path} and ${File(dir, "SOURCES.md").path}: ${blocks.size} blocks")
+            0
+        }
+        "stale" -> {
+            if (rest.size != 3 || rest[0] != "--snapshot") return usage("spec stale needs --snapshot DIR and one sidecar file")
+            val file = File(rest[2])
+            if (!file.isFile) return usage("no file ${file.path}")
+            val blocks =
+                try {
+                    readSnapshot(File(rest[1]))
+                } catch (e: SnapshotException) {
+                    return usage(e.message!!)
+                }
+            val sidecar =
+                try {
+                    SidecarLoader.load(file)
+                } catch (e: SidecarException) {
+                    e.errors.forEach { err.println(it) }
+                    return 4
+                }
+            val report = staleCheck(sidecar, blocks)
+            report.findings.forEach { out.println(it) }
+            val counts = report.findings.groupingBy { it.code }.eachCount()
+            out.println(
+                "kv spec stale: ${report.quotes} quoted source line(s), ${report.withoutBlockFingerprint} without a block fingerprint, ${report.none} 'source none': " +
+                    listOf("stale-source", "source-moved", "source-context-changed").joinToString { "${counts[it] ?: 0} $it" },
+            )
+            if (report.errors > 0) 4 else 0
+        }
+        else -> usage("spec needs 'snapshot' or 'stale'")
     }
 }
 

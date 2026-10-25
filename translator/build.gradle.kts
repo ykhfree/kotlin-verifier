@@ -84,6 +84,8 @@ tasks.test {
     systemProperty("kv.reqShieldKotlincArgs", reqShieldKotlincArgs)
     systemProperty("kv.aspectClasspath", aspectClasspath.asPath)
     systemProperty("kv.specDir", rootProject.layout.projectDirectory.dir("../specs").asFile.absolutePath)
+    // The DESIGN-C pilot: the reference snapshot (packet/sources.json, tools/snapshot.py) and the drafts (frozen-final).
+    systemProperty("kv.pilotDir", rootProject.layout.projectDirectory.dir("../pilot-c").asFile.absolutePath)
     // The M5 gate (vpr_normalize.py) and the hand-written target models.
     systemProperty("kv.spikeDir", rootProject.layout.projectDirectory.dir("../spike").asFile.absolutePath)
     // The M8 mutant script (scripts/mutants.py), tested with a fake kv.

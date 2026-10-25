@@ -106,6 +106,65 @@ class FingerprintTest {
     }
 
     @Test
+    fun `the five reviewed clauses of the specs keep their fingerprints, since their reviewed text is the clause text`() {
+        val notes =
+            specDir.listFiles()!!.filter { it.name.endsWith(".kv") }.sortedBy { it.name }.flatMap { f ->
+                parseSidecar(f.path, f.readText()).intentClauses().filter { (_, c) -> c.reviewed != null }.map { (what, c) -> "${f.name}: $what" to c }
+            }
+        assertEquals(
+            listOf(
+                "keylocallock.common.kv: the issue rule of tryLock" to "023e62e52c1fc231",
+                "keylocallock.common.kv: ends_only_if P3a of tryLock" to "1c0ae67dbfe9757d",
+                "keylocallock.common.kv: unbacked_only_if P3b of tryLock" to "23aa1de7c7b2dde4",
+                "keylocallock.common.kv: ends_only_if P3a of unLock" to "d679f5c705a959be",
+                "keylocallock.common.kv: ends_only_if P3a of sweep" to "1c0ae67dbfe9757d",
+            ),
+            notes.map { (what, c) -> what to c.sha256 },
+        )
+        for ((what, c) in notes) {
+            assertEquals(emptyList(), c.sources, what)
+            assertEquals(c.unit, c.reviewedText, what)
+            assertEquals(c.sha256, reviewFingerprint(c.reviewedText), what)
+        }
+    }
+
+    private val p3a = "  ends_only_if P3a: qt == t && res\n"
+    private val quote = "Only the holder that acquired the lock can release it"
+    private val sourceLine = "source \"README.md#global-lock-guidance/2\" quote \"$quote\" sha256 \"ffd91c43c843b5f8\""
+
+    /** The fingerprint of unLock's P3a with [line] as its source line, computed here from the normalized text. */
+    private fun withSource(line: String) = sha16("ends_only_if P3a: qt == t && res $line")
+
+    @Test
+    fun `adding a source line to a signed clause is stale-review, with the fingerprint of the clause and the line`() {
+        val e = check(p3a, "$p3a    $sourceLine\n").single()
+        assertEquals("stale-review", e.code, e.toString())
+        assertEquals(lineOf("only the holder that acquired") to 3, e.pos.line to e.pos.col)
+        assertTrue("ends_only_if P3a of unLock" in e.message && "the clause text and its source lines now have sha256 \"${withSource(sourceLine)}\"" in e.message, e.message)
+    }
+
+    @Test
+    fun `a signed clause's source line is part of its review - a changed quote, anchor or removed line is stale-review`() {
+        val signed = "$p3a    $sourceLine\n  reviewed \"ykhfree 2026-10-23: README: only the holder that acquired the lock can release it\" sha256 \"${withSource(sourceLine)}\"\n"
+        val note = "  reviewed \"ykhfree 2026-10-23: README: only the holder that acquired the lock can release it\" sha256 \"d679f5c705a959be\"\n"
+        assertEquals(emptyList(), check(p3a + note, signed))
+        // A whitespace-only change keeps the review.
+        assertEquals(emptyList(), check(p3a + note, signed.replace("quote \"$quote\"", "quote   \"$quote\"")))
+        val edits =
+            listOf(
+                "quote" to signed.replace("can release it\" sha256 \"ffd9", "may release it\" sha256 \"ffd9"),
+                "anchor" to signed.replace("global-lock-guidance/2", "global-lock-guidance/1"),
+                "block fingerprint" to signed.replace("ffd91c43c843b5f8", "0000000000000000"),
+                "removed line" to signed.replace("    $sourceLine\n", ""),
+            )
+        for ((what, edited) in edits) {
+            val e = check(p3a + note, edited).single()
+            assertEquals("stale-review", e.code, "$what: $e")
+            assertTrue("records sha256 \"${withSource(sourceLine)}\"" in e.message, "$what: ${e.message}")
+        }
+    }
+
+    @Test
     fun `a reviewed clause without a fingerprint is an error that names the fingerprint to record`() {
         val e = check("README: only the holder that acquired the lock can release it\" sha256 \"d679f5c705a959be\"", "README: only the holder that acquired the lock can release it\"").single()
         assertEquals("missing-fingerprint", e.code, e.toString())
