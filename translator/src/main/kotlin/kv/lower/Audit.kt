@@ -28,11 +28,15 @@ import org.jetbrains.kotlin.fir.symbols.FirBasedSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirNamedFunctionSymbol
 import java.util.IdentityHashMap
 
-/** The disposition shared by the nodes of one construct; [what] and [pos] name the construct. */
+/**
+ * The disposition shared by the nodes of one construct; [what] and [pos] name the construct. [stateAccess] marks an
+ * unsupported module-state access outside every action (see [Audit.stateAccesses]).
+ */
 private data class Construct(
     val kind: DispositionKind,
     val what: String,
     val pos: Pos,
+    val stateAccess: Boolean = false,
 )
 
 /** Where a node is: in compute's key argument, in an action, in a helper an action inlined, or elsewhere. */
@@ -78,6 +82,12 @@ internal class Audit(
         }
     }
 
+    /**
+     * The ledger nodes of the unsupported module-state accesses ([access]): writes, mutating operations, escapes and
+     * calls of state-changing helpers outside every action. [run] fills it. The input check reads it ([checkInputs]).
+     */
+    val stateAccesses = mutableSetOf<Int>()
+
     fun run(): List<Disposition> =
         index.nodes.mapIndexedNotNull { id, node ->
             // A section node is translated (DESIGN-B.md 2.6); a key-argument node stays in the ledger, so that W14
@@ -85,6 +95,7 @@ internal class Audit(
             val region = region(node)
             if (region == Region.ACTION || region == Region.HELPER || region == Region.OUTSIDE && id in translated) return@mapIndexedNotNull null
             val c = construct(node)
+            if (c.stateAccess) stateAccesses += id
             Disposition(id, c.kind, c.what, c.pos)
         }
 
@@ -133,6 +144,12 @@ internal class Audit(
         x: FirElement,
     ) = Construct(DispositionKind.UNSUPPORTED, "$what: ${sourceText(x)}", ctx.posOf(x))
 
+    /** An unsupported module-state access outside every action (see [access]). */
+    private fun stateAccess(
+        what: String,
+        x: FirElement,
+    ) = unsupported(what, x).copy(stateAccess = true)
+
     private fun racy(x: FirElement) = Construct(DispositionKind.RACY_READ, sourceText(x), ctx.posOf(x))
 
     private fun receiverOf(x: FirQualifiedAccessExpression): FirExpression? = unwrap(x.dispatchReceiver ?: x.extensionReceiver)
@@ -145,14 +162,14 @@ internal class Audit(
     private fun access(x: FirElement): Construct? {
         if (x is FirVariableAssignment) {
             val sym = (x.lValue as? FirQualifiedAccessExpression)?.let(ctx::calleeOf)
-            if (ctx.fieldOf(sym) != null || ctx.stateOf(sym) != null) return unsupported("write of module state outside an action", x)
+            if (ctx.fieldOf(sym) != null || ctx.stateOf(sym) != null) return stateAccess("write of module state outside an action", x)
             return null
         }
         if (x !is FirQualifiedAccessExpression) return null
         // DESIGN-B.md 5.3 rule 2: a map call on another map is not modeled; its lambda is audited like the rest.
         (x as? FirFunctionCall)?.let { notActions[it] }?.let { return Construct(DispositionKind.NOT_MODELED, "$it: ${sourceText(x)}", ctx.posOf(x)) }
         // DESIGN-B.md 2.1: the state of another instance of an instance module is another module's state.
-        if (x is FirPropertyAccessExpression && ctx.foreignState(x)) return unsupported("state of another ${ctx.moduleClass.name} instance", x)
+        if (x is FirPropertyAccessExpression && ctx.foreignState(x)) return stateAccess("state of another ${ctx.moduleClass.name} instance", x)
         val sym = ctx.calleeOf(x)
         val parent = index.parent(x)
         // The target of an assignment: the assignment decides.
@@ -160,7 +177,7 @@ internal class Audit(
         val usedAsReceiver = parent is FirQualifiedAccessExpression && receiverOf(parent) === x
         if (x is FirPropertyAccessExpression && (ctx.stateOf(sym) != null || ctx.fieldOf(sym)?.model != null)) {
             // The operation on this state decides; any other use lets the state escape.
-            return if (usedAsReceiver) null else unsupported("module state used outside an action", x)
+            return if (usedAsReceiver) null else stateAccess("module state used outside an action", x)
         }
         val field = ctx.fieldOf(sym)
         if (x is FirPropertyAccessExpression && field != null) return racy(x)
@@ -173,15 +190,15 @@ internal class Audit(
                     is MapVar -> entries.any { it.role == Role.RACY_READ || it.role == Role.NONDET }
                     is CounterVar -> entries.any { it.model == TrustedModels.COUNTER && it.name == "get" }
                 }
-            return if (read) racy(x) else unsupported("${state.kotlin} operation outside an action", x)
+            return if (read) racy(x) else stateAccess("${state.kotlin} operation outside an action", x)
         }
         val flattened = (receiver as? FirPropertyAccessExpression)?.let { ctx.fieldOf(ctx.calleeOf(it)) }?.takeIf { it.model != null }
         if (flattened != null) {
-            return if (entries.any { it.model == flattened.model && it.name == "get" }) racy(x) else unsupported("${flattened.kotlin} operation outside an action", x)
+            return if (entries.any { it.model == flattened.model && it.name == "get" }) racy(x) else stateAccess("${flattened.kotlin} operation outside an action", x)
         }
         val helper = (sym as? FirNamedFunctionSymbol)?.let { index.functions[it] }
         if (x is FirFunctionCall && helper != null) {
-            reaches(helper)?.let { return unsupported("call of ${helper.name}, which changes module state ($it), outside an action", x) }
+            reaches(helper)?.let { return stateAccess("call of ${helper.name}, which changes module state ($it), outside an action", x) }
         }
         return null
     }

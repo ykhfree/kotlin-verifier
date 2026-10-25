@@ -140,7 +140,18 @@ internal class Lowered(
     val cellSymbols: Set<FirBasedSymbol<*>>,
     /** Module-file functions the action inlined. */
     val helpers: Set<FirNamedFunction>,
+    /** The action's inputs, each with the FIR element its value comes from ([checkInputs]). */
+    val inputs: List<Pair<String, FirElement>>,
 )
+
+/** A Kotlin position for a report: `File.kt:line:col`. */
+internal fun where(p: Pos) = "${p.file.substringAfterLast('/')}:${p.line}:${p.col}"
+
+/** The UNSUPPORTED diagnostic of [u] in action [action] (DESIGN-v0.md 1.5). */
+internal fun unsupportedDiagnostic(
+    u: Unsupported,
+    action: String,
+) = Diagnostic("U${u.pos.line}_${u.pos.col}", DiagnosticKind.UNSUPPORTED, "UNSUPPORTED ${u.what} in action $action at ${where(u.pos)}: ${u.reason}", u.pos)
 
 /** How the statements of a block end: no path exits, every path exits, one branch of its last `if` exits, or other. */
 private enum class Exits { NONE, ALL, SPLIT, MIXED }
@@ -356,7 +367,7 @@ internal class ActionLowering(
             lambda?.let { ctx.index.parent(it)?.let(::mark) }
             helpers.forEach(::markAll)
         }
-        val diagnostics = problems.map { Diagnostic("U${it.pos.line}_${it.pos.col}", DiagnosticKind.UNSUPPORTED, "UNSUPPORTED ${it.what} in action $id at ${where(it.pos)}: ${it.reason}", it.pos) }
+        val diagnostics = problems.map { unsupportedDiagnostic(it, id) }
         val freeValues = free.values.sortedBy { fv -> named.indexOfFirst { (item, _) -> fv.sidecarName in item.names.map { it.text } }.let { if (it < 0) Int.MAX_VALUE else it } }
         val ok = problems.isEmpty()
         val action =
@@ -378,8 +389,29 @@ internal class ActionLowering(
             )
         // After an unsupported construct the section is not emitted (W12): it keeps the plain shape.
         val section = if (ok) normalize(opBody) else listOf(RunAction(at), Return(null, at))
-        return Lowered(action, cells.values.toList(), result.takeIf { ok }, section, freeSources, cells.keys, helpers)
+        return Lowered(action, cells.values.toList(), result.takeIf { ok }, section, freeSources, cells.keys, helpers, inputs())
     }
+
+    /**
+     * The inputs of the action, each with the FIR element its value comes from: the key argument, each free value
+     * (its declaration, or the expression an unmodeled value comes from), each cell, and the operation result (the
+     * returns of the operation function or of its Mono.fromCallable lambda).
+     */
+    private fun inputs(): List<Pair<String, FirElement>> =
+        buildList {
+            call.arguments.firstOrNull()?.let { add("key ${key.kotlin}" to it) }
+            for ((source, fv) in free) {
+                val origin = (source as? FirBasedSymbol<*>)?.let { ctx.declarationOf(it) } ?: source as? FirExpression ?: continue
+                add(fv.kotlin to origin)
+            }
+            cells.keys.forEach { sym -> ctx.declarationOf(sym)?.let { add(nameOf(sym) to it) } }
+            val fn = found.inFunction
+            if (op?.result != null && fn != null) {
+                ctx.index.subtree(fn).map { ctx.index.nodes[it] }.filterIsInstance<FirReturnExpression>().filter { it.target.labeledElement in found.scopes }.forEach {
+                    add("result ${sourceText(it.result)}" to it)
+                }
+            }
+        }
 
     /**
      * The action body (DESIGN-v0.md 2.4, DESIGN-B.md 5.3 rule 3): compute's and computeIfAbsent's lambda in result
@@ -2056,8 +2088,6 @@ internal class ActionLowering(
             is If -> ends(last.then) && ends(last.els)
             else -> false
         }
-
-    private fun where(p: Pos) = "${p.file.substringAfterLast('/')}:${p.line}:${p.col}"
 
     private fun nameOf(sym: FirBasedSymbol<*>): String = (sym as? FirCallableSymbol<*>)?.name?.asString() ?: "value"
 

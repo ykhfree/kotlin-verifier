@@ -56,36 +56,44 @@ internal fun lowerModule(
     ctx.fixAnnotations().takeIf { it.isNotEmpty() }?.let { throw SidecarException(it) }
 
     val lowered = mutableListOf<Pair<FoundAction, Lowered>>()
-    val operations =
+    val operationActions =
         sidecar.operations.mapNotNull { decl ->
             val found = resolver.computeOf[decl.name.text] ?: return@mapNotNull null
-            val name = decl.name.text
             val map = maps[found]
             if (map == null) {
-                ctx.diagnostics += Diagnostic("U${found.site.pos.line}_${found.site.pos.col}", DiagnosticKind.UNSUPPORTED, "operation $name: ${notActions.getValue(found.call)}", found.site.pos)
+                ctx.diagnostics += Diagnostic("U${found.site.pos.line}_${found.site.pos.col}", DiagnosticKind.UNSUPPORTED, "operation ${decl.name.text}: ${notActions.getValue(found.call)}", found.site.pos)
                 return@mapNotNull null
             }
-            val l = ActionLowering(ctx, found, decl, "$name#${found.site.pos.line}", map).run()
+            val l = ActionLowering(ctx, found, decl, "${decl.name.text}#${found.site.pos.line}", map).run()
             lowered += found to l
-            val kotlin =
-                when (val sel = decl.selector) {
-                    is Selector.Fun -> "fun ${sel.target.text}"
-                    is Selector.ComputeIn -> "compute in ${sel.target.text}"
-                }
-            Operation(name, kotlin, found.inFunction?.let { ctx.posOf(it) } ?: found.site.pos, l.action, l.cells, l.result, l.body)
+            Triple(decl, found, l)
         }
     val claimed = resolver.computeOf.values.toSet()
-    val stray =
+    val strayActions =
         actionSites.filter { it !in claimed }.map { found ->
             val l = ActionLowering(ctx, found, null, "${found.site.inFunction ?: found.kind.method}#${found.site.pos.line}", maps.getValue(found)!!).run()
             lowered += found to l
-            l.action
+            l
         }
     for (u in resolution.unsupported) {
         val pos = u.kotlinPos ?: ctx.posOf(moduleClass)
         ctx.diagnostics += Diagnostic("U${pos.line}_${pos.col}", DiagnosticKind.UNSUPPORTED, "operation ${u.operation} (${u.at}): ${u.reason}", pos)
     }
-    val ledger = Audit(ctx, lowered, notActions).run()
+    val audit = Audit(ctx, lowered, notActions)
+    val ledger = audit.run()
+    // The input check needs the ledger; it changes no node's disposition, so the ledger stays valid (W14).
+    val accesses = ledger.filter { it.node in audit.stateAccesses }
+    val operations =
+        operationActions.map { (decl, found, l0) ->
+            val l = checkInputs(ctx, l0, accesses)
+            val kotlin =
+                when (val sel = decl.selector) {
+                    is Selector.Fun -> "fun ${sel.target.text}"
+                    is Selector.ComputeIn -> "compute in ${sel.target.text}"
+                }
+            Operation(decl.name.text, kotlin, found.inFunction?.let { ctx.posOf(it) } ?: found.site.pos, l.action, l.cells, l.result, l.body)
+        }
+    val stray = strayActions.map { checkInputs(ctx, it, accesses).action }
     return Module(
         id = sidecar.modules.single().fqn.text,
         types = ctx.types,
