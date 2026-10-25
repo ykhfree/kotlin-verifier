@@ -295,3 +295,6 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - 확인: 테스트 488개 통과, 세 변형 PROVEN, `kv spec stale` 오류 0, gate 3개 exit 0, mutantsReqShield 33회 불일치 0.
   - 나머지 의도 절 13개는 아직 서명하지 않았다. 그래서 `review intent` 줄은 넣지 않았다.
 - C2 시작 (사용자 요청 2026-10-25, feature-developer): emitter가 action 계약에 FRAME, END, ISSUE(그리고 필요하면 WITNESS) 사실을 더한다. gate 목표 모델(`spike/`)은 메인 세션이 손으로 고친 뒤, emitter 출력과 대조한다. 변이 판정이 하나라도 바뀌면 멈추고 보고한다.
+- C2 완료 (`9ea254b`, `c7b54e1`; `DESIGN-C.md` 10.2): emitter가 FRAME, END, ISSUE 사실을 계약에 낸다. WITNESS는 C3에서 정한다.
+  - gate 목표 모델은 메인 세션이 설계 식에서 손으로 고쳤고, emitter 출력과 같다 (테스트 490개 통과).
+  - 판정 변화 0: 변이 63회, 기계적 변이 264개 (`mutation/rerun-c2/`가 `rerun3`과 같음).

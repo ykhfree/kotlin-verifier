@@ -181,6 +181,7 @@ STRAY_REMOVE = (
     "method stray_aroundReqShieldCacheable_100(S: Ref, k: MethodKey)\n"
     "  requires MI(S)\n"
     "  ensures MI_PERMS(S)\n"
+    "  ensures forall qk: MethodKey :: { S.m[qk] } qk != k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.m[qk] == old(S.m[qk]))\n"
     "  ensures MI_OWN(S)\n"
     "  ensures P_stable(S)\n"
     "  ensures P_once(S)\n"

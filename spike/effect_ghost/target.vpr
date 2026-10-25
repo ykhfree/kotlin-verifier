@@ -122,6 +122,8 @@ method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) re
   requires MI(S)
   requires rej ==> limit != 0
   ensures MI_PERMS(S)
+  // tool fact FRAME (DESIGN-C.md 7.3): the action changes the map at its own key only.
+  ensures forall qk: Key :: { S.m[qk] } qk != k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.m[qk] == old(S.m[qk]))
   ensures MI_OWN(S)
   ensures P2(S)
   ensures entry_lease(S)
@@ -131,6 +133,12 @@ method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) re
   ensures MI_INV_4(S)
   ensures MI_INV_5(S)
   ensures HIST
+  // tool fact END: a token the key's entry no longer carries is not held; a held token it did not carry stays held.
+  ensures forall qt: Int :: { tok(qt).gHeld } qt != NULL && old(carried(S, k, qt)) && !carried(S, k, qt) && qt != res ==> !tok(qt).gHeld
+  ensures forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gHeld) && !old(carried(S, k, qt)) ==> tok(qt).gHeld
+  // tool fact ISSUE: the issue rule's values.
+  ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued && tok(res).gKey == k &&
+    tok(res).gBacked == carried(S, k, res) && tok(res).gHeld && tok(res).gLease == now + timeout
   // ends_only_if P3a: only an expired token is taken over.
   ensures forall qt: Int :: { tok(qt).gHeld }
     old(tok(qt).gIssued) && old(tok(qt).gBacked) && old(tok(qt).gHeld) && !tok(qt).gHeld ==>
@@ -230,6 +238,8 @@ method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)
   requires MI(S)
   requires t != NULL
   ensures MI_PERMS(S)
+  // tool fact FRAME (DESIGN-C.md 7.3): the action changes the map at its own key only.
+  ensures forall qk: Key :: { S.m[qk] } qk != k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.m[qk] == old(S.m[qk]))
   ensures MI_OWN(S)
   ensures P2(S)
   ensures entry_lease(S)
@@ -239,6 +249,9 @@ method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)
   ensures MI_INV_4(S)
   ensures MI_INV_5(S)
   ensures HIST
+  // tool fact END: a token the key's entry no longer carries is not held; a held token it did not carry stays held.
+  ensures forall qt: Int :: { tok(qt).gHeld } qt != NULL && old(carried(S, k, qt)) && !carried(S, k, qt) ==> !tok(qt).gHeld
+  ensures forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gHeld) && !old(carried(S, k, qt)) ==> tok(qt).gHeld
   // ends_only_if P3a: unLock ends no acquisition other than its own.
   ensures forall qt: Int :: { tok(qt).gHeld }
     old(tok(qt).gIssued) && old(tok(qt).gBacked) && old(tok(qt).gHeld) && !tok(qt).gHeld ==>
@@ -281,6 +294,8 @@ method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)
 method sweep(S: Ref, k: Key, now: Int)
   requires MI(S)
   ensures MI_PERMS(S)
+  // tool fact FRAME (DESIGN-C.md 7.3): the action changes the map at its own key only.
+  ensures forall qk: Key :: { S.m[qk] } qk != k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.m[qk] == old(S.m[qk]))
   ensures MI_OWN(S)
   ensures P2(S)
   ensures entry_lease(S)
@@ -290,6 +305,9 @@ method sweep(S: Ref, k: Key, now: Int)
   ensures MI_INV_4(S)
   ensures MI_INV_5(S)
   ensures HIST
+  // tool fact END: a token the key's entry no longer carries is not held; a held token it did not carry stays held.
+  ensures forall qt: Int :: { tok(qt).gHeld } qt != NULL && old(carried(S, k, qt)) && !carried(S, k, qt) ==> !tok(qt).gHeld
+  ensures forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gHeld) && !old(carried(S, k, qt)) ==> tok(qt).gHeld
   // ends_only_if P3a: the monitor ends only expired acquisitions.
   ensures forall qt: Int :: { tok(qt).gHeld }
     old(tok(qt).gIssued) && old(tok(qt).gBacked) && old(tok(qt).gHeld) && !tok(qt).gHeld ==>

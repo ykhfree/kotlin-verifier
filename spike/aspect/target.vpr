@@ -71,6 +71,8 @@ method init() returns (S: Ref)
 method getOrCreate(S: Ref, k: MethodKey, thrown: Bool) returns (res: Ref, exc: Bool)
   requires MI(S)
   ensures MI_PERMS(S)
+  // tool fact FRAME (DESIGN-C.md 7.3): the action changes the map at its own key only.
+  ensures forall qk: MethodKey :: { S.m[qk] } qk != k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.m[qk] == old(S.m[qk]))
   ensures MI_OWN(S)
   ensures P_stable(S)
   ensures P_once(S)
