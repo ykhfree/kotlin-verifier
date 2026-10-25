@@ -253,3 +253,18 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - AI 코드 측정은 2차로 마친다.
 - 도구 결함 셋(지원 밖 구문에 기대는 action, helper inlining W5/W6, 지원 밖 구문 전부 나열)을 고친다. 수정 검증 실행의 예측은 `AI-CODE.md` 13절이다.
 - 그다음 Confluence/Markdown → sidecar 방향으로 전환한다. 설계는 deep-reasoner가 맡고, 버그 수정과 동시에 진행한다.
+- 버그 수정과 검증 실행 (`e436d22`, `43786d8`, `3208158`, `df8db76`; `AI-CODE.md` 13.1):
+  - 수정 1: 입력이 action 밖의 지원 밖 모듈 상태 접근에서 오는 action은 UNSUPPORTED다. 수정 2: helper의 객체 파라미터는 받은 entry나 새 객체 자체다. 수정 3: action의 지원 밖 구문을 모두 보고한다.
+  - 2b 대조 (36개 action): 검출 14, 맞은 PROVEN 8, 놓침 0, 오경보 0, 판정 안 함 14. 모듈: FAILED 10, INCOMPLETE 2, ERROR 0.
+  - 예측 1-3은 맞았다. 예측 4는 일부 맞았다 (예로 든 T-haiku-3은 늘지 않음).
+  - 수정 agent가 기존 결함 둘을 찾았다 (`AI-CODE.md` 13.2): S1 aspect section의 거짓 PROVEN, S2 stray 호출 인자 안의 counter 쓰기가 ledger에 없음.
+  - 메인 세션 확인: `cleanTest test` 447개 통과, gate 4개 exit 0 (751, 2729, 2734, 2734 tokens), mutantsReqShield 33회와 mutantsAspect 30회 불일치 0, 2b 보고서 12개 원문 집계.
+- DESIGN-C (자연어 명세 → sidecar) 설계와 파일럿 (deep-reasoner, `DESIGN-C.md`):
+  - 권고: 독립 초안 3개(서로 다른 모델) + 시나리오 칸 + 결정성 검사(Silicon) + 질문 규칙 5개 + 결정을 서명 probe로 남기기 + `source` 출처 줄.
+  - 파일럿 (KeyLocalLock, 입력은 README·KDoc만): 세 초안 모두 만료 경계를 `>=`로 썼다. 세 작성자 모두 시나리오 답에서는 그 칸을 open이라 했다. 질문 규칙이 칸 8개, 결정 4개(D1, D2, D4, D5)를 골랐다.
+  - 결정을 맞춘 초안 3개: 원본 PROVEN. 뿌리 89개에서 서명된 sidecar가 잡은 65개를 모두 잡고 2개(RACY-09, D9-sweep-never)를 더 잡았다.
+  - 서명된 sidecar의 빈틈 둘: D9(monitor 의무 없음, D9-sweep-never가 PROVEN), D14(만료 시각 = lease가 hole 안에만 있음, hole 한 줄을 `<=`로 바꾸면 D14b가 PROVEN).
+  - 메인 세션 확인:
+    - 다시 돌림: D9-sweep-never(서명된 sidecar에서 PROVEN), D14b의 세 경우(서명 FAILED, hole 완화 PROVEN, 결정 probe 추가 FAILED).
+    - 다시 셈: 89개 비교표 (파일럿 JSONL).
+    - quote-check: 핵심 인용 9개가 원문에 있고 주장을 뒷받침한다.
