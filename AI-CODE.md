@@ -331,3 +331,43 @@ action 단위의 정답 (10.1절):
 3. 놓침 0, action 단위 오경보 0이 유지된다.
 4. 1차·2차에서 UNSUPPORTED였던 action의 보고에 원인이 더 많이 나열된다 (예: T-haiku-3, T-sonnet-3의 tryLock에 Semaphore 생성 모양).
 
+
+### 13.1 결과 (2026-10-25, 메인 세션 확인)
+
+수정 커밋: `e436d22`(수정 1), `43786d8`(수정 2), `3208158`(수정 3). 검증 실행: `df8db76` (`aicode/round2b/`, 대조표는 `aicode/round2b/compare.md`).
+
+36개 action의 대조 (메인 세션이 보고서 원문 12개에서 다시 셌다):
+
+| 대조 | 2차 | 2b |
+|---|---|---|
+| 검출 | 10 | 14 |
+| 맞은 PROVEN | 5 | 8 |
+| 놓침 | 0 | 0 |
+| 오경보 | 0 | 0 |
+| 판정 안 함 | 21 | 14 |
+
+- 모듈 판정 (2차 → 2b): FAILED 7 → 10, INCOMPLETE 2 → 2, ERROR 3 → 0, PROVEN 0 → 0.
+- 판정이 바뀐 action은 9개다. T-haiku-2의 tryLock은 FAILED에서 UNSUPPORTED가 되었다. 2차 ERROR 3개의 action 8개는 FAILED 5, PROVEN 3이 되었다 (T-opus-4의 tryLock은 UNSUPPORTED 그대로).
+- 새 FAILED 5개의 실패 성질은 모두 `ends_only_if P3a`다 (경계 `>=`).
+- kotlinx `release()` 의무가 AI 코드에서 처음 실행되었다. T-sonnet-2, T-opus-3, T-opus-4의 unLock은 PROVEN이다.
+
+예측 대조:
+
+| 예측 | 결과 | 근거 |
+|---|---|---|
+| 1. T-haiku-2 tryLock이 UNSUPPORTED, 검출 1 감소 | 맞음 | 보고서: "UNSUPPORTED input newToken in action tryLock#47 at KeyLocalLock.kt:45:9 ... tokenSequence.incrementAndGet() at KeyLocalLock.kt:45:33". 2차의 거짓 이유 5개(MI_INV_1, MI_INV_3, P3a, cap_unbacked, set-once)가 사라졌다. 전체 검출 수는 예측 2 때문에 늘었다 |
+| 2. ERROR 3개가 ERROR가 아니고, sweep은 FAILED (property) | 맞음 | 세 sweep 모두 `ends_only_if P3a` |
+| 3. 놓침 0, 오경보 0 | 맞음 | 판정한 22개: 검출 14, 맞은 PROVEN 8 |
+| 4. UNSUPPORTED action의 원인이 더 많이 나열됨 (예: T-haiku-3, T-sonnet-3 tryLock의 Semaphore 생성 모양) | 일부 맞음 | 참인 이유가 tryLock 5개에서 늘었다 (T-haiku-1, T-haiku-4, T-sonnet-3, T-opus-1, T-opus-4). 예로 든 T-haiku-3은 늘지 않았다: 그 Semaphore 모양(38:33)은 2차에 이미 보고되었다. 1차에서 이 이유를 가린 `Int toLong`은 2차부터 지원되어 이번 실행으로 다시 만들 수 없다. 그 경우는 `ReasonTest`가 확인한다 |
+
+예측 밖의 결과:
+1. 수정 3에서 거짓 이유 하나를 지웠다. 주어졌지만 지원 밖인 생성자 인자를 "constructor default ... gives no argument"로도 보고했다 (2차 tryLock 6개).
+2. 수정 1의 범위는 문구보다 좁다. 입력을 오염시키는 것은 ledger의 **모듈 상태 접근**뿐이다. 문구대로 "모든 지원 밖 구문"으로 하면 aspect 변이 M5(공유 `ReqShield`를 fresh 함수 밖 생성자로 만듦)가 기대값 FAILED(`MI_OWN`)에서 INCOMPLETE가 된다 (agent 측정). 그 생성자는 모듈 상태를 바꾸지 않고, 모듈은 계속 INCOMPLETE다. 12개 구현에서는 두 해석의 결과가 같다. 메인 세션은 이 해석을 받아들인다.
+3. 수정 agent가 기존 결함 둘을 임시 probe로 찾았다 (고치지 않음). 13.2절.
+
+### 13.2 수정 중에 찾은 기존 결함 (2026-10-25)
+
+| ID | 결함 | 영향 | 상태 |
+|---|---|---|---|
+| S1 | aspect section의 `relevance()`는 relevant 지역 변수에 대입만 하는 문장을 relevant로 보지 않는다. 그래서 `var r = shieldMap.computeIfAbsent(...) { ... }; if (prefix.length > 3) r = shared; return r`에서 section이 그 `if`를 버린다 | **거짓 PROVEN.** 이 코드는 `shared`를 돌려줄 수 있어 `P_same`이 깨질 수 있는데, AspectFixture가 PROVEN이다 | 다음 작업에서 먼저 고친다 |
+| S2 | object 모듈의 stray `boxMap.putIfAbsent(key, Box(counter.incrementAndGet()))`에서 `actionValueOutside`가 `markAll(arg)`로 값 전체를 번역한 것으로 표시한다 | action 밖의 counter 쓰기가 ledger에 없어 모듈이 INCOMPLETE가 아니다. DESIGN-v0.md 2.12 rule 2와 맞지 않는다 | 다음 작업에서 먼저 고친다 |
