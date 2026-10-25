@@ -630,3 +630,17 @@ feature-developer가 순서대로 구현한다. 마일스톤은 수락 테스트
 | UC6 | Confluence Cloud. C6은 REST API v2와 Keychain의 API 토큰으로 받는다 |
 | UC7, UC8, UC9 | 권고를 기본값으로 둔다 (메인 세션이 알렸고, 사용자가 다른 뜻을 말하지 않음): 페이지 텍스트를 Anthropic 밖으로 보내지 않는다; 경계 칸은 항상 묻는다; D2 = true, D5 = false를 지금 서명대로 둔다 |
 | JC1 | 초안 1개로 시작한다. 규칙 1은 "그 작성자가 open 또는 assumed"다. 두 번째 모듈에서 초안 3개와 비교해서 확정한다 |
+
+### 10.1 메인 세션 결정 (2026-10-25, C0·C1 뒤)
+
+C0 `aba91e7`, C1 `8d8e17a`. 메인 세션 확인: 테스트 488개 통과, gate 4개 exit 0, mutantsReqShield 33회와 mutantsAspect 30회 불일치 0.
+
+| 질문 (구현 agent) | 결정 |
+|---|---|
+| 결정 probe의 판정 | probe는 연산의 계약과 hole로만 증명된다. 그래서 코드 변이는 probe가 아니라 action 행에서 FAILED가 된다. 결정 probe의 일은 **명세나 hole이 약해져도 결정이 남게 지키는 것**이다 (3.5절). 8절 C1 수락 3을 이렇게 읽는다: 원본 PROVEN, 결정 변이는 모듈 FAILED, 결정을 담은 절을 약하게 한 sidecar에서는 probe가 FAILED. agent의 측정이 이것을 보였다 |
+| `source none "<reason>"` | 7.2 문법에 넣는다. 자연어에 문장이 없는 의도 절(사용자 결정, 코드에서 온 성질)이 쓴다 |
+| 인용 안의 `"` | 지금은 두지 않는다. C6(Confluence)에서 필요해지면 `\"` escape를 더한다 |
+| 유니코드 공백 정규화 | C6에서 넓힌다 (Confluence의 NBSP). 기존 텍스트는 ASCII라 기존 지문은 바뀌지 않는다 |
+| "Spec to review" 줄 | `review intent` 아래에서는 모든 의도 절을 나열한다. C3에서 한다 |
+| 블록 지문(sha256) 필수 | `review intent` 아래에서는 필수로 한다 (문맥 변경을 보려면 필요). C3에서 한다 |
+| `review intent`의 위치 | 공통 파일에 한 번 둔다. include된 변형 파일에도 적용된다 |
