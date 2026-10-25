@@ -28,14 +28,14 @@ fun properties(s: Sidecar): List<Property> =
         for (op in s.operations) {
             for (item in op.items) {
                 when (item) {
-                    is EnsuresItem -> add(Property("ensures", op.name.text, item.id.text, item.expr.text, null, item.pos))
+                    is EnsuresItem -> add(Property("ensures", op.name.text, item.id.text, item.expr.text, item.reviewed, item.pos))
                     is AllowanceItem -> add(Property(item.kind.keyword, op.name.text, item.id.text, item.expr.text, item.reviewed, item.pos))
                     is IssueItem -> add(Property("issue", op.name.text, item.result.text, item.fields.joinToString("; ") { (n, e) -> "${n.text} = ${e.text}" }, item.reviewed, item.pos))
                     else -> Unit
                 }
             }
         }
-        s.properties.forEach { add(Property(it.kind.name.lowercase(), null, it.id.text, it.expr.text, null, it.pos)) }
+        s.properties.forEach { add(Property(it.kind.name.lowercase(), null, it.id.text, it.expr.text, it.reviewed, it.pos)) }
         s.setOnce.forEach { add(Property("set-once", null, it.id.text, it.map.text, null, it.pos)) }
         s.trusted.forEach { t ->
             val claims =

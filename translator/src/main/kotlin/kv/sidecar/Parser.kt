@@ -31,8 +31,8 @@ fun parseSidecar(
 /** A source line in a place where none may be. */
 private const val MISPLACED_SOURCE = "a source line must follow an issue rule, an ensures, an allowance clause, an invariant, a lemma or a probe (DESIGN-C.md 5.2)"
 
-/** The start of a source line: `source "` or `source none`. */
-private val SOURCE_LINE = Regex("""^source[ \t]+("|none(?!\w))""")
+/** The start of a line that ends an expression above it: `source "`, `source none` or `reviewed "`. */
+private val TRAILER_LINE = Regex("""^(source[ \t]+("|none(?!\w))|reviewed[ \t]+")""")
 
 private class SidecarParser(
     private val file: String,
@@ -171,7 +171,7 @@ private class SidecarParser(
 
     /**
      * Viper expression text from here. It goes on over the following lines that are indented deeper than
-     * [itemIndent], except a line that starts a source line (DESIGN-C.md 5.2). It stops before an unmatched closing
+     * [itemIndent], except a source line or a `reviewed` note (DESIGN-C.md 5.2). It stops before an unmatched closing
      * bracket, before `;` if [stopAtSemicolon], and before a `{` that ends its line if [stopAtBodyBrace]. Comments
      * become spaces, so columns stay the same.
      */
@@ -195,7 +195,7 @@ private class SidecarParser(
             }
             if (c == '\n') {
                 val next = i + 1
-                if (next >= text.length || restOfLineBlank(next) && !commentLine(next) || indentOf(next) <= itemIndent || startsSourceLine(next)) break
+                if (next >= text.length || restOfLineBlank(next) && !commentLine(next) || indentOf(next) <= itemIndent || startsTrailer(next)) break
                 sb.append(c)
                 i++
                 continue
@@ -220,14 +220,14 @@ private class SidecarParser(
     }
 
     /**
-     * True if the line at [index] starts with `source "` or `source none`: a source line, which no Viper expression
-     * can start with, so it ends the expression above it at any indentation.
+     * True if the line at [index] starts with `source "`, `source none` or `reviewed "`: a source line or a note, which
+     * no Viper expression can start with, so it ends the expression above it at any indentation.
      */
-    private fun startsSourceLine(index: Int): Boolean {
+    private fun startsTrailer(index: Int): Boolean {
         var j = index
         while (j < text.length && (text[j] == ' ' || text[j] == '\t')) j++
         val end = text.indexOf('\n', j).let { if (it < 0) text.length else it }
-        return SOURCE_LINE.containsMatchIn(text.substring(j, end))
+        return TRAILER_LINE.containsMatchIn(text.substring(j, end))
     }
 
     /** True if the line at [index] holds only a comment (a comment line inside a multi-line expression). */
@@ -349,7 +349,9 @@ private class SidecarParser(
                 expect(":")
                 val e = vexpr(indent)
                 val unit = text.substring(start, endOf(e))
-                PropertyDecl(if (kw == "invariant") PropertyKind.INVARIANT else PropertyKind.LEMMA, id, e, pos, unit = unit, sources = topSources())
+                val sources = topSources()
+                val (note, sha, at) = topReview()
+                PropertyDecl(if (kw == "invariant") PropertyKind.INVARIANT else PropertyKind.LEMMA, id, e, pos, note, sha, at, unit, sources)
             }
             "hole" -> {
                 val n = name("MI_INV")
@@ -358,6 +360,11 @@ private class SidecarParser(
                 HoleDecl(n, body, pos, bodyPos)
             }
             "probe" -> probe(start, indent)
+            "review" -> {
+                keyword("intent")
+                ReviewIntentDecl(pos)
+            }
+            "reviewed" -> fail(start, "'reviewed' must follow a trusted fun, an invariant, a lemma or a probe without a note, or a clause of an operation")
             else -> fail(start, "unknown declaration '$kw'")
         }
     }
@@ -505,14 +512,15 @@ private class SidecarParser(
                     val e = vexpr(indent)
                     items += EnsuresItem(id, e, itemPos, unit = text.substring(start, endOf(e)), sources = sources())
                 }
-                // U7: `reviewed` marks the issue rule or allowance clause right before it as read by a person.
+                // U7: `reviewed` marks the clause right before it (issue rule, ensures, allowance clause) as read by a person.
                 "reviewed" -> {
                     val (note, sha, at) = review(start)
                     val reviewed =
                         when (val last = items.lastOrNull()) {
                             is IssueItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "the issue rule is already reviewed")
                             is AllowanceItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "${last.id.text} is already reviewed")
-                            else -> fail(start, "'reviewed' must follow an issue rule or an allowance clause")
+                            is EnsuresItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "${last.id.text} is already reviewed")
+                            else -> fail(start, "'reviewed' must follow an issue rule, an ensures or an allowance clause")
                         }
                     items[items.lastIndex] = reviewed
                 }
@@ -532,6 +540,8 @@ private class SidecarParser(
         start: Int,
         indent: Int,
     ): ProbeDecl {
+        // DESIGN-C.md 7.2: `probe NAME(...)`; `probe(...)` is the unnamed probe of v0.
+        val name = if (peekWord() != null) name("a probe name") else null
         expect("(")
         val params = mutableListOf<Typed>()
         if (!accept(")")) {
@@ -552,6 +562,9 @@ private class SidecarParser(
             val first = name("a probe step")
             if (first.text == "assert") {
                 steps += ProbeAssert(vexpr(stepIndent), first.pos)
+            } else if (accept("(")) {
+                // DESIGN-C.md 7.2: a call without outs, of an operation without a result.
+                steps += ProbeCall(emptyList(), first, args(), first.pos)
             } else {
                 val outs = mutableListOf(first)
                 while (accept(",")) outs += name("a result name")
@@ -561,7 +574,18 @@ private class SidecarParser(
                 steps += ProbeCall(outs, op, args(), first.pos)
             }
         }
-        return ProbeDecl(params, requires, steps, posAt(start), unit = text.substring(start, i), sources = topSources())
+        val unit = text.substring(start, i)
+        val sources = topSources()
+        val (note, sha, at) = topReview()
+        return ProbeDecl(params, requires, steps, posAt(start), note, sha, at, unit, sources, name)
+    }
+
+    /** The `reviewed` note after a top-level intent clause and its source lines (DESIGN-C.md 7.2), or nulls. */
+    private fun topReview(): Triple<String?, String?, SPos?> {
+        if (peekWord() != "reviewed") return Triple(null, null, null)
+        val start = i
+        name()
+        return review(start)
     }
 
     // ---- source lines (DESIGN-C.md 5.2) ----
@@ -601,8 +625,9 @@ private class SidecarParser(
         val quoteAt = i
         val quote = string()
         if (quote.isBlank()) fail(quoteAt, "a quote must not be empty")
-        val sha = if (peekWord() == "sha256") name().let { string() } else null
-        return SourceQuote(anchor, quote, sha, posAt(start), text.substring(start, i))
+        var end = i // peekWord skips the whitespace after the line
+        val sha = if (peekWord() == "sha256") name().let { string() }.also { end = i } else null
+        return SourceQuote(anchor, quote, sha, posAt(start), text.substring(start, end))
     }
 
     /** Arguments up to the closing `)`: `VALUE` or `NAME = VALUE`, separated by top-level commas. */

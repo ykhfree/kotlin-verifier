@@ -358,7 +358,10 @@ sealed interface ProbeStep {
     val pos: SPos
 }
 
-/** `OUT {, OUT} := OP(ARGS)`: one out is the result; a second one is `exc` of an operation that can throw (DESIGN-B.md 5.1). */
+/**
+ * `[OUT {, OUT} :=] OP(ARGS)`: one out is the result; a second one is `exc` of an operation that can throw
+ * (DESIGN-B.md 5.1). No out calls an operation without a result (DESIGN-C.md 7.2).
+ */
 data class ProbeCall(
     val outs: List<Name>,
     val op: Name,
@@ -371,6 +374,10 @@ data class ProbeAssert(
     override val pos: SPos,
 ) : ProbeStep
 
+/**
+ * `probe [NAME](PARAMS) [requires E] { steps }` (DESIGN-C.md 7.2). [name] is null for the unnamed probe of v0; a
+ * sidecar may have many named probes and one unnamed one.
+ */
 data class ProbeDecl(
     val params: List<Typed>,
     val requires: Vexpr?,
@@ -381,8 +388,23 @@ data class ProbeDecl(
     override val reviewPos: SPos? = null,
     override val unit: String = "",
     override val sources: List<SourceLine> = emptyList(),
+    val name: Name? = null,
 ) : Decl,
-    IntentClause
+    IntentClause {
+    /** The probe's name in reports: `probe`, or `probe NAME`. */
+    val label: String get() = name?.let { "probe ${it.text}" } ?: "probe"
+
+    /** Its Viper method: `probe`, or `probe_NAME` (as a lemma's is `lemma_ID`). */
+    val method: String get() = name?.let { "probe_${it.text}" } ?: "probe"
+}
+
+/**
+ * `review intent` (DESIGN-C.md 10 UC4): every intent clause of the sidecar needs a `reviewed` note and a source
+ * line. Without it, only issue rules and allowance clauses need a note (U7).
+ */
+data class ReviewIntentDecl(
+    override val pos: SPos,
+) : Decl
 
 /** A parsed sidecar, includes resolved. [file] is the file the user named. */
 data class Sidecar(
@@ -403,18 +425,21 @@ data class Sidecar(
     val properties get() = decls.filterIsInstance<PropertyDecl>()
     val holes get() = decls.filterIsInstance<HoleDecl>()
     val probes get() = decls.filterIsInstance<ProbeDecl>()
+
+    /** True if the sidecar has the line `review intent` (DESIGN-C.md 10 UC4). */
+    val reviewIntent get() = decls.any { it is ReviewIntentDecl }
 }
 
 /**
  * Every intent clause of [this] in file order, with the name messages give it: `the issue rule of tryLock`,
- * `ensures progress_live of tryLock`, `ends_only_if P3a of sweep`, `invariant P2`, `lemma P3c` or `the probe`.
+ * `ensures progress_live of tryLock`, `ends_only_if P3a of sweep`, `invariant P2`, `lemma P3c`, `the probe` or `probe NAME`.
  */
 fun Sidecar.intentClauses(): List<Pair<String, IntentClause>> =
     decls.flatMap { d ->
         when (d) {
             is OperationDecl -> d.items.filterIsInstance<ReviewedItem>().map { describe(it, d) to it }
             is PropertyDecl -> listOf("${d.kind.name.lowercase()} ${d.id.text}" to d)
-            is ProbeDecl -> listOf("the probe" to d)
+            is ProbeDecl -> listOf((if (d.name == null) "the probe" else d.label) to d)
             else -> emptyList()
         }
     }

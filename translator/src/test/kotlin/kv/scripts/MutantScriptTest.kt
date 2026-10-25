@@ -132,6 +132,17 @@ class MutantScriptTest {
     }
 
     @Test
+    fun `the report reader takes named probe rows (DESIGN-C 7_2) with the other rows`() {
+        val text = report("FAILED", others = "init PROVEN · lemma P3c PROVEN · probe PROVEN · probe expiry_boundary FAILED")
+        val code = "import sys; sys.path.insert(0, sys.argv[1]); import mutants; print(mutants.parse_report(open(sys.argv[2]).read())[1])"
+        val file = File(dir, "report.txt").apply { writeText(text) }
+        val p = ProcessBuilder("python3", "-I", "-c", code, script.parent, file.path).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()
+        assertTrue(p.waitFor(60, TimeUnit.SECONDS))
+        assertEquals("[['init', 'PROVEN'], ['lemma P3c', 'PROVEN'], ['probe', 'PROVEN'], ['probe expiry_boundary', 'FAILED']]", out.trim(), out)
+    }
+
+    @Test
     fun `a PROVEN run where FAILED is expected is a mismatch`() {
         val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to Response(0, report("PROVEN")), "reactor-SB1" to sb1Failed))
         assertEquals(1, exit, out)

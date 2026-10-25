@@ -7,7 +7,8 @@ import kv.model.TrustedModels
 /**
  * Checks of a parsed sidecar that need no Kotlin code: required declarations, name clashes (DESIGN-v0.md 4.6),
  * references between sidecar names, trusted model names (4.3), R1 for issue values (3.5), and the `reviewed`
- * notes that U7 requires (8.3) on issue rules and allowance clauses, and decision 2 on trusted functions.
+ * notes that U7 requires (8.3) on issue rules and allowance clauses, and decision 2 on trusted functions. Under
+ * `review intent` (DESIGN-C.md 10 UC4), every intent clause needs a note and a source line.
  * Kotlin names are resolved later, against FIR.
  */
 fun checkSidecar(sidecar: Sidecar): List<SidecarError> = SidecarChecker(sidecar).run()
@@ -56,7 +57,33 @@ private class SidecarChecker(
         }
         s.operations.forEach(::operation)
         s.probes.forEach(::probe)
+        probeNames()
+        s.intentClauses().filter { (_, c) -> c is PropertyDecl || c is ProbeDecl }.forEach { (what, c) -> fingerprint(what, c) }
+        if (s.reviewIntent) reviewIntent()
         return errors
+    }
+
+    /** Each probe is its own method (DESIGN-C.md 7.2), so names are unique and there is at most one unnamed probe. */
+    private fun probeNames() {
+        val seen = mutableMapOf<String, SPos>()
+        for (p in s.probes) {
+            seen.put(p.label, p.pos)?.let { err(p.name?.pos ?: p.pos, "duplicate-decl", "a second ${if (p.name == null) "unnamed probe" else p.label}; the first is at $it") }
+        }
+    }
+
+    /**
+     * DESIGN-C.md 10 UC4, opted in with `review intent`: every intent clause needs a `reviewed` note (issue rules and
+     * allowance clauses need one anyway, U7) and at least one source line; `source none "<reason>"` counts.
+     */
+    private fun reviewIntent() {
+        for ((what, c) in s.intentClauses()) {
+            if (c.reviewed == null && c !is IssueItem && c !is AllowanceItem) {
+                err(c.pos, "unreviewed", "$what needs a 'reviewed' note: under 'review intent' every intent clause counts only after a person reads it (DESIGN-C.md 10 UC4)")
+            }
+            if (c.sources.isEmpty()) {
+                err(c.pos, "unsourced", "$what has no source line: under 'review intent' every intent clause names its source, source \"<anchor>\" quote \"<quote>\" or source none \"<reason>\" (DESIGN-C.md 5.2)")
+            }
+        }
     }
 
     private fun singletons() {
