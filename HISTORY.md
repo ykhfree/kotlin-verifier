@@ -300,3 +300,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - 판정 변화 0: 변이 63회, 기계적 변이 264개 (`mutation/rerun-c2/`가 `rerun3`과 같음).
 - C3 시작 (사용자 요청 2026-10-25, feature-developer): `kv spec check` (계약만의 모델, 시나리오 칸 결정성 a·b, 절 하나씩 일관성, 필드 고정 경고, `--draft`). 수락: 파일럿 표 재현, 지금 sidecar의 칸 표(예측: C05, C19가 방식 b에서도 정해짐), WITNESS(O1)와 필드 프레임(O2) 측정.
 - C3 완료 (`b5191e4`; `DESIGN-C.md` 10.3): `kv spec check`가 파일럿 결정성 266개 판정과 실패 절 9개를 모두 재현한다. 지금 sidecar는 C16만 OPEN이고, 필드 고정 경고 1개(`isHeld`)가 남는다. 후보 절 `entry_held`는 사용자에게 묻는다.
+- `entry_held` 추가와 서명 (사용자 결정 2026-10-25, `6138a8b`; `MUTATION.md` 9.7): 토큰을 가진 entry의 isHeld = 그 토큰의 gHeld. 필드 고정 경고가 0개가 됐다. 4차 재측정의 예측 3개가 모두 맞았다 (판정 변화 0, isHeld 변이 12개가 성질 위반). 처음 측정의 "invariant only" 36개 중 30개가 이제 성질 위반으로 보고된다.
