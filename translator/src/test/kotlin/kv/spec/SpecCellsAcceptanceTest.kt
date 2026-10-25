@@ -51,21 +51,21 @@ class SpecCellsAcceptanceTest {
             assertEquals(listOf("C16"), f.withVerdict(CellVerdict.OPEN))
             assertEquals(emptyList(), g.withVerdict(CellVerdict.INFEASIBLE) + g.values.filter { it.startsWith("ERROR") })
         }
-        // Mode a: only C16's cell. Mode b: no clause says that an operation that issues nothing leaves k without an
-        // entry (only the hole's INV-E does), and C16.
+        // Mode a: only C16's cell. Mode b: C16 and the four cells after a monitor pass at L + 1, which hang on C16
+        // (no monitor duty: UC1). no_entry_created (DESIGN-C.md 10.4) closed E4s, E5s, O6s, O7s, U2s and U3s.
         assertEquals(listOf("H14s"), gen.cells(Mode.A).withVerdict(CellVerdict.OPEN))
-        assertEquals(listOf("E4s", "E5s", "H14s", "O6s", "O7s", "O8r", "O8s", "O9s", "O10s", "U2s", "U3s"), gen.cells(Mode.B).withVerdict(CellVerdict.OPEN))
+        assertEquals(listOf("H14s", "O8r", "O8s", "O9s", "O10s"), gen.cells(Mode.B).withVerdict(CellVerdict.OPEN))
         assertEquals(0, gen.errorCount, gen.render())
     }
 
     @Test
-    fun `the aspect - the signed sidecar decides every cell but the three where the creation throws, and the owner change is impossible`() {
+    fun `the aspect - the signed sidecar decides every cell, and the owner change is impossible`() {
         val sidecar = File(specDir, "aspect.core-spring.kv")
         val r = check(sidecar, generated(sidecar), Aspects.classpath, "aspect")
         val expected =
             mapOf(
-                "E1r" to "DETERMINED(backed)", "E1s" to "DETERMINED(holds_r)", "E2r" to "OPEN", "E2s" to "OPEN",
-                "H1r" to "DETERMINED(same_t1)", "H1s" to "DETERMINED(holds_t1)", "H2r" to "OPEN", "H2s" to "DETERMINED(holds_t1)",
+                "E1r" to "DETERMINED(backed)", "E1s" to "DETERMINED(holds_r)", "E2r" to "DETERMINED(exc)", "E2s" to "DETERMINED(no_entry)",
+                "H1r" to "DETERMINED(same_t1)", "H1s" to "DETERMINED(holds_t1)", "H2r" to "DETERMINED(same_t1)", "H2s" to "DETERMINED(holds_t1)",
                 "K1r" to "DETERMINED(backed)", "K1s" to "DETERMINED(holds_t1)", "O1r" to "INFEASIBLE", "O1s" to "INFEASIBLE",
             )
         assertEquals(expected, r.cells(Mode.A), r.render())

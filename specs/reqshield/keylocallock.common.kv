@@ -85,12 +85,20 @@ operation unLock = fun KeyLocalLock.unLock {
   ends_only_if P3a: qt == t && res
   reviewed "ykhfree 2026-10-23: README: only the holder that acquired the lock can release it" sha256 "d679f5c705a959be"
   ensures progress_owner: old(has(S, k)) && old(S.m[k].token) == t ==> res
+  // DESIGN-C.md 10.4: a release never makes an entry for a key that had none.
+  ensures no_entry_created: !old(has(S, k)) ==> !has(S, k)
+    source none "user decision 2026-10-26 (DESIGN-C 10.4): no sentence states it; cell generation found it only in the hole"
+  reviewed "ykhfree 2026-10-26: a release or a monitor pass never makes an entry for a key that had none" sha256 "509d721ad1aca002"
 }
 
 operation sweep = compute in KeyLocalLock.Companion {
   free now = local now                  // System.currentTimeMillis(), once per sweep pass
   ends_only_if P3a: now > old(tok(qt).gLease)
   reviewed "ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed" sha256 "1c0ae67dbfe9757d"
+  // DESIGN-C.md 10.4: a monitor pass never makes an entry for a key that had none.
+  ensures no_entry_created: !old(has(S, k)) ==> !has(S, k)
+    source none "user decision 2026-10-26 (DESIGN-C 10.4): no sentence states it; cell generation found it only in the hole"
+  reviewed "ykhfree 2026-10-26: a release or a monitor pass never makes an entry for a key that had none" sha256 "509d721ad1aca002"
 }
 
 // ---- State properties ----

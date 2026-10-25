@@ -28,6 +28,10 @@ operation getOrCreate = fun ReqShieldAspect.getOrCreateReqShield {
   result res
   ensures P_same: !exc ==> res != null && has(S, k) && S.m[k] == res
   ensures progress_ok: !thrown ==> !exc
+  // DESIGN-C.md 10.4: the factory runs only for an unmapped method; if it throws, the call throws and caches nothing.
+  ensures factory_throw: (exc <==> thrown && !old(has(S, k))) && (exc ==> !has(S, k))
+    source none "user decision 2026-10-26 (DESIGN-C 10.4): no sentence states it; the code's computeIfAbsent behavior"
+  reviewed "ykhfree 2026-10-26: the factory runs only for an unmapped method; if it throws, the call throws and caches nothing" sha256 "debfb2380fd3b4fa"
 }
 
 // ---- State properties ----

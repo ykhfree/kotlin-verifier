@@ -127,6 +127,10 @@ RACY는 도구의 고유한 주장("action 밖의 읽기는 임의 값")을 겨�
   2. MI_INV_1 "invariant only" 18개 중 isHeld를 false로 남기는 12개(SDL-04, BOOL-03, SDL-10, BOOL-04; 각 세 모듈)는 `entry_held` 성질 위반이 된다.
   3. 나머지 6개(SDL-09 ×3: permit; coroutine·core RET-11과 reactor RET-08: 토큰이 null인 entry)는 "invariant only"로 남는다.
 
+- 2026-10-26, 5차 재측정 전 (사용자 결정 뒤, DESIGN-C.md 10.4): KeyLocalLock sidecar의 unLock과 sweep에 `ensures no_entry_created`(entry가 없던 key에 entry를 만들지 않음)를 더했다. aspect sidecar에는 `factory_throw`를 더했다. KeyLocalLock 세 모듈을 다시 잰다. 결과는 `mutation/rerun5/`, 비교 대상은 `rerun-c4/`. 예측 (결과 전):
+  1. 판정 변화 0. 이유: unLock이나 sweep이 빈 key에 만든 entry는 hole의 INV-E(held, 토큰 있음)를 깨므로 그런 변이는 이미 FAILED다.
+  2. 하위 상태 변화 0. 남은 "invariant only" 6개(SDL-09 ×3: permit; RET-11 ×2, RET-08: 원래 있던 entry를 남김)는 빈 key에 entry를 만들지 않는다.
+
 ## 9. 결과 (2026-10-24, 판정 뒤)
 
 이 절은 결과다. 1-8절의 규칙은 바꾸지 않았다.

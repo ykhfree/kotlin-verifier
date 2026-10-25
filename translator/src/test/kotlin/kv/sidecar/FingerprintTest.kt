@@ -113,13 +113,17 @@ class FingerprintTest {
             }
         assertEquals(
             listOf(
+                // Signed on 2026-10-26 (DESIGN-C.md 10.4).
+                "aspect.common.kv: ensures factory_throw of getOrCreate" to "debfb2380fd3b4fa",
                 "keylocallock.common.kv: the issue rule of tryLock" to "023e62e52c1fc231",
                 "keylocallock.common.kv: ends_only_if P3a of tryLock" to "1c0ae67dbfe9757d",
                 "keylocallock.common.kv: unbacked_only_if P3b of tryLock" to "23aa1de7c7b2dde4",
                 // Signed on 2026-10-25 with source lines (DESIGN-C.md 10, UC2 and UC3).
                 "keylocallock.common.kv: ensures refusal_keeps_entry of tryLock" to "94198e9729f7b868",
                 "keylocallock.common.kv: ends_only_if P3a of unLock" to "d679f5c705a959be",
+                "keylocallock.common.kv: ensures no_entry_created of unLock" to "509d721ad1aca002",
                 "keylocallock.common.kv: ends_only_if P3a of sweep" to "1c0ae67dbfe9757d",
+                "keylocallock.common.kv: ensures no_entry_created of sweep" to "509d721ad1aca002",
                 "keylocallock.common.kv: invariant entry_lease" to "c2ae43c5a13c3c35",
                 "keylocallock.common.kv: invariant entry_held" to "be2c7e636d7ac55a",
             ),

@@ -81,6 +81,8 @@ method getOrCreate(S: Ref, k: MethodKey, thrown: Bool) returns (res: Ref, exc: B
   ensures !exc ==> res != null && has(S, k) && S.m[k] == res
   // progress_ok (checked by probe): when the factory does not throw, the call returns.
   ensures !thrown ==> !exc
+  // factory_throw (DESIGN-C.md 10.4): the factory runs only for an unmapped method; a throw caches nothing.
+  ensures (exc <==> thrown && !old(has(S, k))) && (exc ==> !has(S, k))
 {
   exc := false
   var cur_112_9: Ref := has(S, k) ? S.m[k] : null  // computeIfAbsent: the current value of k, if any
