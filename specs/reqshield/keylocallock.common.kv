@@ -73,6 +73,8 @@ operation tryLock = fun KeyLocalLock.tryLock {
   // DESIGN-C.md 10 UC3: a refused call leaves the owner and the lease as they were (no renewal).
   ensures refusal_keeps_entry: res == NULL ==> old(has(S, k)) && has(S, k) &&
       S.m[k].token == old(S.m[k].token) && S.m[k].expiresAt == old(S.m[k].expiresAt)
+    source none "user decision 2026-10-25 (DESIGN-C UC3): no sentence states it; all three pilot drafts asked"
+  reviewed "ykhfree 2026-10-25: a refused tryLock does not renew the holder's lease" sha256 "94198e9729f7b868"
 }
 
 operation unLock = fun KeyLocalLock.unLock {
@@ -97,6 +99,9 @@ invariant P2: forall qr: Ref :: { qr in S.created } qr in S.created ==> 0 <= qr.
 // progress_live and expired_takeover, which read expiresAt, keep their meaning whatever the hole says.
 invariant entry_lease: forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
     S.m[qk].expiresAt == tok(S.m[qk].token).gLease
+  source "README.md#local-lock-map-size/2" quote "cleanup monitor once `lockTimeoutMillis` has passed" sha256 "a50a09d95953837f"
+  source "CLAUDE.md#reqshieldconfiguration-parameters/4" quote "`lockTimeoutMillis`: Lock acquisition timeout" sha256 "96bb2ac381ef4f65"
+reviewed "ykhfree 2026-10-25: an unreleased lock expires lockTimeoutMillis after it was acquired" sha256 "c2ae43c5a13c3c35"
 lemma P3c: forall t1: Int, t2: Int :: { tok(t1).gHeld, tok(t2).gHeld }
     tok(t1).gIssued && tok(t2).gIssued && tok(t1).gBacked && tok(t1).gHeld &&
     tok(t2).gBacked && tok(t2).gHeld && tok(t1).gKey == tok(t2).gKey ==> t1 == t2
