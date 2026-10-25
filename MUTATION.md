@@ -117,6 +117,11 @@ RACY는 도구의 고유한 주장("action 밖의 읽기는 임의 값")을 겨�
   3. MI_INV_4 하나로 "invariant only"였던 15개(SDL-06 ×2, reactor SDL-05, AOR-01..04 ×3)는 "property"(`entry_lease`)가 된다.
   4. MI_INV_1 하나로 "invariant only"였던 18개는 그대로 "invariant only"다. 새 절은 permit과 isHeld를 말하지 않는다.
 
+- 2026-10-25, 2차 재측정 결과 (`mutation/rerun2/`, 결과 뒤): FAILED→PROVEN 0, PROVEN→FAILED 0 (예측 1, 2 맞음). MI_INV_4 "invariant only" 15개가 모두 `entry_lease` 성질 위반이 됐다 (예측 3 맞음). 예측 4는 3개에서 틀렸다: coroutine·core RET-11과 reactor RET-08이 `entry_lease`로 property가 됐다. 원인은 메인 세션이 쓴 절이다. 이 변이들은 sweep에서 `token = null`로 만든 entry를 지우지 않고 남긴다. 조건 없는 `entry_lease`는 "모든 entry가 토큰을 가진다"도 요구해서, 토큰 없는 entry에서 실패했다. 이것은 사용자가 정한 뜻(UC2: entry가 가진 토큰의 lease)보다 넓고, 더하지 않기로 한 monitor 의무(UC1) 쪽에 걸친다.
+- 2026-10-25, 3차 재측정 전 (결과 뒤의 변경): `entry_lease`에 `S.m[qk].token != NULL` 조건을 넣었다. 이유는 바로 위 항목이다. 결과는 `mutation/rerun3/`. 예측 (결과 전):
+  1. rerun2와 같다. 다만 RET-11 ×2와 reactor RET-08은 rerun과 같은 "invariant only"(MI_INV_1)로 돌아간다.
+  2. MI_INV_4 "invariant only"였던 15개는 계속 `entry_lease` 성질 위반이다. 이 변이들은 토큰을 지우지 않는다.
+
 ## 9. 결과 (2026-10-24, 판정 뒤)
 
 이 절은 결과다. 1-8절의 규칙은 바꾸지 않았다.

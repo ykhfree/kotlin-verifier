@@ -66,7 +66,8 @@ define P2(S) (
 
 // ---- Sidecar: state property entry_lease (DESIGN-C.md 10 UC2) ----
 define entry_lease(S) (
-  forall qk: Key :: { S.m[qk] } has(S, qk) ==> S.m[qk].expiresAt == tok(S.m[qk].token).gLease
+  forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
+    S.m[qk].expiresAt == tok(S.m[qk].token).gLease
 )
 
 // @HOLE-BEGIN MI_INV (sidecar hole, split on top-level &&; one ensures per part)

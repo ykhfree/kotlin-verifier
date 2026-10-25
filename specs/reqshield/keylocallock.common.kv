@@ -95,7 +95,8 @@ operation sweep = compute in KeyLocalLock.Companion {
 invariant P2: forall qr: Ref :: { qr in S.created } qr in S.created ==> 0 <= qr.permits && qr.permits <= 1
 // DESIGN-C.md 10 UC2: an entry expires at the lease of the token it carries (issue: gLease = now + timeout), so
 // progress_live and expired_takeover, which read expiresAt, keep their meaning whatever the hole says.
-invariant entry_lease: forall qk: Key :: { S.m[qk] } has(S, qk) ==> S.m[qk].expiresAt == tok(S.m[qk].token).gLease
+invariant entry_lease: forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
+    S.m[qk].expiresAt == tok(S.m[qk].token).gLease
 lemma P3c: forall t1: Int, t2: Int :: { tok(t1).gHeld, tok(t2).gHeld }
     tok(t1).gIssued && tok(t2).gIssued && tok(t1).gBacked && tok(t1).gHeld &&
     tok(t2).gBacked && tok(t2).gHeld && tok(t1).gKey == tok(t2).gKey ==> t1 == t2
