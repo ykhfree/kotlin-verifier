@@ -411,6 +411,7 @@ action 메서드의 계약에 도구가 아는 사실을 더한다. 본문과 �
 
 파일럿에서 FRAME, END, ISSUE를 원본 본문과 함께 검증했다 (Silicon 9.65 s, 검증됨). WITNESS는 서명된 hole의 MI_INV_5와 같은 식이고, 원본에서 이미 증명된다.
 영향: 생성 모델이 바뀌므로 gate 4개의 목표 모델(`spike/effect_ghost/target.vpr` 등)을 고쳐야 한다. 이 파일들은 메인 세션이 관리한다 (9.2 JC4).
+주의 (메인 세션, 2026-10-25): Silicon은 경로마다 처음 실패한 사후조건만 보고한다. 그래서 계약 사실을 더하면 절 순서가 바뀌고, 변이의 판정은 같아도 `scripts/mutants-expected.txt`와 `scripts/aspect-mutants-expected.txt`의 실패 의무 ID가 바뀔 수 있다. C2의 수락 테스트 2는 판정만이 아니라 이 두 파일을 다시 재고 바뀐 ID를 하나씩 설명해야 끝난다.
 
 ### 7.4 바뀌지 않는 것
 
