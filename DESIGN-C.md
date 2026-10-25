@@ -644,3 +644,20 @@ C0 `aba91e7`, C1 `8d8e17a`. 메인 세션 확인: 테스트 488개 통과, gate 
 | "Spec to review" 줄 | `review intent` 아래에서는 모든 의도 절을 나열한다. C3에서 한다 |
 | 블록 지문(sha256) 필수 | `review intent` 아래에서는 필수로 한다 (문맥 변경을 보려면 필요). C3에서 한다 |
 | `review intent`의 위치 | 공통 파일에 한 번 둔다. include된 변형 파일에도 적용된다 |
+
+### 10.2 C2 결과와 메인 세션 결정 (2026-10-25)
+
+C2 `9ea254b`(emitter), `c7b54e1`(기계적 재측정 기록). emitter는 FRAME(모든 action과 stray), END 두 줄(witness가 있는 object 모듈), ISSUE(발급 규칙이 있는 연산)를 계약에 낸다. 보고서 이름은 `tool fact FRAME|END|ISSUE`다.
+
+메인 세션 확인:
+- gate 목표 모델은 메인 세션이 7.3의 식에서 손으로 고쳤다 (`spike/effect_ghost/target.vpr`, `spike/aspect/target.vpr`, `spike/aspect/mutants.py`의 stray). 그 뒤 GateTest의 다섯 비교를 포함한 테스트 490개가 통과한다.
+- mutantsReqShield 33회, mutantsAspect 30회 불일치 0. 실패 의무 ID도 바뀌지 않았다 (세 사실은 구조상 참이라 처음 실패하는 사후조건이 될 수 없다).
+- 기계적 변이 264개 (`mutation/rerun-c2/`): `rerun3`과 판정, 하위 상태, 실패 의무가 모두 같다 (다시 셈).
+
+| 질문 (구현 agent) | 결정 |
+|---|---|
+| O1 WITNESS | C3에서 정한다. 지금 sidecar의 MI_INV_5와 같은 식이고, 도구 사실만으로 귀납적임을 agent가 손 모델로 보였다 (E2). 넣으면 파일럿 방식 b의 재현이 바뀔 수 있다 |
+| O2 다른 key 항목의 필드 프레임 | C3의 결정성 검사에서 C20 같은 칸이 필드 프레임을 요구하는지 잰 뒤 정한다 |
+| O3 다섯 번째 gate | 메인 세션이 `spike/aspect/mutants.py`의 stray 계약에 FRAME을 넣어 고쳤다 |
+| O4 END 두 줄의 이름 | 하나(`tool fact END`)로 둔다 |
+| O5 `mutation/rerun-c2/` | 기록으로 남긴다 |
