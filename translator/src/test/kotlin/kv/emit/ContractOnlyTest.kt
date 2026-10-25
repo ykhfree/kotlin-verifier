@@ -38,7 +38,7 @@ class ContractOnlyTest {
         val kinds = e.methods.groupingBy { it.kind }.eachCount()
         val outcomes = cells.sumOf { it.outcomes.size }
         assertEquals(mapOf(MethodKind.INIT to 1, MethodKind.ACTION to 3, MethodKind.CELL to outcomes + cells.size), kinds)
-        assertEquals(listOf("method init() returns (S: Ref)", "  ensures MI(S)", "  ensures S.m == Map[Key, Ref]()"), method(e.text, "init"))
+        assertEquals(listOf("method init() returns (S: Ref)", "  ensures MI(S)", "  ensures MI_WITNESS(S)  // tool fact WITNESS: no token is issued yet", "  ensures S.m == Map[Key, Ref]()"), method(e.text, "init"))
         for (op in listOf("tryLock", "unLock", "sweep")) {
             val lines = method(e.text, op)
             assertTrue(lines.drop(1).all { it.startsWith("  requires") || it.startsWith("  ensures") || it.startsWith("  //") || it.startsWith("    ") }, "$op:\n${lines.joinToString("\n")}")
@@ -58,6 +58,8 @@ class ContractOnlyTest {
                 "  assume x >= 0 && x != t1 && !tok(x).gIssued",
                 "  var b: Bool",
                 "  b := unLock(S, k, x)",
+                // C4: the key parameter's entry is named after the steps, so Silicon has its terms (no assumption).
+                "  var has_k: Bool := has(S, k)",
                 "  assert !b",
                 "}",
             ),
@@ -142,14 +144,34 @@ class ContractOnlyTest {
     }
 
     @Test
-    fun `the measurement facts - WITNESS in MI and every action, the field frame after MI_OWN`() {
-        val e = contract(holeTrue = true, assumed = setOf(AssumedFact.WITNESS, AssumedFact.FIELD_FRAME))
-        assertTrue("define MI_WITNESS(S) (\n  forall qt: Int :: { tok(qt).gHeld } tok(qt).gIssued && tok(qt).gBacked && tok(qt).gHeld ==> carried(S, tok(qt).gKey, qt)\n)" in e.text, e.text)
-        assertTrue("define MI(S) (MI_PERMS(S) && MI_OWN(S) && MI_WITNESS(S) && P2(S) && entry_lease(S) && entry_held(S) && MI_INV(S))" in e.text)
-        assertEquals(3, e.text.split("  ensures MI_WITNESS(S)").size - 1)
+    fun `the tool facts WITNESS and ISSUE_ONLY (C4) - in kv verify's model and the contract-only model, WITNESS beside MI`() {
+        val witness = "define MI_WITNESS(S) (\n  forall qt: Int :: { tok(qt).gHeld } tok(qt).gIssued && tok(qt).gBacked && tok(qt).gHeld ==> carried(S, tok(qt).gKey, qt)\n)"
+        for (e in listOf(contract(holeTrue = true), code.let { (m, s) -> emitViper(m, s) })) {
+            assertTrue(witness in e.text, e.text)
+            // MI keeps its parts: WITNESS is its own requires and ensures, so a gate diff adds lines only.
+            assertTrue("define MI(S) (MI_PERMS(S) && MI_OWN(S) && P2(S) && entry_lease(S) && entry_held(S) && MI_INV(S))" in e.text)
+            assertEquals(listOf("method init() returns (S: Ref)", "  ensures MI(S)", "  ensures MI_WITNESS(S)  // tool fact WITNESS: no token is issued yet"), method(e.text, "init").take(3))
+            for (op in listOf("tryLock", "unLock", "sweep")) {
+                val lines = method(e.text, op)
+                assertEquals("  requires MI_WITNESS(S)  // tool fact WITNESS", lines[lines.indexOf("  requires MI(S)") + 1], op)
+                assertEquals("  ensures MI_WITNESS(S)  // tool fact WITNESS: a held backed token is carried by its key's entry", lines[lines.indexOfFirst { it.startsWith("  ensures MI_OWN(S)") } + 1], op)
+                val issueOnly = lines.single { "tool fact ISSUE_ONLY" in it }
+                val notResult = if (op == "tryLock") " && qt != res" else ""
+                assertEquals("  ensures forall qt: Int :: { tok(qt).gIssued } !old(tok(qt).gIssued)$notResult ==> !tok(qt).gIssued  // tool fact ISSUE_ONLY: the action issues no token but its result", issueOnly, op)
+            }
+        }
+    }
+
+    @Test
+    fun `the measurement facts - only in the contract-only model, only with their option`() {
+        val e = contract(holeTrue = true, assumed = setOf(AssumedFact.FIELD_FRAME, AssumedFact.FRAME_DOMAIN, AssumedFact.INIT_UNISSUED))
         val frame = "  ensures forall qk: Key :: { S.m[qk] } qk != k && old(has(S, qk)) && has(S, qk) ==> S.m[qk].permits == old(S.m[qk].permits) && S.m[qk].isHeld == old(S.m[qk].isHeld) && " +
             "S.m[qk].token == old(S.m[qk].token) && S.m[qk].expiresAt == old(S.m[qk].expiresAt)"
         assertEquals(3, e.text.split(frame).size - 1)
-        assertFalse("MI_WITNESS" in contract(holeTrue = true).text || "MI_WITNESS" in code.let { (m, s) -> emitViper(m, s).text })
+        assertEquals(3, e.text.split("  ensures forall qk: Key :: { qk in domain(S.m) } { S.m[qk] } qk != k ==>").size - 1)
+        assertTrue("  ensures forall qt: Int :: { tok(qt) } !tok(qt).gIssued  // assumed for a measurement: init issued no token" in method(e.text, "init"))
+        for (plain in listOf(contract(holeTrue = true).text, code.let { (m, s) -> emitViper(m, s).text })) {
+            assertFalse(frame.trim() in plain || "{ qk in domain(S.m) }" in plain || "ensures forall qt: Int :: { tok(qt) } !tok(qt).gIssued" in plain)
+        }
     }
 }

@@ -417,8 +417,9 @@ data class CellOutcome(
 )
 
 /**
- * A scenario cell of a cell file (DESIGN-C.md 3.2): `cell ID(PARAMS) ["title"] { steps; outcomes }`. The steps run
- * from the empty module; `kv spec check` asks Silicon which outcome the contracts decide at the end.
+ * A scenario cell of a cell file (DESIGN-C.md 3.2): `cell ID(PARAMS) ["title"] [boundary] { steps; outcomes }`. The
+ * steps run from the empty module; `kv spec check` asks Silicon which outcome the contracts decide at the end.
+ * [boundary] marks a cell whose clock reading equals a lease: DESIGN-C.md 3.3 rule 5 always asks it.
  */
 data class CellDecl(
     val id: Name,
@@ -427,6 +428,7 @@ data class CellDecl(
     val steps: List<CellStep>,
     val outcomes: List<CellOutcome>,
     val pos: SPos,
+    val boundary: Boolean = false,
 )
 
 /**
