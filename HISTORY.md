@@ -268,3 +268,7 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
     - 다시 돌림: D9-sweep-never(서명된 sidecar에서 PROVEN), D14b의 세 경우(서명 FAILED, hole 완화 PROVEN, 결정 probe 추가 FAILED).
     - 다시 셈: 89개 비교표 (파일럿 JSONL).
     - quote-check: 핵심 인용 9개가 원문에 있고 주장을 뒷받침한다.
+- S1, S2 수정 (메인 세션, `AI-CODE.md` 13.2):
+  - S1: section의 relevance가 relevant 지역 변수에 대입하는 문장도 넣는다. 거짓 PROVEN이던 fixture가 이제 FAILED (`P_same`)다.
+  - S2: audit이 put의 값 인자를 action 밖으로 본다. action 밖 counter 쓰기와 fresh 함수 밖 `Shield` 생성자가 이제 ledger에 UNSUPPORTED로 남는다.
+  - 확인: 452개 통과, gate 4개 exit 0, 변이 63회 불일치 0. 결함 테스트 3개는 수정 전 코드에서 실패한다.

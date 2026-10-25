@@ -192,4 +192,13 @@ class AspectVerifyTest {
         assertEquals(Verdict.PROVEN, r.row("getOrCreate").verdict, text)
         assertTrue("default contract MI and P_stable for stray drop#" in text, text)
     }
+
+    @Test
+    fun `a section that may return a Shield other than the mapped one fails P_same`() {
+        val op = "    fun getOrCreate(jp: Any): Shield? {\n        var r: Shield? = shieldMap.computeIfAbsent(target(jp)) { create(jp) }\n        if (calls > 0L) r = shared\n        return r\n    }"
+        val r = AspectFixture(op = op, hole = AspectFixture.CREATED_ARE_MAPPED).verified()
+        val text = r.render()
+        assertEquals(ModuleVerdict.FAILED, r.verdict, text)
+        assertEquals(setOf("P_same"), r.failing("getOrCreate"), text)
+    }
 }
