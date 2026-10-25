@@ -272,3 +272,11 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - S1: section의 relevance가 relevant 지역 변수에 대입하는 문장도 넣는다. 거짓 PROVEN이던 fixture가 이제 FAILED (`P_same`)다.
   - S2: audit이 put의 값 인자를 action 밖으로 본다. action 밖 counter 쓰기와 fresh 함수 밖 `Shield` 생성자가 이제 ledger에 UNSUPPORTED로 남는다.
   - 확인: 452개 통과, gate 4개 exit 0, 변이 63회 불일치 0. 결함 테스트 3개는 수정 전 코드에서 실패한다.
+
+### 사용자 결정 (2026-10-25, DESIGN-C 뒤)
+
+- sidecar에 더함: 만료 시각 = lease (UC2), 거절된 tryLock은 entry를 바꾸지 않음 (UC3). monitor 의무(UC1)는 더하지 않음 (RACY-09는 허용된 지연).
+- 서명 범위: 새 명세는 의도 절 전부와 결정 probe (UC4, UC5).
+- Confluence는 Cloud (UC6). 초안은 1개로 시작하고 두 번째 모듈에서 3개와 비교 (JC1).
+- 기본값으로 둔 것: 페이지 텍스트는 Anthropic 밖으로 보내지 않음, 경계 칸은 항상 묻기, D2와 D5는 지금 서명대로.
+- 전체 표: `DESIGN-C.md` 10절.
