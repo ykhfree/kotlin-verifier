@@ -230,3 +230,22 @@ README 인용 3개는 quote-check로 원문을 확인했다.
 - 테스트 408개 통과, gate 4개 exit 0, 손으로 고른 변이 33회와 30회 불일치 0.
 - `rerun/results.jsonl`을 직접 집계했고, 판정 변화 목록을 1차와 비교해 뽑았다.
 - reactor SDL-02와 coroutine RET-11의 보고서 원문을 읽었다.
+
+### 9.6 2차·3차 재측정 (2026-10-25, `entry_lease`와 `refusal_keeps_entry` 뒤)
+
+바뀐 것: sidecar에 `invariant entry_lease`와 tryLock의 `ensures refusal_keeps_entry`를 더했다 (DESIGN-C.md 10, UC2와 UC3). KeyLocalLock 세 모듈만 다시 쟀다. 예측은 변경 기록에 있다.
+
+| 실행 | `entry_lease` | 결과 파일 |
+|---|---|---|
+| 2차 (`rerun2/`) | 조건 없음 | 예측 1-3 맞음, 예측 4는 3개에서 틀림 (변경 기록) |
+| 3차 (`rerun3/`) | `S.m[qk].token != NULL` 조건 | 예측 1, 2 맞음 |
+
+**3차 결과 (측정, 9.5의 `rerun/`과 비교):**
+- 판정(PROVEN, FAILED 등)이 바뀐 변이는 0개다.
+- 하위 상태만 바뀐 변이는 15개다. 모두 "invariant only"(MI_INV_4)에서 "property"(`entry_lease`)가 됐다: AOR-01..04 ×3, coroutine·core SDL-06, reactor SDL-05.
+  - 그중 core·reactor AOR-03과 coroutine SDL-06은 9.5 "주의"의 진짜 결함이다. 이제 성질 위반으로 보고된다.
+  - 손으로 고른 SB3도 세 변형 모두 `entry_lease` 성질 위반이다 (`scripts/mutants-expected.txt`).
+- 집계 (KeyLocalLock 세 모듈, 264개): FAILED property 126, invariant only 18, PROVEN 52, INCOMPLETE 8, ERROR 36 (review 막힘), 사산 24.
+- 남은 "invariant only" 18개는 모두 MI_INV_1이다 (permit, isHeld, token이 있는 entry). 새 절은 이것을 말하지 않는다.
+
+**메인 세션 확인:** 테스트 452개 통과, gate 3개(KeyLocalLock) exit 0, mutantsReqShield 33회와 mutantsAspect 30회 불일치 0. `rerun`, `rerun2`, `rerun3`의 results.jsonl을 직접 비교했다.
