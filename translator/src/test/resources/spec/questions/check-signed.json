@@ -1,0 +1,496 @@
+{
+ "sidecar": "pilot-c/specs-signed/keylocallock.coroutine.kv",
+ "module": "com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion",
+ "draft": false,
+ "errors": [],
+ "unsigned": [],
+ "stale": [],
+ "field_fixing": [
+  {
+   "clause": "ensures progress_live of tryLock",
+   "pos": "pilot-c/specs-signed/keylocallock.common.kv:70:3",
+   "fields": [
+    "expiresAt",
+    "isHeld"
+   ]
+  },
+  {
+   "clause": "ensures expired_takeover of tryLock",
+   "pos": "pilot-c/specs-signed/keylocallock.common.kv:72:3",
+   "fields": [
+    "expiresAt"
+   ]
+  }
+ ],
+ "model": {
+  "from_code": true,
+  "assumptions": [],
+  "assumed_facts": []
+ },
+ "cell_list": [
+  {
+   "id": "C01",
+   "title": "Empty map, no cap: tryLock(k)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C02",
+   "title": "The map is full; k has no entry: tryLock(k)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C03",
+   "title": "Acquired at time 0, not released: tryLock(k) at time 5",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "token",
+     "expr": "r != NULL"
+    }
+   ]
+  },
+  {
+   "id": "C04",
+   "title": "Acquired at time 0, not released: tryLock(k) at time 10 (the lease end)",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "token",
+     "expr": "r != NULL"
+    }
+   ]
+  },
+  {
+   "id": "C05",
+   "title": "Acquired at time 0, not released, no monitor pass since: tryLock(k) at time 11",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "token",
+     "expr": "r != NULL"
+    }
+   ]
+  },
+  {
+   "id": "C06",
+   "title": "After C05 returned a new token t2: the first holder calls unLock(k, t1)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C07",
+   "title": "After C05 returned t2: unLock(k, t2)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C08",
+   "title": "Acquired at time 0: unLock(k, t1) at time 5",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C10",
+   "title": "After C08 returned true: unLock(k, t1) again",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C11",
+   "title": "Acquired at time 0: unLock(k, x) with a token x that was never issued",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C12",
+   "title": "After C02 returned a token u: unLock(k, u)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C13",
+   "title": "After C02 returned u, the map is still full: another tryLock(k)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C14",
+   "title": "Acquired at time 0: a monitor pass at time 5 looks at k",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "stays",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "dropped",
+     "expr": "!has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "C15",
+   "title": "Acquired at time 0: a monitor pass at time 10 looks at k",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "stays",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "dropped",
+     "expr": "!has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "C16",
+   "title": "Acquired at time 0: a monitor pass at time 11 looks at k",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "stays",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "dropped",
+     "expr": "!has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "C17",
+   "title": "After C16 dropped the entry: unLock(k, t1)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C18",
+   "title": "A cap is set but the map is not full; k has no entry: tryLock(k)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C19",
+   "title": "Acquired at time 0, not released; the map is full: tryLock(k) at time 11",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C20",
+   "title": "Acquired at time 0 for k, not released: tryLock(k2) at time 5 for another key k2 with no entry, no cap",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "token",
+     "expr": "r != NULL"
+    }
+   ]
+  }
+ ],
+ "cells": {
+  "a": {
+   "error": null,
+   "findings": [],
+   "millis": 19518,
+   "cells": {
+    "C01": "DETERMINED(backed)",
+    "C02": "DETERMINED(unbacked)",
+    "C03": "DETERMINED(null)",
+    "C04": "DETERMINED(null)",
+    "C05": "DETERMINED(token)",
+    "C06": "DETERMINED(false)",
+    "C07": "DETERMINED(true)",
+    "C08": "DETERMINED(true)",
+    "C10": "DETERMINED(false)",
+    "C11": "DETERMINED(false)",
+    "C12": "DETERMINED(false)",
+    "C13": "DETERMINED(unbacked)",
+    "C14": "DETERMINED(stays)",
+    "C15": "DETERMINED(stays)",
+    "C16": "OPEN",
+    "C17": "DETERMINED(false)",
+    "C18": "DETERMINED(backed)",
+    "C19": "DETERMINED(backed)",
+    "C20": "DETERMINED(token)"
+   }
+  },
+  "b": {
+   "error": null,
+   "findings": [],
+   "millis": 16679,
+   "cells": {
+    "C01": "DETERMINED(backed)",
+    "C02": "DETERMINED(unbacked)",
+    "C03": "DETERMINED(null)",
+    "C04": "DETERMINED(null)",
+    "C05": "OPEN",
+    "C06": "DETERMINED(false)",
+    "C07": "DETERMINED(true)",
+    "C08": "DETERMINED(true)",
+    "C10": "DETERMINED(false)",
+    "C11": "DETERMINED(false)",
+    "C12": "DETERMINED(false)",
+    "C13": "DETERMINED(unbacked)",
+    "C14": "DETERMINED(stays)",
+    "C15": "DETERMINED(stays)",
+    "C16": "OPEN",
+    "C17": "DETERMINED(false)",
+    "C18": "DETERMINED(backed)",
+    "C19": "OPEN",
+    "C20": "DETERMINED(token)"
+   }
+  }
+ },
+ "isolation": {
+  "runs": 8,
+  "clauses": [
+   {
+    "action": "tryLock",
+    "index": 0,
+    "clause": "ends_only_if P3a",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:65:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 1,
+    "clause": "unbacked_only_if P3b",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:67:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 2,
+    "clause": "ensures P1a",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:62:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 3,
+    "clause": "ensures P1a_entry",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:64:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 4,
+    "clause": "ensures progress_free",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:69:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 5,
+    "clause": "ensures progress_live",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:70:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 6,
+    "clause": "ensures cap_unbacked",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:71:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 7,
+    "clause": "ensures expired_takeover",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:72:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 0,
+    "clause": "ends_only_if P3a",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:80:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 1,
+    "clause": "ensures P1",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:78:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 2,
+    "clause": "ensures progress_owner",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:82:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "sweep",
+    "index": 0,
+    "clause": "ends_only_if P3a",
+    "pos": "pilot-c/specs-signed/keylocallock.common.kv:87:3",
+    "verdict": "PROVEN",
+    "detail": null
+   }
+  ],
+  "other": [],
+  "hole": [],
+  "errors": []
+ },
+ "spec_to_review": "ends_only_if tryLock P3a, unLock P3a, sweep P3a; unbacked_only_if tryLock P3b; issue tryLock"
+}

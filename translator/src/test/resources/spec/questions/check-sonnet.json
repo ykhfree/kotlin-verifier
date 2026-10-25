@@ -1,0 +1,504 @@
+{
+ "sidecar": "pilot-c/checks/final-sonnet/keylocallock.coroutine.kv",
+ "module": "com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion",
+ "draft": false,
+ "errors": [],
+ "unsigned": [],
+ "stale": [],
+ "field_fixing": [],
+ "model": {
+  "from_code": true,
+  "assumptions": [],
+  "assumed_facts": []
+ },
+ "cell_list": [
+  {
+   "id": "C01",
+   "title": "Empty map, no cap: tryLock(k)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C02",
+   "title": "The map is full; k has no entry: tryLock(k)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C03",
+   "title": "Acquired at time 0, not released: tryLock(k) at time 5",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "token",
+     "expr": "r != NULL"
+    }
+   ]
+  },
+  {
+   "id": "C04",
+   "title": "Acquired at time 0, not released: tryLock(k) at time 10 (the lease end)",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "token",
+     "expr": "r != NULL"
+    }
+   ]
+  },
+  {
+   "id": "C05",
+   "title": "Acquired at time 0, not released, no monitor pass since: tryLock(k) at time 11",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "token",
+     "expr": "r != NULL"
+    }
+   ]
+  },
+  {
+   "id": "C06",
+   "title": "After C05 returned a new token t2: the first holder calls unLock(k, t1)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C07",
+   "title": "After C05 returned t2: unLock(k, t2)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C08",
+   "title": "Acquired at time 0: unLock(k, t1) at time 5",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C10",
+   "title": "After C08 returned true: unLock(k, t1) again",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C11",
+   "title": "Acquired at time 0: unLock(k, x) with a token x that was never issued",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C12",
+   "title": "After C02 returned a token u: unLock(k, u)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C13",
+   "title": "After C02 returned u, the map is still full: another tryLock(k)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C14",
+   "title": "Acquired at time 0: a monitor pass at time 5 looks at k",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "stays",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "dropped",
+     "expr": "!has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "C15",
+   "title": "Acquired at time 0: a monitor pass at time 10 looks at k",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "stays",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "dropped",
+     "expr": "!has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "C16",
+   "title": "Acquired at time 0: a monitor pass at time 11 looks at k",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "stays",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "dropped",
+     "expr": "!has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "C17",
+   "title": "After C16 dropped the entry: unLock(k, t1)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "b"
+    },
+    {
+     "name": "false",
+     "expr": "!b"
+    }
+   ]
+  },
+  {
+   "id": "C18",
+   "title": "A cap is set but the map is not full; k has no entry: tryLock(k)",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C19",
+   "title": "Acquired at time 0, not released; the map is full: tryLock(k) at time 11",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "C20",
+   "title": "Acquired at time 0 for k, not released: tryLock(k2) at time 5 for another key k2 with no entry, no cap",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "token",
+     "expr": "r != NULL"
+    }
+   ]
+  }
+ ],
+ "cells": {
+  "a": {
+   "error": null,
+   "findings": [],
+   "millis": 21303,
+   "cells": {
+    "C01": "DETERMINED(backed)",
+    "C02": "DETERMINED(unbacked)",
+    "C03": "DETERMINED(null)",
+    "C04": "DETERMINED(null)",
+    "C05": "DETERMINED(null)",
+    "C06": "INFEASIBLE",
+    "C07": "INFEASIBLE",
+    "C08": "DETERMINED(true)",
+    "C10": "DETERMINED(false)",
+    "C11": "DETERMINED(false)",
+    "C12": "DETERMINED(false)",
+    "C13": "DETERMINED(unbacked)",
+    "C14": "DETERMINED(stays)",
+    "C15": "DETERMINED(dropped)",
+    "C16": "DETERMINED(dropped)",
+    "C17": "DETERMINED(false)",
+    "C18": "DETERMINED(backed)",
+    "C19": "DETERMINED(null)",
+    "C20": "DETERMINED(token)"
+   }
+  },
+  "b": {
+   "error": null,
+   "findings": [],
+   "millis": 18613,
+   "cells": {
+    "C01": "DETERMINED(backed)",
+    "C02": "DETERMINED(unbacked)",
+    "C03": "DETERMINED(null)",
+    "C04": "DETERMINED(null)",
+    "C05": "DETERMINED(null)",
+    "C06": "INFEASIBLE",
+    "C07": "INFEASIBLE",
+    "C08": "DETERMINED(true)",
+    "C10": "DETERMINED(false)",
+    "C11": "DETERMINED(false)",
+    "C12": "DETERMINED(false)",
+    "C13": "DETERMINED(unbacked)",
+    "C14": "DETERMINED(stays)",
+    "C15": "DETERMINED(dropped)",
+    "C16": "DETERMINED(dropped)",
+    "C17": "DETERMINED(false)",
+    "C18": "DETERMINED(backed)",
+    "C19": "DETERMINED(null)",
+    "C20": "DETERMINED(token)"
+   }
+  }
+ },
+ "isolation": {
+  "runs": 7,
+  "clauses": [
+   {
+    "action": "tryLock",
+    "index": 0,
+    "clause": "ends_only_if (default false)",
+    "pos": null,
+    "verdict": "FAILED",
+    "detail": "Postcondition of tryLock might not hold: generated ends_only_if default false (incomplete quantifiers)"
+   },
+   {
+    "action": "tryLock",
+    "index": 1,
+    "clause": "unbacked_only_if tryLock_unbacked_only_on_cap_refusal",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:93:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 2,
+    "clause": "ensures tryLock_held_key_returns_null",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:69:3",
+    "verdict": "FAILED",
+    "detail": "Postcondition of tryLock might not hold: sidecar tryLock_held_key_returns_null keylocallock.common.kv:69:42 (incomplete quantifiers)"
+   },
+   {
+    "action": "tryLock",
+    "index": 3,
+    "clause": "ensures tryLock_held_key_unchanged",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:73:3",
+    "verdict": "FAILED",
+    "detail": "Postcondition of tryLock might not hold: sidecar tryLock_held_key_unchanged keylocallock.common.kv:73:39 (incomplete quantifiers)"
+   },
+   {
+    "action": "tryLock",
+    "index": 4,
+    "clause": "ensures progress_tryLock_free_key_acquires",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:79:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 5,
+    "clause": "ensures tryLock_sets_lease",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:84:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 6,
+    "clause": "ensures progress_tryLock_cap_refusal_proceeds",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:89:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 0,
+    "clause": "ends_only_if unLock_ends_only_presented_token",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:119:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 1,
+    "clause": "ensures unLock_true_only_for_owner",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:105:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 2,
+    "clause": "ensures progress_unLock_owner_releases",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:109:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 3,
+    "clause": "ensures unLock_failure_changes_nothing",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:113:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "sweep",
+    "index": 0,
+    "clause": "ends_only_if sweep_ends_only_expired",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:141:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "sweep",
+    "index": 1,
+    "clause": "ensures sweep_never_adds_or_changes",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:129:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "sweep",
+    "index": 2,
+    "clause": "ensures progress_sweep_drops_expired",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:134:3",
+    "verdict": "FAILED",
+    "detail": "Postcondition of sweep might not hold: sidecar progress_sweep_drops_expired keylocallock.common.kv:134:41 (incomplete quantifiers)"
+   },
+   {
+    "action": "sweep",
+    "index": 3,
+    "clause": "ensures sweep_keeps_unexpired",
+    "pos": "pilot-c/checks/final-sonnet/keylocallock.common.kv:137:3",
+    "verdict": "PROVEN",
+    "detail": null
+   }
+  ],
+  "other": [],
+  "hole": [],
+  "errors": []
+ },
+ "spec_to_review": "ends_only_if unLock unLock_ends_only_presented_token, sweep sweep_ends_only_expired; unbacked_only_if tryLock tryLock_unbacked_only_on_cap_refusal; issue tryLock"
+}
