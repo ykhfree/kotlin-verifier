@@ -196,15 +196,15 @@ internal class ModuleContext(
     /** The sidecar class [sym] constructs, if [sym] is a constructor of one. */
     fun constructedClass(sym: FirCallableSymbol<*>?): ObjClass? = (sym as? FirConstructorSymbol)?.let { s -> classBySymbol.entries.find { it.key.classId == s.callableId.classId }?.value }
 
-    private val flattenProblems = mutableMapOf<ObjField, Problem>()
+    private val flattenProblems = mutableMapOf<ObjField, List<Problem>>()
 
     /** The maximum permits of each valid kotlinx Semaphore field: the `permits` all its constructions give. */
     private val semaphoreMaxima = mutableMapOf<ObjField, Long>()
 
     fun semaphoreMax(field: ObjField): Long? = semaphoreMaxima[field]
 
-    /** Why [field] cannot be folded into its owner (DESIGN-v0.md 2.11 rule 5); null for a plain or valid field. */
-    fun flattenProblem(field: ObjField): Problem? = flattenProblems[field]
+    /** Every reason why [field] cannot be folded into its owner (DESIGN-v0.md 2.11 rule 5); empty for a plain or valid field. */
+    fun flattenProblems(field: ObjField): List<Problem> = flattenProblems[field].orEmpty()
 
     init {
         state =
@@ -341,45 +341,48 @@ internal class ModuleContext(
 
     /**
      * DESIGN-v0.md 2.11 rule 5: a flattened field is a `val`, every construction passes a new model object (or uses a
-     * default that does), and every read is the receiver of a model operation. The whole module file is checked.
+     * default that does), and every read is the receiver of a model operation. The whole module file is checked, and
+     * every read and construction that breaks the rule is a problem of its own (AI-CODE.md 13, fix 3).
      */
     private fun checkFlattening() {
         for ((sym, field) in fieldBySymbol) {
             val model = field.model ?: continue
-            val problem =
-                if (!sym.isVal) {
-                    Problem("${field.kotlin} is a var; a flattened field must be a val", field.pos)
-                } else {
-                    reads(sym).firstNotNullOfOrNull { read ->
-                        // An operation is a call such as `release()` or a property such as kotlinx `availablePermits`.
-                        val op = index.parent(read) as? FirQualifiedAccessExpression
-                        val ok = op != null && op.dispatchReceiver === read && entriesOf(op).any { it.model == model && it.role == Role.OP }
-                        if (ok) null else Problem("${field.kotlin} is used other than as the receiver of a $model operation", posOf(read))
-                    } ?: constructions(field).firstNotNullOfOrNull { (call, arg) ->
-                        val ok = arg is FirFunctionCall && entriesOf(arg).any { it.model == model && it.role == Role.CTOR }
-                        if (ok) null else Problem("a construction of ${field.kotlin} does not pass a new $model object", posOf(arg ?: call))
-                    } ?: if (model == TrustedModels.KOTLINX_SEMAPHORE_MODEL) semaphoreMaximum(field) else null
+            val notVal = Problem("${field.kotlin} is a var; a flattened field must be a val", field.pos).takeIf { !sym.isVal }
+            val uses =
+                reads(sym).mapNotNull { read ->
+                    // An operation is a call such as `release()` or a property such as kotlinx `availablePermits`.
+                    val op = index.parent(read) as? FirQualifiedAccessExpression
+                    val ok = op != null && op.dispatchReceiver === read && entriesOf(op).any { it.model == model && it.role == Role.OP }
+                    if (ok) null else Problem("${field.kotlin} is used other than as the receiver of a $model operation", posOf(read))
                 }
-            problem?.let { flattenProblems[field] = it }
+            val made =
+                constructions(field).mapNotNull { (call, arg) ->
+                    val ok = arg is FirFunctionCall && entriesOf(arg).any { it.model == model && it.role == Role.CTOR }
+                    if (ok) null else Problem("a construction of ${field.kotlin} does not pass a new $model object", posOf(arg ?: call))
+                }
+            // The maximum needs constructions that all pass a new kotlinx Semaphore.
+            val problems = (listOfNotNull(notVal) + uses + made).ifEmpty { if (model == TrustedModels.KOTLINX_SEMAPHORE_MODEL) semaphoreMaximum(field) else emptyList() }
+            if (problems.isNotEmpty()) flattenProblems[field] = problems
         }
     }
 
     /**
      * The maximum of kotlinx Semaphore field [field], whose constructions all pass a new kotlinx Semaphore: each gives
-     * literal permits (see [kotlinxPermits]), all the same. Records it, or returns the problem.
+     * literal permits (see [kotlinxPermits]), all the same. Records it, or returns the problems.
      */
-    private fun semaphoreMaximum(field: ObjField): Problem? {
+    private fun semaphoreMaximum(field: ObjField): List<Problem> {
         val made = constructions(field).map { it.second as FirFunctionCall }
-        made.firstOrNull { kotlinxPermits(it) == null }?.let {
-            return Problem("kotlinx Semaphore(...) of ${field.kotlin} needs Int literals with 1 <= permits and 0 <= acquiredPermits <= permits", posOf(it))
+        val notLiteral = made.filter { kotlinxPermits(it) == null }
+        if (notLiteral.isNotEmpty()) {
+            return notLiteral.map { Problem("kotlinx Semaphore(...) of ${field.kotlin} needs Int literals with 1 <= permits and 0 <= acquiredPermits <= permits", posOf(it)) }
         }
         val maxima = made.map { kotlinxPermits(it)!!.second }
-        if (maxima.isEmpty()) return Problem("no construction of ${field.kotlin} in the module file gives its maximum permits", field.pos)
+        if (maxima.isEmpty()) return listOf(Problem("no construction of ${field.kotlin} in the module file gives its maximum permits", field.pos))
         made.firstOrNull { kotlinxPermits(it)!!.second != maxima[0] }?.let {
-            return Problem("the constructions of ${field.kotlin} give different permits (${maxima.distinct().joinToString()}); the field needs one maximum", posOf(it))
+            return listOf(Problem("the constructions of ${field.kotlin} give different permits (${maxima.distinct().joinToString()}); the field needs one maximum", posOf(it)))
         }
         semaphoreMaxima[field] = maxima[0]
-        return null
+        return emptyList()
     }
 
     /** The reads of property [sym] in the module file. */
