@@ -48,11 +48,46 @@ class EmitterTest {
         assertEquals(null, e.methodAt(e.lineOf("define MI(S)")))
     }
 
+    /** The 1-based line of the first line that is [code] after trimming: a tool fact line can contain a shorter fragment. */
+    private fun Emitted.lineIs(code: String): Int = text.lines().indexOfFirst { it.trim() == code }.also { check(it >= 0) { "no line '$code' in:\n$text" } } + 1
+
+    /** The `ensures` lines of method [name] in order, trimmed and without comments; a continuation line is left out. */
+    private fun Emitted.ensures(name: String): List<String> =
+        text.substringAfter("method $name(").substringBefore("\n{\n").lines().map { it.substringBefore("  //").trim() }.filter { it.startsWith("ensures") }
+
+    @Test
+    fun `the tool facts FRAME, END and ISSUE follow MI_PERMS and HIST in each action, each with its report name`() {
+        val e = emit("coroutine")
+        val frame = "ensures forall qk: Key :: { S.m[qk] } qk != k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.m[qk] == old(S.m[qk]))"
+        val kept = "ensures forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gHeld) && !old(carried(S, k, qt)) ==> tok(qt).gHeld"
+        val endedIssuing = "ensures forall qt: Int :: { tok(qt).gHeld } qt != NULL && old(carried(S, k, qt)) && !carried(S, k, qt) && qt != res ==> !tok(qt).gHeld"
+        val ended = endedIssuing.replace(" && qt != res", "")
+        val issue =
+            "ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued && tok(res).gKey == k && tok(res).gBacked == carried(S, k, res) && " +
+                "tok(res).gHeld && tok(res).gLease == now + timeout"
+        val head = listOf("ensures MI_PERMS(S)", frame, "ensures MI_OWN(S)", "ensures P2(S)", "ensures entry_lease(S)") + (1..5).map { "ensures MI_INV_$it(S)" } + "ensures HIST"
+        // tryLock issues its result: END leaves that token out, and ISSUE comes after END.
+        assertEquals(head + listOf(endedIssuing, kept, issue), e.ensures("tryLock").take(head.size + 3))
+        for (name in listOf("unLock", "sweep")) {
+            assertEquals(head + listOf(ended, kept), e.ensures(name).take(head.size + 2), name)
+            assertFalse(issue in e.ensures(name), "$name has no issue rule")
+        }
+        val names = mapOf(frame to FACT_FRAME, kept to FACT_END, endedIssuing to FACT_END, ended to FACT_END, issue to FACT_ISSUE)
+        val facts =
+            e.text.lines().withIndex().mapNotNull { (i, l) ->
+                val name = names[l.substringBefore("  //").trim()] ?: return@mapNotNull null
+                // A postcondition failure starts at the expression after `ensures`.
+                assertEquals(Source.Generated(name), e.sourceAt(i + 1, l.indexOf("ensures") + 9)?.source, l)
+                name
+            }
+        assertEquals(listOf(3, 6, 1), listOf(FACT_FRAME, FACT_END, FACT_ISSUE).map { n -> facts.count { it == n } })
+    }
+
     @Test
     fun `a sidecar ensures maps back to its property ID and sidecar position, also on a continuation line`() {
         val e = emit("coroutine")
         val ws = Workspace(dir)
-        val line = e.lineOf("ensures res != NULL ==> !old(tok(res).gIssued)")
+        val line = e.lineIs("ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued &&")
         val (src, pos) = e.sidecarAt(line, "res != NULL")
         assertEquals("P1a", src.id)
         assertEquals(ws.at("keylocallock.common.kv", "ensures P1a:", "res != NULL"), pos.line to pos.col)
@@ -181,7 +216,7 @@ class EmitterTest {
         val e = emit("coroutine")
         val ws = Workspace(dir)
         val tryLock = e.methods.single { it.name == "tryLock" }.range
-        val line = (tryLock.line..tryLock.endLine).first { "ensures forall qt: Int :: { tok(qt).gHeld }" in e.text.lines()[it - 1] }
+        val line = (tryLock.line..tryLock.endLine).first { e.text.lines()[it - 1].trim() == "ensures forall qt: Int :: { tok(qt).gHeld }" }
         val (whole, wholePos) = e.sidecarAt(line, "forall")
         assertEquals("ends_only_if P3a", whole.id)
         assertEquals(ws.at("keylocallock.common.kv", "ends_only_if P3a: now > old(tok(qt).gLease)", "ends_only_if"), wholePos.line to wholePos.col)
@@ -208,7 +243,7 @@ class EmitterTest {
         val run = e.text.substringAfter("method run(").substringBefore("\n{\n")
         assertTrue(ends in run, run)
         assertTrue("ensures res != NULL && !tok(res).gBacked ==> (false)" in run, run)
-        val endsLine = e.lineOf("ensures forall qt: Int :: { tok(qt).gHeld }")
+        val endsLine = e.lineIs("ensures forall qt: Int :: { tok(qt).gHeld }")
         assertEquals(Source.Generated("ends_only_if default false"), e.sourceAt(endsLine, e.colOf(endsLine, "forall"))?.source)
 
         val strayLine = f.at("lockMap.compute(k)").first
@@ -219,6 +254,14 @@ class EmitterTest {
         assertTrue(text.startsWith("S: Ref, k: Key)\n  requires MI(S)\n"), text)
         assertTrue(ends in text && "ensures HIST" in text, text)
         assertFalse("gBacked ==>" in text, "a stray action issues nothing, so it has no unbacked_only_if:\n$text")
+        // The tool facts: a stray action has FRAME and END, and END leaves no result out; ISSUE is the run's issue rule.
+        val ended = "ensures forall qt: Int :: { tok(qt).gHeld } qt != NULL && old(carried(S, k, qt)) && !carried(S, k, qt) ==> !tok(qt).gHeld"
+        val strayEnsures = e.ensures(stray.name)
+        assertEquals(1, strayEnsures.count { it.startsWith("ensures forall qk: Key :: { S.m[qk] } qk != k ==>") }, text)
+        assertTrue(ended in strayEnsures, text)
+        assertFalse(strayEnsures.any { it.startsWith("ensures res != NULL") }, text)
+        assertTrue(ended.replace(" ==> !tok", " && qt != res ==> !tok") in e.ensures("run"), run)
+        assertTrue("ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued && tok(res).gKey == k && tok(res).gBacked == carried(S, k, res) && tok(res).gHeld" in e.ensures("run"), run)
         val body = text.substringAfter("\n{\n").lines().map { it.substringBefore("  //").trim() }.filter { it.isNotEmpty() && !it.startsWith("//") }
         assertEquals(
             listOf(
@@ -289,6 +332,8 @@ class EmitterTest {
         )
         val issue = e.text.substringAfter("if (res != NULL) {\n").substringBefore("  }").lines().map { it.substringBefore("  //").trim() }.filter { it.isNotEmpty() }
         assertEquals(listOf("assert !tok(res).gIssued", "tok(res).gKey := k", "tok(res).gHeld := true", "tok(res).gIssued := true"), issue)
+        // The ISSUE fact states the same writes in the same order.
+        assertTrue("ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gKey == k && tok(res).gHeld && tok(res).gIssued" in e.ensures("run"), e.text)
         // Without a field set from carried(S, k, res) there is no backed field, so ends_only_if has no backed conjunct.
         assertTrue("old(tok(qt).gIssued) && old(tok(qt).gHeld) && !tok(qt).gHeld ==>" in e.text, e.text)
     }
