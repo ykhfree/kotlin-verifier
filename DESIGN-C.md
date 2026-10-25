@@ -616,3 +616,16 @@ feature-developer가 순서대로 구현한다. 마일스톤은 수락 테스트
 | `DESIGN-v0.md` 8.3 "reviewed 지문" | "발급 규칙과 허용 조건이면 sidecar의 그 절 텍스트다" |
 | `AI-CODE.md` 10.1 | "SPEC.md의 \"once `lockTimeoutMillis` has passed\"는 경계를 정하지 않는다." |
 | Atlassian, Confluence Server/DC REST API examples | "curl -u admin:admin http://localhost:8080/confluence/rest/api/content/3965072?expand=body.storage" (personal access token: Confluence 7.9부터) |
+
+## 10. 사용자 결정 (2026-10-25)
+
+| ID | 결정 |
+|---|---|
+| UC1 | 더하지 않는다. monitor 의무 절은 D9-sweep-never(결함)와 함께 RACY-09도 잡는다. 1차 판정자 A는 RACY-09를 결함이 아니라고 봤다 (README가 1 s 지연을 허용, MUTATION.md 9.3). 빈틈은 기록으로 남긴다 |
+| UC2 | 더한다: 만료 시각 = lease를 의도 절로 |
+| UC3 | 더한다: 거절된 tryLock은 entry를 바꾸지 않는다 |
+| UC4 | 새 명세는 의도 절 전부(`ensures`, `invariant`, `lemma`, 결정 probe)에 `reviewed`와 `source`를 요구한다. 기존 sidecar는 다음에 고칠 때 옮긴다. 지금 문법은 `ensures`, `invariant`의 `reviewed`를 받지 않으므로, 서명은 C1의 문법 변화 뒤에 붙인다 |
+| UC5 | 결정은 이름 있는 서명 probe로 sidecar에 남긴다 |
+| UC6 | Confluence Cloud. C6은 REST API v2와 Keychain의 API 토큰으로 받는다 |
+| UC7, UC8, UC9 | 권고를 기본값으로 둔다 (메인 세션이 알렸고, 사용자가 다른 뜻을 말하지 않음): 페이지 텍스트를 Anthropic 밖으로 보내지 않는다; 경계 칸은 항상 묻는다; D2 = true, D5 = false를 지금 서명대로 둔다 |
+| JC1 | 초안 1개로 시작한다. 규칙 1은 "그 작성자가 open 또는 assumed"다. 두 번째 모듈에서 초안 3개와 비교해서 확정한다 |
