@@ -682,3 +682,24 @@ C3 `b5191e4` (`kv spec check`). 대조 스크립트: `pilot-c/c3/` (`run_pilot.s
 | 종료 코드 | 지금처럼 발견은 exit 0이다. CI 연결 때 옵션을 정한다 |
 | FRAME domain 트리거, WITNESS, 필드 프레임, init의 "발급된 record 없음" | C4에서 칸 생성이 다른 key 단계를 넣을 때 함께 도구 사실로 올린다 (gate와 변이 재측정 포함) |
 | 칸 fixture 위치 | C4에서 정한다 |
+
+### 10.4 C4 결과와 메인 세션 결정 (2026-10-26)
+
+C4 `ea1ffcc`(`kv spec cells`, 도구 사실 WITNESS·ISSUE_ONLY), `83de51d`(`scripts/spec.py questions`, 묶음 검사, 검토 묶음).
+
+결과 (agent 측정; 메인 세션은 테스트, 변이, 재측정을 다시 돌림):
+- KeyLocalLock 생성 칸 65개가 파일럿 형식 칸 19개를 모두 덮는다. 대응한 19칸의 판정이 손 칸과 a·b 모두 같다.
+- 질문 규칙: 초안 3개는 파일럿과 같은 8칸, 초안 1개는 haiku 9, sonnet 8, opus 6칸이고 셋 다 D1, D2, D4, D5를 덮는다. 묶음 검사는 빠진 칸, 두 묶음의 칸, 질문 아닌 칸을 거부한다.
+- Aspect core-spring: 칸 12개. 정해짐 7, OPEN 3(생성 함수가 throw할 때: exc와 map을 정하는 절이 없음), INFEASIBLE 2(set-once 때문에 "주인 변경" 단계가 불가능; 규칙의 결과).
+- KeyLocalLock 방식 b의 OPEN 10개: 절만으로는 "발급하지 않는 연산(unLock, sweep)이 빈 key에 entry를 만들지 않는다"가 없다. hole(INV-E)만 그것을 말한다.
+- 도구 사실: WITNESS(다른 key 칸 4개가 방식 b에서 필요)와 ISSUE_ONLY(결과 말고는 발급하지 않음; 구조상 참)를 올렸다. FRAME domain 트리거, 필드 프레임, init 사실은 필요한 칸이 없어 측정 옵션으로만 둔다.
+- 메인 세션 확인: gate 목표 모델에 두 사실을 손으로 넣었다 (`spike/effect_ghost/target.vpr`). 테스트 536개 통과, 변이 63회 불일치 0, 기계적 변이 264개 (`mutation/rerun-c4/`)가 `rerun4`와 모두 같다.
+
+| 질문 (구현 agent) | 결정 |
+|---|---|
+| 칸 생성이 발급 규칙(의도 층)을 읽는다 | C5에서 1단계 초안의 발급 규칙으로 칸을 만든다 (2.2의 순서와 같다: 초안 → 칸 → 2단계 답) |
+| 칸 수 65개 (파일럿 20개) | C5의 파일럿 재실행에서 답 비용을 잰 뒤 정한다 |
+| KeyLocalLock 방식 b OPEN 10개, Aspect OPEN 3개 | 사용자에게 묻는다 (sidecar에 절을 더할지) |
+| WITNESS를 MI 밖에 둔 것 | 그대로 둔다 |
+| 규칙 2 (OPEN 차이는 세지 않음), 규칙 4 (대리 지표) | 그대로 둔다. 진짜 규칙 4는 칸과 절의 연결이 필요하다 (뒤로 미룸) |
+| 칸 생성 상수의 CLI 옵션 | 두 번째 프로토콜에서 필요해질 때 연다 |

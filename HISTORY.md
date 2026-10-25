@@ -302,3 +302,6 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - C3 완료 (`b5191e4`; `DESIGN-C.md` 10.3): `kv spec check`가 파일럿 결정성 266개 판정과 실패 절 9개를 모두 재현한다. 지금 sidecar는 C16만 OPEN이고, 필드 고정 경고 1개(`isHeld`)가 남는다. 후보 절 `entry_held`는 사용자에게 묻는다.
 - `entry_held` 추가와 서명 (사용자 결정 2026-10-25, `6138a8b`; `MUTATION.md` 9.7): 토큰을 가진 entry의 isHeld = 그 토큰의 gHeld. 필드 고정 경고가 0개가 됐다. 4차 재측정의 예측 3개가 모두 맞았다 (판정 변화 0, isHeld 변이 12개가 성질 위반). 처음 측정의 "invariant only" 36개 중 30개가 이제 성질 위반으로 보고된다.
 - C4 시작 (사용자 요청 2026-10-25, feature-developer): 시나리오 칸 생성(`kv spec cells`), 질문 규칙과 묶음 검사(초안 1개 규칙 포함, JC1), 검토 묶음 Markdown. 수락: 파일럿 19칸 재현, 질문 칸 8개(3초안)와 9/8/6개(1초안), Aspect 모듈에서 칸 생성과 서명 sidecar의 결정성. 다른 key 단계가 생기면 미룬 도구 사실을 잰다.
+- C4 완료 (`ea1ffcc`, `83de51d`; `DESIGN-C.md` 10.4): 칸 생성(KeyLocalLock 65칸이 파일럿 19칸을 덮음, Aspect 12칸), 질문 규칙(3초안 8칸, 1초안 9/8/6칸), 묶음 검사, 검토 묶음. 도구 사실 WITNESS와 ISSUE_ONLY를 더했다.
+  - 메인 세션 확인: gate 목표 모델을 손으로 고침, 테스트 536개, 변이 63회 불일치 0, 기계적 변이 264개 변화 0 (`mutation/rerun-c4/`).
+  - 새 질문 2개를 사용자에게 묻는다: KeyLocalLock "unLock·sweep은 entry를 만들지 않음", Aspect "생성 함수가 throw하면".
