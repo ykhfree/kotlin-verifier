@@ -65,7 +65,7 @@ class EmitterTest {
         val issue =
             "ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued && tok(res).gKey == k && tok(res).gBacked == carried(S, k, res) && " +
                 "tok(res).gHeld && tok(res).gLease == now + timeout"
-        val head = listOf("ensures MI_PERMS(S)", frame, "ensures MI_OWN(S)", "ensures P2(S)", "ensures entry_lease(S)") + (1..5).map { "ensures MI_INV_$it(S)" } + "ensures HIST"
+        val head = listOf("ensures MI_PERMS(S)", frame, "ensures MI_OWN(S)", "ensures P2(S)", "ensures entry_lease(S)", "ensures entry_held(S)") + (1..5).map { "ensures MI_INV_$it(S)" } + "ensures HIST"
         // tryLock issues its result: END leaves that token out, and ISSUE comes after END.
         assertEquals(head + listOf(endedIssuing, kept, issue), e.ensures("tryLock").take(head.size + 3))
         for (name in listOf("unLock", "sweep")) {

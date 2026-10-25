@@ -40,6 +40,16 @@ class PropertyCheckTest {
 
     private fun pass2File(variant: String) = File(dir, "$variant.pass2.vpr")
 
+    /**
+     * Removes the sidecar invariant entry_held from the workspace spec. The next two tests need a mutant whose
+     * first failing obligation is a hole conjunct; with entry_held, the isHeld mutants fail entry_held first.
+     */
+    private fun withoutEntryHeld() {
+        val text = File(ws.specs, "keylocallock.common.kv").readText()
+        val block = Regex("(?ms)^invariant entry_held:.*?^reviewed [^\n]*\n").find(text)!!.value
+        ws.editSpec("keylocallock.common.kv", block, "")
+    }
+
     /** The `ensures MI_INV_i(S)` lines of [method] in the Viper [text]. */
     private fun holeEnsures(
         text: String,
@@ -89,6 +99,7 @@ class PropertyCheckTest {
     @Test
     fun `a hole-only failure whose property check finds a property is FAILED (property), with that property listed`() {
         // Core RET-06: unLock keeps the released entry instead of removing it; P1 hides behind MI_INV_1 in pass 1.
+        withoutEntryHeld()
         ws.editKotlin("core", "runs out.\n                return@compute null", "runs out.\n                return@compute existing")
         val r = ws.verify("core")
         val text = r.render()
@@ -108,6 +119,7 @@ class PropertyCheckTest {
     @Test
     fun `an action with a property error in pass 1 is FAILED (property) and gets no property check, even with a hole error`() {
         // Coroutine NEG-02: the expiry condition is negated; pass 1 fails at a hole conjunct and at a property.
+        withoutEntryHeld()
         ws.editKotlin("coroutine", "if (now > existing.expiresAt && existing.isHeld.compareAndSet(true, false)) {", "if (!(now > existing.expiresAt && existing.isHeld.compareAndSet(true, false))) {")
         val r = ws.verify("coroutine")
         val text = r.render()

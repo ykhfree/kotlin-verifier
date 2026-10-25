@@ -36,8 +36,8 @@ class FieldFixingTest {
      * session (the task expected 0).
      */
     @Test
-    fun `the current sidecar - entry_lease ties expiresAt, progress_live still reads isHeld`() {
-        assertEquals(listOf("ensures progress_live of tryLock" to listOf("isHeld")), warnings(specDir))
+    fun `the current sidecar - entry_lease ties expiresAt and entry_held ties isHeld, so no warning`() {
+        assertEquals(emptyList(), warnings(specDir))
     }
 
     private val head =

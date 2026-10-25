@@ -145,7 +145,7 @@ class ContractOnlyTest {
     fun `the measurement facts - WITNESS in MI and every action, the field frame after MI_OWN`() {
         val e = contract(holeTrue = true, assumed = setOf(AssumedFact.WITNESS, AssumedFact.FIELD_FRAME))
         assertTrue("define MI_WITNESS(S) (\n  forall qt: Int :: { tok(qt).gHeld } tok(qt).gIssued && tok(qt).gBacked && tok(qt).gHeld ==> carried(S, tok(qt).gKey, qt)\n)" in e.text, e.text)
-        assertTrue("define MI(S) (MI_PERMS(S) && MI_OWN(S) && MI_WITNESS(S) && P2(S) && entry_lease(S) && MI_INV(S))" in e.text)
+        assertTrue("define MI(S) (MI_PERMS(S) && MI_OWN(S) && MI_WITNESS(S) && P2(S) && entry_lease(S) && entry_held(S) && MI_INV(S))" in e.text)
         assertEquals(3, e.text.split("  ensures MI_WITNESS(S)").size - 1)
         val frame = "  ensures forall qk: Key :: { S.m[qk] } qk != k && old(has(S, qk)) && has(S, qk) ==> S.m[qk].permits == old(S.m[qk].permits) && S.m[qk].isHeld == old(S.m[qk].isHeld) && " +
             "S.m[qk].token == old(S.m[qk].token) && S.m[qk].expiresAt == old(S.m[qk].expiresAt)"

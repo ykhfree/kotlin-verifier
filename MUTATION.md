@@ -254,3 +254,17 @@ README 인용 3개는 quote-check로 원문을 확인했다.
 - 남은 "invariant only" 18개는 모두 MI_INV_1이다 (permit, isHeld, token이 있는 entry). 새 절은 이것을 말하지 않는다.
 
 **메인 세션 확인:** 테스트 452개 통과, gate 3개(KeyLocalLock) exit 0, mutantsReqShield 33회와 mutantsAspect 30회 불일치 0. `rerun`, `rerun2`, `rerun3`의 results.jsonl을 직접 비교했다.
+
+### 9.7 4차 재측정 (2026-10-25, `entry_held` 뒤)
+
+결과 파일 `mutation/rerun4/`, 비교 대상 `rerun-c2/` (C2 사실 포함, 판정은 `rerun3`과 같음). 예측은 변경 기록에 있다.
+
+| 예측 | 결과 |
+|---|---|
+| 1. 판정 변화 0 | 맞음 |
+| 2. SDL-04, BOOL-03, SDL-10, BOOL-04 (각 세 모듈) 12개가 `entry_held` 성질 위반 | 맞음 (정확히 이 12개) |
+| 3. SDL-09 ×3, coroutine·core RET-11, reactor RET-08 6개는 "invariant only"로 남음 | 맞음 |
+
+집계 (KeyLocalLock 세 모듈, 264개): FAILED property 138, invariant only 6, PROVEN 52, INCOMPLETE 8, ERROR 36 (review 막힘), 사산 24. 처음 측정(9.5)의 "invariant only" 36개 중 30개가 이제 이름 있는 성질 위반으로 보고된다.
+
+메인 세션 확인: 테스트 519개 통과 (지금 sidecar의 모양을 고정한 테스트 5개를 고쳤다: 기대 목록에 `entry_held`, 필드 고정 경고 0개, PropertyCheckTest 2개는 hole 조각이 먼저 실패하는 경로를 계속 시험하도록 작업 사본에서 `entry_held`를 뺀다), mutantsReqShield 33회와 mutantsAspect 30회 불일치 0.
