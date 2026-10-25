@@ -280,3 +280,10 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - Confluence는 Cloud (UC6). 초안은 1개로 시작하고 두 번째 모듈에서 3개와 비교 (JC1).
 - 기본값으로 둔 것: 페이지 텍스트는 Anthropic 밖으로 보내지 않음, 경계 칸은 항상 묻기, D2와 D5는 지금 서명대로.
 - 전체 표: `DESIGN-C.md` 10절.
+- sidecar 보강 (`bdf08d9`, `b2c2c5b`; `MUTATION.md` 9.6):
+  - `invariant entry_lease`: 토큰을 가진 entry의 만료 시각은 그 토큰의 lease다 (UC2).
+  - tryLock의 `ensures refusal_keeps_entry`: 거절된 호출은 owner와 lease를 바꾸지 않는다 (UC3).
+  - 처음 쓴 `entry_lease`에는 토큰 조건이 없어서 "모든 entry는 토큰을 가진다"까지 요구했다. 2차 재측정의 예측 4가 이 때문에 틀렸고, 조건을 넣은 뒤 3차로 다시 쟀다.
+  - 결과: 판정 변화 0. "invariant only" 15개가 성질 위반이 됐다 (진짜 결함 AOR-03, SDL-06 포함). D13, D14, D14b, SB3도 성질 위반이다. hole을 느슨하게 해도 그렇다.
+  - 두 절의 서명은 C1(ensures와 invariant의 `reviewed` 문법) 뒤에 받는다.
+- 파일럿 자료를 `pilot-c/`로 옮겼다 (`cbcfe79`). scratch 폴더는 세션과 함께 사라진다.
