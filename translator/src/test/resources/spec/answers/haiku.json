@@ -1,0 +1,252 @@
+{
+ "format": "kv-answers/1",
+ "author": "haiku",
+ "from": "pilot-c/frozen-final/D-haiku/ANSWERS.md (converted by translator/scripts/pilot_answers.py)",
+ "answers": [
+  {
+   "cell": "C01",
+   "text": "a token that an entry backs",
+   "outcome": "backed",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/1",
+     "quote": "keeps one entry per `(cache key, lock type)` it is currently"
+    }
+   ]
+  },
+  {
+   "cell": "C02",
+   "text": "a token no entry backs",
+   "outcome": "unbacked",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "a request for a **new** key is handed a permit that no map entry backs"
+    }
+   ]
+  },
+  {
+   "cell": "C03",
+   "text": "null",
+   "outcome": "null",
+   "status": "assumed",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    }
+   ]
+  },
+  {
+   "cell": "C04",
+   "text": "null",
+   "outcome": "null",
+   "status": "open",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    }
+   ]
+  },
+  {
+   "cell": "C05",
+   "text": "null",
+   "outcome": "null",
+   "status": "open",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#KeyLock",
+     "quote": "a holder whose lock already expired and was taken over by someone else"
+    }
+   ]
+  },
+  {
+   "cell": "C06",
+   "text": "false",
+   "outcome": "false",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C07",
+   "text": "true",
+   "outcome": "true",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "Releases the lock for [key] + [lockType] only if [token] matches the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C08",
+   "text": "true",
+   "outcome": "true",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "Releases the lock for [key] + [lockType] only if [token] matches the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C09",
+   "formal_cell": "C08",
+   "text": "true",
+   "outcome": "true",
+   "status": "assumed",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#KeyLock",
+     "quote": "only the holder that acquired the lock can"
+    }
+   ]
+  },
+  {
+   "cell": "C10",
+   "text": "false",
+   "outcome": "false",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "An entry is dropped as soon as the lock is released"
+    }
+   ]
+  },
+  {
+   "cell": "C11",
+   "text": "false",
+   "outcome": "false",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C12",
+   "text": "false",
+   "outcome": "false",
+   "status": "assumed",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "a request for a **new** key is handed a permit that no map entry backs"
+    }
+   ]
+  },
+  {
+   "cell": "C13",
+   "text": "a token no entry backs",
+   "outcome": "unbacked",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "a request for a **new** key is handed a permit that no map entry backs"
+    }
+   ]
+  },
+  {
+   "cell": "C14",
+   "text": "the entry stays",
+   "outcome": "stays",
+   "status": "assumed",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    }
+   ]
+  },
+  {
+   "cell": "C15",
+   "text": "the entry is dropped",
+   "outcome": "dropped",
+   "status": "open",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    }
+   ]
+  },
+  {
+   "cell": "C16",
+   "text": "the entry is dropped",
+   "outcome": "dropped",
+   "status": "assumed",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    }
+   ]
+  },
+  {
+   "cell": "C17",
+   "text": "false",
+   "outcome": "false",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C18",
+   "text": "a token that an entry backs",
+   "outcome": "backed",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/1",
+     "quote": "keeps one entry per `(cache key, lock type)` it is currently"
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "Once the map is full"
+    }
+   ]
+  },
+  {
+   "cell": "C19",
+   "text": "null",
+   "outcome": "null",
+   "status": "open",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "Keys whose entry is already in"
+    }
+   ]
+  },
+  {
+   "cell": "C20",
+   "text": "a token",
+   "outcome": "token",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/1",
+     "quote": "keeps one entry per `(cache key, lock type)` it is currently"
+    }
+   ]
+  }
+ ]
+}

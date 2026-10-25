@@ -1,0 +1,316 @@
+{
+ "format": "kv-answers/1",
+ "author": "opus",
+ "from": "pilot-c/frozen-final/D-opus/ANSWERS.md (converted by translator/scripts/pilot_answers.py)",
+ "answers": [
+  {
+   "cell": "C01",
+   "text": "a token that an entry backs",
+   "outcome": "backed",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#tryLock",
+     "quote": "@return an opaque ownership token, or null when another holder owns the lock."
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/1",
+     "quote": "keeps one entry per `(cache key, lock type)` it is currently"
+    }
+   ]
+  },
+  {
+   "cell": "C02",
+   "text": "a token no entry backs",
+   "outcome": "unbacked",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "Once the map is full, a request for a **new** key is handed a permit that no map entry backs."
+    }
+   ]
+  },
+  {
+   "cell": "C03",
+   "text": "null",
+   "outcome": "null",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#tryLock",
+     "quote": "@return an opaque ownership token, or null when another holder owns the lock."
+    },
+    {
+     "anchor": "CLAUDE.md#project-overview/1",
+     "quote": "ensuring only one request for the same cache key is processed at a time"
+    }
+   ]
+  },
+  {
+   "cell": "C04",
+   "text": "not decided: null or a new token",
+   "outcome": null,
+   "status": "open",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    },
+    {
+     "anchor": "KeyLock.kt(core)#KeyLock",
+     "quote": "release it, so a holder whose lock already expired and was taken over by someone else"
+    }
+   ]
+  },
+  {
+   "cell": "C05",
+   "text": "not decided: null or a new token",
+   "outcome": null,
+   "status": "open",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#KeyLock",
+     "quote": "release it, so a holder whose lock already expired and was taken over by someone else"
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed, which runs on a 1 s interval and so can lag by up to that much."
+    }
+   ]
+  },
+  {
+   "cell": "C06",
+   "text": "false",
+   "outcome": "false",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#global-lock-guidance/2",
+     "quote": "holder whose lock already expired can no longer release the lock of the next holder."
+    },
+    {
+     "anchor": "KeyLock.kt(core)#KeyLock",
+     "quote": "cannot release the new owner's lock."
+    }
+   ]
+  },
+  {
+   "cell": "C07",
+   "text": "true",
+   "outcome": "true",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "Releases the lock for [key] + [lockType] only if [token] matches the current owner."
+    },
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C08",
+   "text": "true",
+   "outcome": "true",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "Releases the lock for [key] + [lockType] only if [token] matches the current owner."
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "An entry is dropped as soon as the lock is released"
+    }
+   ]
+  },
+  {
+   "cell": "C09",
+   "formal_cell": "C08",
+   "text": "true",
+   "outcome": "true",
+   "status": "assumed",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#KeyLock",
+     "quote": "release it, so a holder whose lock already expired and was taken over by someone else"
+    },
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C10",
+   "text": "false",
+   "outcome": "false",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "An entry is dropped as soon as the lock is released"
+    },
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C11",
+   "text": "false",
+   "outcome": "false",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C12",
+   "text": "false",
+   "outcome": "false",
+   "status": "assumed",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "Once the map is full, a request for a **new** key is handed a permit that no map entry backs."
+    }
+   ]
+  },
+  {
+   "cell": "C13",
+   "text": "a token no entry backs",
+   "outcome": "unbacked",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "Once the map is full, a request for a **new** key is handed a permit that no map entry backs."
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "if it had taken the lock - it calls the supplier and writes the cache - so what the cap costs is request collapsing"
+    }
+   ]
+  },
+  {
+   "cell": "C14",
+   "text": "the entry stays",
+   "outcome": "stays",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    },
+    {
+     "anchor": "README.md#global-lock-guidance/2",
+     "quote": "Only the holder that acquired the lock can release it"
+    }
+   ]
+  },
+  {
+   "cell": "C15",
+   "text": "the entry is dropped",
+   "outcome": "dropped",
+   "status": "assumed",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    }
+   ]
+  },
+  {
+   "cell": "C16",
+   "text": "the entry is dropped",
+   "outcome": "dropped",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "an entry whose holder never released it is dropped by the"
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/2",
+     "quote": "cleanup monitor once `lockTimeoutMillis` has passed"
+    }
+   ]
+  },
+  {
+   "cell": "C17",
+   "text": "false",
+   "outcome": "false",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#unLock",
+     "quote": "@return false when the lock is not held or the token does not match the current owner."
+    }
+   ]
+  },
+  {
+   "cell": "C18",
+   "text": "a token that an entry backs",
+   "outcome": "backed",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/1",
+     "quote": "keeps one entry per `(cache key, lock type)` it is currently"
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "Once the map is full, a request for a **new** key is handed a permit that no map entry backs."
+    }
+   ]
+  },
+  {
+   "cell": "C19",
+   "text": "not decided: null or a new token that an entry backs (not a token no entry backs, while the entry of `k` is in the map)",
+   "outcome": null,
+   "status": "open",
+   "sources": [
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "Keys whose entry is already in"
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/4",
+     "quote": "the map are not subject to the cap at all."
+    },
+    {
+     "anchor": "KeyLock.kt(core)#KeyLock",
+     "quote": "release it, so a holder whose lock already expired and was taken over by someone else"
+    }
+   ]
+  },
+  {
+   "cell": "C20",
+   "text": "a token",
+   "outcome": "token",
+   "status": "settled",
+   "sources": [
+    {
+     "anchor": "KeyLock.kt(core)#KeyLock",
+     "quote": "Lock used to collapse concurrent requests for the same cache key."
+    },
+    {
+     "anchor": "README.md#local-lock-map-size/1",
+     "quote": "keeps one entry per `(cache key, lock type)` it is currently"
+    }
+   ]
+  }
+ ]
+}
