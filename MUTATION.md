@@ -122,6 +122,11 @@ RACY는 도구의 고유한 주장("action 밖의 읽기는 임의 값")을 겨�
   1. rerun2와 같다. 다만 RET-11 ×2와 reactor RET-08은 rerun과 같은 "invariant only"(MI_INV_1)로 돌아간다.
   2. MI_INV_4 "invariant only"였던 15개는 계속 `entry_lease` 성질 위반이다. 이 변이들은 토큰을 지우지 않는다.
 
+- 2026-10-25, 4차 재측정 전 (사용자 결정 뒤, DESIGN-C.md 10.3): sidecar에 `invariant entry_held`(토큰을 가진 entry의 isHeld = 그 토큰의 gHeld)를 더했다. KeyLocalLock 세 모듈을 다시 잰다. 결과는 `mutation/rerun4/`, 비교 대상은 `rerun-c2/`. 예측 (결과 전):
+  1. 판정(PROVEN, FAILED 등)이 바뀌는 변이는 0개다. 이유: hole의 MI_INV_1(entry는 held)과 MI_INV_3(entry의 토큰은 held)이 `entry_held`를 이미 함축한다. 그래서 사전 조건에 새 가정이 없고, 이 절을 깨는 변이는 그 hole 조각도 깬다.
+  2. MI_INV_1 "invariant only" 18개 중 isHeld를 false로 남기는 12개(SDL-04, BOOL-03, SDL-10, BOOL-04; 각 세 모듈)는 `entry_held` 성질 위반이 된다.
+  3. 나머지 6개(SDL-09 ×3: permit; coroutine·core RET-11과 reactor RET-08: 토큰이 null인 entry)는 "invariant only"로 남는다.
+
 ## 9. 결과 (2026-10-24, 판정 뒤)
 
 이 절은 결과다. 1-8절의 규칙은 바꾸지 않았다.

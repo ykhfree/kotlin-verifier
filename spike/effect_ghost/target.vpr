@@ -70,6 +70,12 @@ define entry_lease(S) (
     S.m[qk].expiresAt == tok(S.m[qk].token).gLease
 )
 
+// ---- Sidecar: state property entry_held (DESIGN-C.md 10.3) ----
+define entry_held(S) (
+  forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
+    S.m[qk].isHeld == tok(S.m[qk].token).gHeld
+)
+
 // @HOLE-BEGIN MI_INV (sidecar hole, split on top-level &&; one ensures per part)
 // INV-E: every entry is held, has no free permit, and carries a token.
 define MI_INV_1(S) ((forall qk: Key :: { S.m[qk] } has(S, qk) ==>
@@ -89,7 +95,7 @@ define MI_INV_5(S) ((forall qt: Int :: { tok(qt).gHeld }
 // @HOLE-END MI_INV
 define MI_INV(S) (MI_INV_1(S) && MI_INV_2(S) && MI_INV_3(S) && MI_INV_4(S) && MI_INV_5(S))
 
-define MI(S) (MI_PERMS(S) && MI_OWN(S) && P2(S) && entry_lease(S) && MI_INV(S))
+define MI(S) (MI_PERMS(S) && MI_OWN(S) && P2(S) && entry_lease(S) && entry_held(S) && MI_INV(S))
 
 // ---- Tool-generated from the ghost field kinds, in declaration order: append-only history ----
 define HIST (
@@ -127,6 +133,7 @@ method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) re
   ensures MI_OWN(S)
   ensures P2(S)
   ensures entry_lease(S)
+  ensures entry_held(S)
   ensures MI_INV_1(S)
   ensures MI_INV_2(S)
   ensures MI_INV_3(S)
@@ -243,6 +250,7 @@ method unLock(S: Ref, k: Key, t: Int) returns (res: Bool)
   ensures MI_OWN(S)
   ensures P2(S)
   ensures entry_lease(S)
+  ensures entry_held(S)
   ensures MI_INV_1(S)
   ensures MI_INV_2(S)
   ensures MI_INV_3(S)
@@ -299,6 +307,7 @@ method sweep(S: Ref, k: Key, now: Int)
   ensures MI_OWN(S)
   ensures P2(S)
   ensures entry_lease(S)
+  ensures entry_held(S)
   ensures MI_INV_1(S)
   ensures MI_INV_2(S)
   ensures MI_INV_3(S)

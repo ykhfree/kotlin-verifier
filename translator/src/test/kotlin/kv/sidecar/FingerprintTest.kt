@@ -121,6 +121,7 @@ class FingerprintTest {
                 "keylocallock.common.kv: ends_only_if P3a of unLock" to "d679f5c705a959be",
                 "keylocallock.common.kv: ends_only_if P3a of sweep" to "1c0ae67dbfe9757d",
                 "keylocallock.common.kv: invariant entry_lease" to "c2ae43c5a13c3c35",
+                "keylocallock.common.kv: invariant entry_held" to "be2c7e636d7ac55a",
             ),
             notes.map { (what, c) -> what to c.sha256 },
         )
