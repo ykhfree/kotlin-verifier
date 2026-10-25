@@ -2,6 +2,7 @@ package kv.cli
 
 import kv.frontend.ActionSite
 import kv.frontend.Frontend
+import kv.emit.AssumedFact
 import kv.emit.Emitted
 import kv.emit.emitViper
 import kv.frontend.LoweredFir
@@ -23,7 +24,10 @@ import kv.sidecar.holeSkeleton
 import kv.spec.SOURCES_JSON
 import kv.spec.SnapshotException
 import kv.spec.SnapshotInput
+import kv.spec.SpecCheckOptions
 import kv.spec.readSnapshot
+import kv.spec.render
+import kv.spec.specCheck
 import kv.spec.staleCheck
 import kv.spec.writeSnapshot
 import kv.verify.ModuleVerdict
@@ -73,6 +77,19 @@ private const val USAGE = """usage:
       (DESIGN-C.md 5.3): warning source-context-changed (the block changed, the quote is still in it), warning
       source-moved (the quote is only in another block), error stale-source (the quote is in no block). Exit 0 if
       no error, 2 usage error, 4 if a quote is stale or the sidecar has a syntax error.
+  kv spec check [--root DIR [--classpath CP] [--kotlinc "ARGS"]] --snapshot DIR [--cells FILE] [--draft]
+                [--out DIR] [--viper-home DIR] [--assert-timeout MS] [--wall-seconds N] [--assume-fact F] SIDECAR.kv
+      Checks a sidecar before a person sees it (DESIGN-C.md 7.1, 4.1): the sidecar checks (with --draft, an
+      unsigned intent clause is no error, and the report starts with DRAFT); the source lines (kv spec stale);
+      field fixing (warning: an ensures premise reads an entry field that no intent clause ties to a ghost or issue
+      value); the contract-only model (no method bodies), which Silicon type-checks; with --cells, the determinacy of
+      each scenario cell on it: DETERMINED(outcome), OPEN or INFEASIBLE, in mode a (with the hole) and mode b (the
+      hole is true). Without --root only mode b runs: no code proves the hole. With --root, clause isolation: one
+      Silicon run per clause index, each action keeping one sidecar clause, so that every failing clause shows. The
+      Viper files and check.json go to --out (default: a temp directory). --assume-fact witness|field-frame adds a fact to the
+      contract-only model for a measurement (DESIGN-C.md 10.2 O1, O2); it is assumed, not proven. Exit 0 if no
+      error (OPEN cells and failing clauses are findings), 2 usage error, 4 error (sidecar, cell file, stale-source,
+      or a Silicon run that counts for nothing).
   CP must hold a Kotlin stdlib. ARGS are extra kotlinc flags, separated by spaces."""
 
 fun main(args: Array<String>) {
@@ -147,7 +164,7 @@ private fun resolved(
         err.println("kv: $command needs --root DIR and one sidecar file")
         return null to 2
     }
-    val outcome = Frontend.resolve(options.files.single(), root, options.classpath, options.kotlincArgs, onLowered)
+    val outcome = Frontend.resolve(options.files.single(), root, options.classpath, options.kotlincArgs, onLowered = onLowered)
     outcome.compileMessages?.let {
         err.print(it)
         err.println("kv: compilation failed")
@@ -325,7 +342,7 @@ private fun hole(
     }
 }
 
-/** `kv spec snapshot --out DIR NAME=FILE...` and `kv spec stale --snapshot DIR SIDECAR.kv` (DESIGN-C.md 7.1). */
+/** `kv spec snapshot`, `kv spec stale` and `kv spec check` (DESIGN-C.md 7.1). */
 private fun spec(
     args: List<String>,
     out: PrintStream,
@@ -374,8 +391,64 @@ private fun spec(
             )
             if (report.errors > 0) 4 else 0
         }
-        else -> usage("spec needs 'snapshot' or 'stale'")
+        "check" -> specCheckCommand(rest, out, err)
+        else -> usage("spec needs 'snapshot', 'stale' or 'check'")
     }
+}
+
+/** `kv spec check` (DESIGN-C.md 7.1): its own options, then the shared ones ([Options]). */
+private fun specCheckCommand(
+    args: List<String>,
+    out: PrintStream,
+    err: PrintStream,
+): Int {
+    fun usage(message: String): Int {
+        err.println("kv: $message")
+        err.println(USAGE)
+        return 2
+    }
+    var snapshot: File? = null
+    var cells: File? = null
+    var draft = false
+    val assumed = mutableSetOf<AssumedFact>()
+    val shared = mutableListOf<String>()
+    val it = args.iterator()
+    while (it.hasNext()) {
+        when (val arg = it.next()) {
+            "--snapshot" -> snapshot = File(if (it.hasNext()) it.next() else return usage("--snapshot needs a value"))
+            "--cells" -> cells = File(if (it.hasNext()) it.next() else return usage("--cells needs a value"))
+            "--draft" -> draft = true
+            "--assume-fact" -> {
+                val v = if (it.hasNext()) it.next() else return usage("--assume-fact needs a value")
+                assumed += AssumedFact.entries.find { f -> f.option == v } ?: return usage("--assume-fact takes ${AssumedFact.entries.joinToString(" or ") { f -> f.option }}, not '$v'")
+            }
+            else -> shared += arg
+        }
+    }
+    val options =
+        try {
+            Options.parse(shared)
+        } catch (e: UsageError) {
+            return usage(e.message!!)
+        }
+    if (snapshot == null) return usage("spec check needs --snapshot DIR")
+    val sidecar = options.files.singleOrNull() ?: return usage("spec check needs one sidecar file")
+    if (!sidecar.isFile) return usage("no file ${sidecar.path}")
+    cells?.let { if (!it.isFile) return usage("no file ${it.path}") }
+    options.root?.let { if (!it.isDirectory) return usage("no directory ${it.path}") }
+    val home = options.viperHome ?: Silicon.defaultHome()
+    try {
+        Silicon.check(home)
+    } catch (e: SiliconMissing) {
+        err.println("kv: ${e.message}")
+        return 4
+    }
+    val budget = SiliconBudget(options.assertTimeoutMs ?: 20_000, options.assertTimeoutMs ?: 20_000, options.wallSeconds ?: 300)
+    val dir = options.out ?: kotlin.io.path.createTempDirectory("kv-spec-check-").toFile()
+    val report = specCheck(SpecCheckOptions(sidecar, snapshot, cells, options.root, options.classpath, options.kotlincArgs, draft, dir, home, budget, assumed))
+    out.print(report.render())
+    out.println("Viper files and check.json: ${dir.path}")
+    return if (report.errorCount > 0) 4 else 0
 }
 
 private fun format(site: ActionSite): String {

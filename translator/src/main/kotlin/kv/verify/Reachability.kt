@@ -15,8 +15,6 @@ data class Reachability(
     val note: String? = null,
 )
 
-private val REFUTE = Regex("""^Refute holds in all cases""")
-
 /**
  * Reads the Silicon [run] of the reachability program [emitted] (5.7 table, M9 row): each "Refute holds in all
  * cases or could not be reached" error marks its probe unreachable. A killed or abnormal run, a prover timeout, or a
@@ -40,7 +38,7 @@ fun reachability(
         else -> return none("exit code $code")
     }
     if (errors.any { it.isTimeout }) return none("a prover query was canceled")
-    val (refutes, others) = errors.partition { REFUTE.containsMatchIn(it.message) }
+    val (refutes, others) = errors.partition { it.isRefute }
     if (others.any { !it.isVerification }) return none("Silicon reported a parse, type or consistency error")
     val byLine = emitted.branches.associateBy { it.line }
     val unreachable = refutes.map { e -> byLine[e.line] ?: return none("a refute at Viper line ${e.line} is no branch probe") }

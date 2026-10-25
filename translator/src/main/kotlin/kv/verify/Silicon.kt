@@ -89,11 +89,15 @@ data class SiliconError(
     /** A verification failure, as opposed to a parse, type or consistency error. */
     val isVerification: Boolean get() = VERIFICATION.containsMatchIn(message)
 
+    /** A `refute` that held: "Refute holds in all cases or could not be reached". */
+    val isRefute: Boolean get() = REFUTE.containsMatchIn(message)
+
     /** The prover gave up on the query (timeout), so the "failure" says nothing about the program. */
     val isTimeout: Boolean get() = reason != null && TIMEOUT.containsMatchIn(reason)
 
     private companion object {
         val VERIFICATION = Regex("""might not hold|might fail|might not be|might be null|insufficient permission""")
+        val REFUTE = Regex("""^Refute holds in all cases""")
         val TIMEOUT = Regex("""canceled|timeout|resource""", RegexOption.IGNORE_CASE)
     }
 }
@@ -125,11 +129,13 @@ internal val ABORTED = Regex("""\baborted\b""", RegexOption.IGNORE_CASE)
 /**
  * The outcome rules of DESIGN-v0.md 5.6: PROVEN only with exit code 0 and the success line. Exit code 1 with the
  * error summary is a failure. Everything else is ERROR: another exit code, a killed run, a missing summary line,
- * `aborted`, a Java exception, a parse, type or consistency error, or a prover timeout.
+ * `aborted`, a Java exception, a parse, type or consistency error, or a prover timeout. With [refutes], a refute that
+ * held is a failure too (the reach methods of `kv spec check`, DESIGN-C.md 3.2); the verified program has none.
  */
 fun classify(
     run: SiliconRun,
     budget: SiliconBudget,
+    refutes: Boolean = false,
 ): SiliconOutcome {
     val errors = parseErrors(run.output)
     val code = run.exitCode ?: return SiliconOutcome.Abnormal("timeout: killed at the wall clock limit of ${budget.wallSeconds} s", errors)
@@ -141,7 +147,7 @@ fun classify(
             val summary = SUMMARY.find(run.output) ?: return SiliconOutcome.Abnormal("exit code 1 without the 'Silicon found N errors' summary", errors)
             when {
                 summary.groupValues[1].toInt() != errors.size -> SiliconOutcome.Abnormal("Silicon reported ${summary.groupValues[1]} errors, ${errors.size} of them readable", errors)
-                errors.any { !it.isVerification } -> SiliconOutcome.Abnormal("Silicon reported a parse, type or consistency error", errors)
+                errors.any { !it.isVerification && !(refutes && it.isRefute) } -> SiliconOutcome.Abnormal("Silicon reported a parse, type or consistency error", errors)
                 errors.any { it.isTimeout } -> SiliconOutcome.Abnormal("timeout: a prover query was canceled (assert/check timeout ${budget.assertTimeoutMs} ms)", errors)
                 else -> SiliconOutcome.Failed(errors)
             }

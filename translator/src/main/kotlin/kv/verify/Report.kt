@@ -25,6 +25,7 @@ import kv.sidecar.SPos
 import kv.sidecar.Sidecar
 import kv.sidecar.SidecarError
 import kv.sidecar.SidecarException
+import kv.sidecar.intentClauses
 import java.io.File
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
@@ -224,7 +225,8 @@ fun notEmittedReport(
     errors: List<SidecarError> = emptyList(),
 ): Report = Report(module, sidecar, ModuleVerdict.ERROR, unsupportedRows(module, null), reason, emptyList(), errors, emptyList(), null)
 
-private fun finding(
+/** [e] mapped to its source through the position table of [emitted] (DESIGN-v0.md 5.7). */
+internal fun finding(
     emitted: Emitted,
     e: SiliconError,
 ): Finding {
@@ -297,7 +299,7 @@ fun Report.render(): String {
         line("Silicon errors:")
         otherFindings.forEach { line("  ${it.describe()}") }
     }
-    line("Spec to review: ${specToReview()}")
+    line("Spec to review: ${specToReview(sidecar, module)}")
     line("Assumptions (not checked by Silicon):")
     val longs = module.diagnostics.filter { it.kind == DiagnosticKind.ASSUMPTION }
     line("  Long unbounded: " + longs.joinToString { at(it.pos) }.ifEmpty { "none" })
@@ -378,17 +380,32 @@ private fun Report.instanceAssumptions(): List<String> {
     return out
 }
 
-/** The allowance clauses and issue rules a person must review (DESIGN-v0.md 3.6), and the defaults stray actions get. */
-private fun Report.specToReview(): String {
+/**
+ * The allowance clauses and issue rules a person must review (DESIGN-v0.md 3.6), and the defaults stray actions get.
+ * Under `review intent` (DESIGN-C.md 10.1), every intent clause instead of the allowance clauses and issue rules.
+ * Without a [module] (no code), there are no stray actions.
+ */
+fun specToReview(
+    sidecar: Sidecar,
+    module: Module?,
+): String {
     fun clauses(kind: Allowance) =
         sidecar.operations.flatMap { op -> op.items.filterIsInstance<AllowanceItem>().filter { it.kind == kind }.map { "${op.name.text} ${it.id.text}" } }
-    val parts =
-        listOfNotNull(
-            clauses(Allowance.ENDS_ONLY_IF).takeIf { it.isNotEmpty() }?.let { "ends_only_if ${it.joinToString()}" },
-            clauses(Allowance.UNBACKED_ONLY_IF).takeIf { it.isNotEmpty() }?.let { "unbacked_only_if ${it.joinToString()}" },
-            sidecar.operations.filter { op -> op.items.any { it is IssueItem } }.takeIf { it.isNotEmpty() }?.let { ops -> "issue ${ops.joinToString { it.name.text }}" },
-            module.strayActions.takeIf { it.isNotEmpty() && module.kind == ModuleKind.OBJECT }?.let { s -> "default ends_only_if false for stray ${s.joinToString { it.id }}" },
-            module.strayActions.takeIf { it.isNotEmpty() && module.kind == ModuleKind.INSTANCE }?.let { s ->
+    val strays = module?.strayActions.orEmpty()
+    val intent =
+        if (sidecar.reviewIntent) {
+            listOf(sidecar.intentClauses().takeIf { it.isNotEmpty() }?.let { cs -> "intent clauses (review intent): ${cs.joinToString { it.first }}" })
+        } else {
+            listOf(
+                clauses(Allowance.ENDS_ONLY_IF).takeIf { it.isNotEmpty() }?.let { "ends_only_if ${it.joinToString()}" },
+                clauses(Allowance.UNBACKED_ONLY_IF).takeIf { it.isNotEmpty() }?.let { "unbacked_only_if ${it.joinToString()}" },
+                sidecar.operations.filter { op -> op.items.any { it is IssueItem } }.takeIf { it.isNotEmpty() }?.let { ops -> "issue ${ops.joinToString { it.name.text }}" },
+            )
+        }
+    val others =
+        listOf(
+            strays.takeIf { it.isNotEmpty() && module?.kind == ModuleKind.OBJECT }?.let { s -> "default ends_only_if false for stray ${s.joinToString { it.id }}" },
+            strays.takeIf { it.isNotEmpty() && module?.kind == ModuleKind.INSTANCE }?.let { s ->
                 "default contract MI${sidecar.setOnce.joinToString("") { " and ${it.id.text}" }} for stray ${s.joinToString { it.id }}"
             },
             // DESIGN-B.md 5.5 rule 1: the set-once declarations and the fresh and throws claims of trusted functions.
@@ -397,7 +414,7 @@ private fun Report.specToReview(): String {
                 ts.joinToString("; ") { t -> "trusted ${t.shortName}: " + listOfNotNull(t.fresh?.let { "returns fresh ${it.text}" }, "throws".takeIf { t.throws }, "effects none".takeIf { t.effectsNone }).joinToString(", ") }
             },
         )
-    return parts.joinToString("; ").ifEmpty { "none" }
+    return (intent + others).filterNotNull().joinToString("; ").ifEmpty { "none" }
 }
 
 /**

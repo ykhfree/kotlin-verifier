@@ -28,6 +28,20 @@ fun parseSidecar(
     text: String,
 ): Sidecar = SidecarParser(file, text).parse()
 
+/**
+ * Parses a cell file (DESIGN-C.md 3.2, `kv spec check --cells`). Throws [SidecarException] with the first syntax
+ * error. Grammar, with the probe step of DESIGN-C.md 7.2:
+ * ```
+ * cell    := "cell" NAME "(" [ NAME ":" TYPE { "," NAME ":" TYPE } ] ")" [ STRING ] "{" { step } { outcome } "}"
+ * step    := [ NAME { "," NAME } ":=" ] NAME "(" ARGS ")" | "assume" VEXPR
+ * outcome := "outcome" NAME ":" VEXPR
+ * ```
+ */
+fun parseCells(
+    file: String,
+    text: String,
+): List<CellDecl> = SidecarParser(file, text).cells()
+
 /** A source line in a place where none may be. */
 private const val MISPLACED_SOURCE = "a source line must follow an issue rule, an ensures, an allowance clause, an invariant, a lemma or a probe (DESIGN-C.md 5.2)"
 
@@ -543,15 +557,7 @@ private class SidecarParser(
         // DESIGN-C.md 7.2: `probe NAME(...)`; `probe(...)` is the unnamed probe of v0.
         val name = if (peekWord() != null) name("a probe name") else null
         expect("(")
-        val params = mutableListOf<Typed>()
-        if (!accept(")")) {
-            do {
-                val n = name("a parameter name")
-                expect(":")
-                params += Typed(n, name("a type"))
-            } while (accept(","))
-            expect(")")
-        }
+        val params = params()
         val requires = if (peekWord() == "requires") name().let { vexpr(indent, stopAtBodyBrace = true) } else null
         expect("{")
         val steps = mutableListOf<ProbeStep>()
@@ -560,24 +566,75 @@ private class SidecarParser(
             val start = i
             val stepIndent = indentOf(start)
             val first = name("a probe step")
-            if (first.text == "assert") {
-                steps += ProbeAssert(vexpr(stepIndent), first.pos)
-            } else if (accept("(")) {
-                // DESIGN-C.md 7.2: a call without outs, of an operation without a result.
-                steps += ProbeCall(emptyList(), first, args(), first.pos)
-            } else {
-                val outs = mutableListOf(first)
-                while (accept(",")) outs += name("a result name")
-                expect(":=")
-                val op = name("an operation name")
-                expect("(")
-                steps += ProbeCall(outs, op, args(), first.pos)
-            }
+            steps += if (first.text == "assert") ProbeAssert(vexpr(stepIndent), first.pos) else call(first)
         }
         val unit = text.substring(start, i)
         val sources = topSources()
         val (note, sha, at) = topReview()
         return ProbeDecl(params, requires, steps, posAt(start), note, sha, at, unit, sources, name)
+    }
+
+    /** `PARAMS )` after the opening parenthesis: `NAME: TYPE` separated by commas. */
+    private fun params(): List<Typed> {
+        val params = mutableListOf<Typed>()
+        if (accept(")")) return params
+        do {
+            val n = name("a parameter name")
+            expect(":")
+            params += Typed(n, name("a type"))
+        } while (accept(","))
+        expect(")")
+        return params
+    }
+
+    /** A probe call from its first word [first]: `[OUT {, OUT} :=] OP(ARGS)`. */
+    private fun call(first: Name): ProbeCall {
+        // DESIGN-C.md 7.2: a call without outs, of an operation without a result.
+        if (accept("(")) return ProbeCall(emptyList(), first, args(), first.pos)
+        val outs = mutableListOf(first)
+        while (accept(",")) outs += name("a result name")
+        expect(":=")
+        val op = name("an operation name")
+        expect("(")
+        return ProbeCall(outs, op, args(), first.pos)
+    }
+
+    // ---- cell files (DESIGN-C.md 3.2) ----
+
+    /** A cell file: `cell ID(PARAMS) ["title"] { steps outcomes }`, any number of them. */
+    fun cells(): List<CellDecl> {
+        val cells = mutableListOf<CellDecl>()
+        while (true) {
+            skipWs()
+            if (eof()) return cells
+            val start = i
+            keyword("cell")
+            val id = name("a cell name")
+            expect("(")
+            val params = params()
+            skipWs()
+            val title = if (at("\"")) string() else null
+            expect("{")
+            val steps = mutableListOf<CellStep>()
+            val outcomes = mutableListOf<CellOutcome>()
+            while (!accept("}")) {
+                skipWs()
+                val stepAt = i
+                val stepIndent = indentOf(stepAt)
+                val first = name("a cell step or 'outcome'")
+                when {
+                    first.text == "outcome" -> {
+                        val n = name("an outcome name")
+                        expect(":")
+                        outcomes += CellOutcome(n, vexpr(stepIndent))
+                    }
+                    outcomes.isNotEmpty() -> fail(stepAt, "a step after an outcome: write the steps first, then the outcomes")
+                    first.text == "assume" -> steps += CellAssume(vexpr(stepIndent), first.pos)
+                    else -> steps += call(first)
+                }
+            }
+            cells += CellDecl(id, params, title, steps, outcomes, posAt(start))
+        }
     }
 
     /** The `reviewed` note after a top-level intent clause and its source lines (DESIGN-C.md 7.2), or nulls. */

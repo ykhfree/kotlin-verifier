@@ -360,14 +360,15 @@ sealed interface ProbeStep {
 
 /**
  * `[OUT {, OUT} :=] OP(ARGS)`: one out is the result; a second one is `exc` of an operation that can throw
- * (DESIGN-B.md 5.1). No out calls an operation without a result (DESIGN-C.md 7.2).
+ * (DESIGN-B.md 5.1). No out calls an operation without a result (DESIGN-C.md 7.2). A scenario cell uses the same step.
  */
 data class ProbeCall(
     val outs: List<Name>,
     val op: Name,
     val args: List<ProbeArg>,
     override val pos: SPos,
-) : ProbeStep
+) : ProbeStep,
+    CellStep
 
 data class ProbeAssert(
     val expr: Vexpr,
@@ -397,6 +398,36 @@ data class ProbeDecl(
     /** Its Viper method: `probe`, or `probe_NAME` (as a lemma's is `lemma_ID`). */
     val method: String get() = name?.let { "probe_${it.text}" } ?: "probe"
 }
+
+/** A step of a scenario cell: a probe call ([ProbeCall]) or an [CellAssume]. */
+sealed interface CellStep {
+    val pos: SPos
+}
+
+/** `assume VEXPR`: the scenario goes on only where [expr] holds, e.g. "the first tryLock returned a backed token". */
+data class CellAssume(
+    val expr: Vexpr,
+    override val pos: SPos,
+) : CellStep
+
+/** `outcome NAME: VEXPR`: one result a person can pick for the cell. */
+data class CellOutcome(
+    val name: Name,
+    val expr: Vexpr,
+)
+
+/**
+ * A scenario cell of a cell file (DESIGN-C.md 3.2): `cell ID(PARAMS) ["title"] { steps; outcomes }`. The steps run
+ * from the empty module; `kv spec check` asks Silicon which outcome the contracts decide at the end.
+ */
+data class CellDecl(
+    val id: Name,
+    val params: List<Typed>,
+    val title: String?,
+    val steps: List<CellStep>,
+    val outcomes: List<CellOutcome>,
+    val pos: SPos,
+)
 
 /**
  * `review intent` (DESIGN-C.md 10 UC4): every intent clause of the sidecar needs a `reviewed` note and a source

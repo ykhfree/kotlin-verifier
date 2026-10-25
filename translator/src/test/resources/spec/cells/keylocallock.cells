@@ -1,0 +1,171 @@
+// The KeyLocalLock scenario cells of the DESIGN-C pilot (DESIGN-C.md 3.2), for `kv spec check --cells`.
+// Source: pilot-c/packet/SCENARIOS.md (the text the drafters answered) and the Viper form CELLS of
+// pilot-c/tools/determinacy.py (steps, setup conditions, outcomes and their names). C4 will generate cells; until
+// then this file is written by hand. 19 formal cells: C09 is dropped (see below).
+//
+// Common setup: lockTimeoutMillis = 10, one key k. "Acquired at time 0": tryLock(k) at clock 0 on the empty map with
+// no cap returned the backed token t1.
+
+cell C01(k: Key) "Empty map, no cap: tryLock(k)" {
+  r := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  outcome null: r == NULL
+  outcome backed: r != NULL && tok(r).gBacked
+  outcome unbacked: r != NULL && !tok(r).gBacked
+}
+
+cell C02(k: Key) "The map is full; k has no entry: tryLock(k)" {
+  r := tryLock(k, now = 0, timeout = 10, rej = true, limit = 5)
+  outcome null: r == NULL
+  outcome backed: r != NULL && tok(r).gBacked
+  outcome unbacked: r != NULL && !tok(r).gBacked
+}
+
+cell C03(k: Key) "Acquired at time 0, not released: tryLock(k) at time 5" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  r := tryLock(k, now = 5, timeout = 10, rej = false, limit = 0)
+  outcome null: r == NULL
+  outcome token: r != NULL
+}
+
+cell C04(k: Key) "Acquired at time 0, not released: tryLock(k) at time 10 (the lease end)" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  r := tryLock(k, now = 10, timeout = 10, rej = false, limit = 0)
+  outcome null: r == NULL
+  outcome token: r != NULL
+}
+
+cell C05(k: Key) "Acquired at time 0, not released, no monitor pass since: tryLock(k) at time 11" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  r := tryLock(k, now = 11, timeout = 10, rej = false, limit = 0)
+  outcome null: r == NULL
+  outcome token: r != NULL
+}
+
+cell C06(k: Key) "After C05 returned a new token t2: the first holder calls unLock(k, t1)" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  t2 := tryLock(k, now = 11, timeout = 10, rej = false, limit = 0)
+  assume t2 != NULL
+  b := unLock(k, t = t1)
+  outcome true: b
+  outcome false: !b
+}
+
+cell C07(k: Key) "After C05 returned t2: unLock(k, t2)" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  t2 := tryLock(k, now = 11, timeout = 10, rej = false, limit = 0)
+  assume t2 != NULL
+  b := unLock(k, t = t2)
+  outcome true: b
+  outcome false: !b
+}
+
+cell C08(k: Key) "Acquired at time 0: unLock(k, t1) at time 5" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  b := unLock(k, t = t1)
+  outcome true: b
+  outcome false: !b
+}
+
+// C09 "Acquired at time 0; at time 11, no tryLock(k) and no monitor pass since: unLock(k, t1)" is dropped. unLock
+// has no clock input, so its steps are the steps of C08 (DESIGN-C.md 3.2).
+
+cell C10(k: Key) "After C08 returned true: unLock(k, t1) again" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  b1 := unLock(k, t = t1)
+  assume b1
+  b := unLock(k, t = t1)
+  outcome true: b
+  outcome false: !b
+}
+
+cell C11(k: Key, x: Token) "Acquired at time 0: unLock(k, x) with a token x that was never issued" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  assume x >= 0 && x != t1 && !tok(x).gIssued
+  b := unLock(k, t = x)
+  outcome true: b
+  outcome false: !b
+}
+
+cell C12(k: Key) "After C02 returned a token u: unLock(k, u)" {
+  u := tryLock(k, now = 0, timeout = 10, rej = true, limit = 5)
+  assume u != NULL && !tok(u).gBacked
+  b := unLock(k, t = u)
+  outcome true: b
+  outcome false: !b
+}
+
+cell C13(k: Key) "After C02 returned u, the map is still full: another tryLock(k)" {
+  u := tryLock(k, now = 0, timeout = 10, rej = true, limit = 5)
+  assume u != NULL && !tok(u).gBacked
+  r := tryLock(k, now = 1, timeout = 10, rej = true, limit = 5)
+  outcome null: r == NULL
+  outcome backed: r != NULL && tok(r).gBacked
+  outcome unbacked: r != NULL && !tok(r).gBacked
+}
+
+cell C14(k: Key) "Acquired at time 0: a monitor pass at time 5 looks at k" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  sweep(k, now = 5)
+  outcome stays: carried(S, k, t1)
+  outcome dropped: !has(S, k)
+}
+
+cell C15(k: Key) "Acquired at time 0: a monitor pass at time 10 looks at k" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  sweep(k, now = 10)
+  outcome stays: carried(S, k, t1)
+  outcome dropped: !has(S, k)
+}
+
+cell C16(k: Key) "Acquired at time 0: a monitor pass at time 11 looks at k" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  sweep(k, now = 11)
+  outcome stays: carried(S, k, t1)
+  outcome dropped: !has(S, k)
+}
+
+cell C17(k: Key) "After C16 dropped the entry: unLock(k, t1)" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  sweep(k, now = 11)
+  assume !has(S, k)
+  b := unLock(k, t = t1)
+  outcome true: b
+  outcome false: !b
+}
+
+cell C18(k: Key) "A cap is set but the map is not full; k has no entry: tryLock(k)" {
+  r := tryLock(k, now = 0, timeout = 10, rej = false, limit = 5)
+  outcome null: r == NULL
+  outcome backed: r != NULL && tok(r).gBacked
+  outcome unbacked: r != NULL && !tok(r).gBacked
+}
+
+cell C19(k: Key) "Acquired at time 0, not released; the map is full: tryLock(k) at time 11" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  r := tryLock(k, now = 11, timeout = 10, rej = true, limit = 5)
+  outcome null: r == NULL
+  outcome backed: r != NULL && tok(r).gBacked
+  outcome unbacked: r != NULL && !tok(r).gBacked
+}
+
+cell C20(k: Key, k2: Key) "Acquired at time 0 for k, not released: tryLock(k2) at time 5 for another key k2 with no entry, no cap" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  assume k2 != k
+  r := tryLock(k2, now = 5, timeout = 10, rej = false, limit = 0)
+  outcome null: r == NULL
+  outcome token: r != NULL
+}

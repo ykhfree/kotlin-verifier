@@ -127,8 +127,8 @@ class ProbeGrammarTest {
         assertEquals(listOf("unreviewed" to 10, "unsourced" to 10), errors.map { it.code to it.pos.line }, errors.joinToString("\n"))
         assertTrue(errors[0].message.startsWith("ensures E of op needs a 'reviewed' note: under 'review intent'"), errors[0].message)
         assertTrue(errors[1].message.startsWith("ensures E of op has no source line"), errors[1].message)
-        // Signed and sourced: no error.
-        val ok = "  ensures E: true\n    source \"R#a\" quote \"q\"\n  reviewed \"e\" sha256 \"${sha16("ensures E: true source \"R#a\" quote \"q\"")}\""
+        // Signed and sourced, the quote with its block fingerprint (DESIGN-C.md 10.1): no error.
+        val ok = "  ensures E: true\n    source \"R#a\" quote \"q\" sha256 \"00000000000000aa\"\n  reviewed \"e\" sha256 \"${sha16("ensures E: true source \"R#a\" quote \"q\" sha256 \"00000000000000aa\"")}\""
         assertEquals(emptyList(), check(intent(ok)))
         // A probe and a lemma too.
         val probe = check(intent(ok, "probe p(a: Int) {\n  assert true\n}\nlemma L: true\n  reviewed \"l\" sha256 \"${sha16("lemma L: true")}\""))
@@ -145,6 +145,34 @@ class ProbeGrammarTest {
         val probeNote = check(plain.replace("  assert true\n}", "  assert true\n}\n  reviewed \"p\""))
         assertEquals(listOf("missing-fingerprint"), probeNote.map { it.code })
         assertTrue(sha16("probe p(a: Int) { assert true }") in probeNote.single().message, probeNote.single().message)
+    }
+
+    @Test
+    fun `under review intent a quoted source line needs its block fingerprint, source none needs none`() {
+        val signed = "  ensures E: true\n    source \"R#a\" quote \"q\"\n  reviewed \"e\" sha256 \"${sha16("ensures E: true source \"R#a\" quote \"q\"")}\""
+        val errors = check(intent(signed))
+        assertEquals(listOf("missing-block-fingerprint" to (11 to 5)), errors.map { it.code to (it.pos.line to it.pos.col) }, errors.joinToString("\n"))
+        assertTrue(errors.single().message.startsWith("ensures E of op: the source line of R#a has no block fingerprint"), errors.single().message)
+        // Without review intent, the block fingerprint stays optional.
+        assertEquals(emptyList(), check(intent(signed).replace("review intent\n", "")))
+    }
+
+    @Test
+    fun `a draft - no note and no fingerprint are needed on an intent clause, a trusted fun still needs its note`() {
+        val draft = intent("  ensures E: true\n    source \"R#a\" quote \"q\"\n  ends_only_if A: true\n    source none \"x\"\n  reviewed \"a\"")
+        assertEquals(listOf("missing-fingerprint", "unreviewed", "missing-block-fingerprint"), check(draft).map { it.code })
+        assertEquals(emptyList(), checkSidecar(parse(draft), draft = true))
+        val trusted = draft.replace("type Key = opaque", "type Key = opaque\ntrusted fun a.f() = clock")
+        assertEquals(listOf("unreviewed"), checkSidecar(parse(trusted), draft = true).map { it.code })
+        // A note whose fingerprint is wrong is still stale in a draft.
+        assertEquals(listOf("stale-review"), checkSidecar(parse(draft.replace("reviewed \"a\"", "reviewed \"a\" sha256 \"0000000000000000\"")), draft = true).map { it.code })
+    }
+
+    @Test
+    fun `Spec to review under review intent lists every intent clause`() {
+        val s = parse(intent("  ensures E: true\n  ends_only_if A: true", "invariant I: true\nlemma L: true\nprobe p(a: Int) {\n  assert true\n}"))
+        assertEquals("intent clauses (review intent): ensures E of op, ends_only_if A of op, invariant I, lemma L, probe p", kv.verify.specToReview(s, null).substringBefore(";"))
+        assertEquals("ends_only_if op A", kv.verify.specToReview(parse(intent("  ensures E: true\n  ends_only_if A: true").replace("review intent\n", "")), null))
     }
 
     @Test

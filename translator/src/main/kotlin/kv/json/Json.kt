@@ -1,7 +1,7 @@
 package kv.json
 
-// The JSON the tool writes (kv mutation-sites, kv spec snapshot) and reads back (kv spec stale). No library: the
-// files are small, and the CLI's classpath holds only the Kotlin compiler.
+// The JSON the tool writes (kv mutation-sites, kv spec snapshot, kv spec check) and reads back (kv spec stale). No
+// library: the files are small, and the CLI's classpath holds only the Kotlin compiler.
 
 /**
  * [s] as a JSON string literal, escaped as Python's `json.dumps(s, ensure_ascii=False)` escapes it: non-ASCII
@@ -23,6 +23,26 @@ fun json(s: String): String {
         }
     }
     return sb.append('"').toString()
+}
+
+/**
+ * [v] as JSON with one space of indent per level: a [Map] is an object (its keys in order), a [List] an array, a
+ * [String] a string, a [Long] or an [Int] a number, a [Boolean] and null as they are. No fractions: [parseJson] reads
+ * only whole numbers.
+ */
+fun jsonOf(
+    v: Any?,
+    indent: String = "",
+): String {
+    val inner = "$indent "
+    return when (v) {
+        null -> "null"
+        is String -> json(v)
+        is Boolean, is Long, is Int -> "$v"
+        is Map<*, *> -> if (v.isEmpty()) "{}" else v.entries.joinToString(",\n", "{\n", "\n$indent}") { (k, x) -> "$inner${json(k as String)}: ${jsonOf(x, inner)}" }
+        is List<*> -> if (v.isEmpty()) "[]" else v.joinToString(",\n", "[\n", "\n$indent]") { x -> "$inner${jsonOf(x, inner)}" }
+        else -> throw IllegalArgumentException("no JSON form for ${v::class.simpleName}")
+    }
 }
 
 class JsonException(
