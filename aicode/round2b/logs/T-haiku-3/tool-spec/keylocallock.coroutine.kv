@@ -1,0 +1,10 @@
+// Sidecar spec for req-shield KeyLocalLock (core-kotlin-coroutine). Format: kv-sidecar/0.
+// DESIGN-v0.md 4.4; the declarations shared with the core variant are in keylocallock.common.kv (4.5).
+// `source` paths are relative to the req-shield checkout (kv resolve --root).
+
+module com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion
+source "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt"
+source "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLock.kt"
+state seq: Counter            = tokenSequence
+
+include "keylocallock.common.kv"
