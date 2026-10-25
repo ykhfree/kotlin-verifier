@@ -661,3 +661,24 @@ C2 `9ea254b`(emitter), `c7b54e1`(기계적 재측정 기록). emitter는 FRAME(�
 | O3 다섯 번째 gate | 메인 세션이 `spike/aspect/mutants.py`의 stray 계약에 FRAME을 넣어 고쳤다 |
 | O4 END 두 줄의 이름 | 하나(`tool fact END`)로 둔다 |
 | O5 `mutation/rerun-c2/` | 기록으로 남긴다 |
+
+### 10.3 C3 결과와 메인 세션 결정 (2026-10-25)
+
+C3 `b5191e4` (`kv spec check`). 대조 스크립트: `pilot-c/c3/` (`run_pilot.sh`, `compare.py`, 측정용 두 key 칸 `two-keys.cells`).
+
+결과 (agent 측정, 메인 세션이 지금 sidecar와 결정 전 sonnet 초안을 다시 돌려 확인):
+- 결정성: 7개 sidecar × 방식 2 × 칸 19 = 266개 판정이 파일럿과 모두 같다.
+- 지금 sidecar: C05와 C19가 방식 b에서도 정해진다 (등록한 예측 맞음, `entry_lease` 덕분). C16만 OPEN이다 (monitor 의무를 더하지 않음, UC1).
+- 절 분리: 결정 전 초안의 실패 절 9개를 모두 찾는다. 지금 sidecar는 13절 모두 PROVEN이다.
+- 필드 고정 경고: 파일럿 서명 2개, 맞춘 초안 0개. 지금 sidecar는 1개다: `progress_live`가 `isHeld`를 읽고, 그 뜻은 hole(MI_INV_1)에만 있다. 수락 기준의 "0개"는 `isHeld`를 빠뜨린 메인 세션의 예상이었다.
+- WITNESS(O1)와 필드 프레임(O2)은 19칸의 어느 것도 바꾸지 않는다. 다른 key의 단계가 들어간 칸(측정용 X1-X5)에서는 둘 다 필요하고, FRAME에 domain 트리거도 필요하다.
+- 테스트 519개 통과, 변이 63회 불일치 0 (메인 세션 확인).
+
+| 질문 (구현 agent) | 결정 |
+|---|---|
+| `isHeld` 경고 | 사용자에게 묻는다. 후보 절 `entry_held`(토큰을 가진 entry의 isHeld = 그 토큰의 gHeld)는 세 변형에서 PROVEN이고 경고를 없앤다 (메인 세션 측정; Silicon 시간은 약 5 s에서 8-10 s로 늘었다) |
+| spec 우선 sidecar의 타입 표기 | 지금은 정하지 않는다. 코드 없는 흐름을 실제로 쓰는 C5에서 정한다 |
+| 칸 없이 방식 b로 타입 검사 | 유지한다 |
+| 종료 코드 | 지금처럼 발견은 exit 0이다. CI 연결 때 옵션을 정한다 |
+| FRAME domain 트리거, WITNESS, 필드 프레임, init의 "발급된 record 없음" | C4에서 칸 생성이 다른 key 단계를 넣을 때 함께 도구 사실로 올린다 (gate와 변이 재측정 포함) |
+| 칸 fixture 위치 | C4에서 정한다 |
