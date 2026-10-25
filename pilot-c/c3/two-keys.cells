@@ -1,0 +1,50 @@
+// O1/O2 measurement cells (not part of the pilot): a step on another key k2 between the acquisition and the cell's step.
+cell X1(k: Key, k2: Key) "C05 after tryLock(k2) at time 5: tryLock(k) at time 11" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  assume k2 != k
+  r2 := tryLock(k2, now = 5, timeout = 10, rej = false, limit = 0)
+  r := tryLock(k, now = 11, timeout = 10, rej = false, limit = 0)
+  outcome null: r == NULL
+  outcome token: r != NULL
+}
+
+cell X2(k: Key, k2: Key) "C04 after tryLock(k2) at time 5: tryLock(k) at time 10" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  assume k2 != k
+  r2 := tryLock(k2, now = 5, timeout = 10, rej = false, limit = 0)
+  r := tryLock(k, now = 10, timeout = 10, rej = false, limit = 0)
+  outcome null: r == NULL
+  outcome token: r != NULL
+}
+
+cell X3(k: Key, k2: Key) "C08 after sweep(k2) at time 11: unLock(k, t1)" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  assume k2 != k
+  sweep(k2, now = 11)
+  b := unLock(k, t = t1)
+  outcome true: b
+  outcome false: !b
+}
+
+cell X4(k: Key, k2: Key) "C15 after tryLock(k2) at time 5: sweep(k) at time 10" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  assume k2 != k
+  r2 := tryLock(k2, now = 5, timeout = 10, rej = false, limit = 0)
+  sweep(k, now = 10)
+  outcome stays: carried(S, k, t1)
+  outcome dropped: !has(S, k)
+}
+
+cell X5(k: Key, k2: Key) "C16 after tryLock(k2) at time 5: sweep(k) at time 11" {
+  t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0)
+  assume t1 != NULL && tok(t1).gBacked
+  assume k2 != k
+  r2 := tryLock(k2, now = 5, timeout = 10, rej = false, limit = 0)
+  sweep(k, now = 11)
+  outcome stays: carried(S, k, t1)
+  outcome dropped: !has(S, k)
+}
