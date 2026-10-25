@@ -8,10 +8,27 @@ import kv.model.TrustedModels
  * Checks of a parsed sidecar that need no Kotlin code: required declarations, name clashes (DESIGN-v0.md 4.6),
  * references between sidecar names, trusted model names (4.3), R1 for issue values (3.5), and the `reviewed`
  * notes that U7 requires (8.3) on issue rules and allowance clauses, and decision 2 on trusted functions. Under
- * `review intent` (DESIGN-C.md 10 UC4), every intent clause needs a note and a source line.
+ * `review intent` (DESIGN-C.md 10 UC4), every intent clause needs a note and a source line, and a quoted source line
+ * needs its block fingerprint (10.1).
+ * A [draft] (DESIGN-C.md 7.1, `kv spec check --draft`) is not signed yet: an intent clause without a note, or a note
+ * without a fingerprint, is no error, and a quoted source line needs no block fingerprint. A trusted fun still needs
+ * its note, and a note's fingerprint is still checked.
  * Kotlin names are resolved later, against FIR.
  */
-fun checkSidecar(sidecar: Sidecar): List<SidecarError> = SidecarChecker(sidecar).run()
+fun checkSidecar(
+    sidecar: Sidecar,
+    draft: Boolean = false,
+): List<SidecarError> = SidecarChecker(sidecar, draft).run()
+
+/**
+ * Checks of the scenario cells of a cell file against [sidecar] (DESIGN-C.md 3.2): unique cell names, parameter
+ * types, the calls as in a probe (operation names, the key first, every free value by name, at most two outs), unique
+ * step and parameter names, and at least one outcome per cell, with unique names.
+ */
+fun checkCells(
+    sidecar: Sidecar,
+    cells: List<CellDecl>,
+): List<SidecarError> = SidecarChecker(sidecar, draft = false).cells(cells)
 
 /** Types the sidecar may name without declaring them. */
 private val VIPER_TYPES = setOf("Int", "Bool", "Ref")
@@ -21,6 +38,7 @@ private val FIELD_TYPES = setOf("Semaphore", "AtomicBoolean", "Long")
 
 private class SidecarChecker(
     private val s: Sidecar,
+    private val draft: Boolean,
 ) {
     private val errors = mutableListOf<SidecarError>()
     private val anchor = s.modules.firstOrNull()?.pos ?: SPos(s.file, 1, 1)
@@ -77,11 +95,17 @@ private class SidecarChecker(
      */
     private fun reviewIntent() {
         for ((what, c) in s.intentClauses()) {
-            if (c.reviewed == null && c !is IssueItem && c !is AllowanceItem) {
+            if (c.reviewed == null && c !is IssueItem && c !is AllowanceItem && !draft) {
                 err(c.pos, "unreviewed", "$what needs a 'reviewed' note: under 'review intent' every intent clause counts only after a person reads it (DESIGN-C.md 10 UC4)")
             }
             if (c.sources.isEmpty()) {
                 err(c.pos, "unsourced", "$what has no source line: under 'review intent' every intent clause names its source, source \"<anchor>\" quote \"<quote>\" or source none \"<reason>\" (DESIGN-C.md 5.2)")
+            }
+            // DESIGN-C.md 10.1: without the block fingerprint, kv spec stale cannot see that the quote's context changed.
+            if (!draft) {
+                c.sources.filterIsInstance<SourceQuote>().filter { it.sha256 == null }.forEach {
+                    err(it.pos, "missing-block-fingerprint", "$what: the source line of ${it.anchor} has no block fingerprint: under 'review intent' a quoted source line records sha256 \"<fp>\" of its block (sources.json of kv spec snapshot), so that kv spec stale sees a changed context (DESIGN-C.md 10.1)")
+                }
             }
         }
     }
@@ -237,7 +261,7 @@ private class SidecarChecker(
         }
 
         op.items.filterIsInstance<AllowanceItem>().forEach {
-            if (it.reviewed == null) err(it.pos, "unreviewed", "${it.kind.keyword} ${it.id.text} needs a 'reviewed' note: allowance clauses count only after a person reads them (U7)")
+            if (it.reviewed == null && !draft) err(it.pos, "unreviewed", "${it.kind.keyword} ${it.id.text} needs a 'reviewed' note: allowance clauses count only after a person reads them (U7)")
         }
         val issues = op.items.filterIsInstance<IssueItem>()
         issues.drop(1).forEach { err(it.pos, "duplicate-decl", "operation ${op.name.text} has a second issue rule") }
@@ -260,7 +284,7 @@ private class SidecarChecker(
         val at = clause.reviewPos ?: clause.pos
         val text = if (clause.sources.isEmpty()) "the clause text now has" else "the clause text and its source lines now have"
         when (clause.sha256) {
-            null -> err(at, "missing-fingerprint", "the reviewed note of $what has no fingerprint: write sha256 \"$now\" after it once a person has read the clause")
+            null -> if (!draft) err(at, "missing-fingerprint", "the reviewed note of $what has no fingerprint: write sha256 \"$now\" after it once a person has read the clause")
             now -> Unit
             else -> err(at, "stale-review", "$what changed after its review: the note records sha256 \"${clause.sha256}\", $text sha256 \"$now\"; a person must review it again")
         }
@@ -293,7 +317,7 @@ private class SidecarChecker(
         issue: IssueItem,
         result: ResultItem?,
     ) {
-        if (issue.reviewed == null) err(issue.pos, "unreviewed", "the issue rule of ${op.name.text} needs a 'reviewed' note: issue rules count only after a person reads them (U7)")
+        if (issue.reviewed == null && !draft) err(issue.pos, "unreviewed", "the issue rule of ${op.name.text} needs a 'reviewed' note: issue rules count only after a person reads them (U7)")
         if (result == null) {
             err(issue.result.pos, "unknown-name", "operation ${op.name.text} issues '${issue.result.text}' but declares no result")
         } else if (issue.result.text != result.name.text) {
@@ -343,17 +367,45 @@ private class SidecarChecker(
         }
     }
 
-    private fun probe(p: ProbeDecl) {
+    private fun probe(p: ProbeDecl) = scenario("probe", p.params, p.steps.filterIsInstance<ProbeCall>())
+
+    /**
+     * The cells of a cell file (DESIGN-C.md 3.2). Each cell is its own Viper method, as a probe is, so its names
+     * follow the probe rules; the cell names are unique, and each cell has one or more outcomes with unique names.
+     */
+    fun cells(cells: List<CellDecl>): List<SidecarError> {
+        globalNames()
+        val ids = mutableMapOf<String, SPos>()
+        for (c in cells) {
+            ids.put(c.id.text, c.id.pos)?.let { err(c.id.pos, "duplicate-decl", "a second cell ${c.id.text}; the first is at $it") }
+            c.params.forEach { type(it.type, VIPER_TYPES, "parameter type") }
+            scenario("cell ${c.id.text}", c.params, c.steps.filterIsInstance<ProbeCall>())
+            if (c.outcomes.isEmpty()) err(c.pos, "cell-outcomes", "cell ${c.id.text} has no outcome: write one 'outcome NAME: EXPR' per result a person can pick")
+            val names = mutableMapOf<String, SPos>()
+            c.outcomes.forEach { o -> names.put(o.name.text, o.name.pos)?.let { err(o.name.pos, "duplicate-decl", "cell ${c.id.text} has a second outcome ${o.name.text}; the first is at $it") } }
+        }
+        return errors
+    }
+
+    /**
+     * The names and calls of a probe or a cell ([what] in messages): its parameters and outs, and each call against
+     * the operation it names.
+     */
+    private fun scenario(
+        what: String,
+        params: List<Typed>,
+        calls: List<ProbeCall>,
+    ) {
         // A probe is its own Viper method: its names may reuse k and the other bound names, not fields or tool names.
         val taken = globals.filterKeys { it !in Reserved.names }
         val locals = mutableMapOf<String, SPos>()
 
         fun local(n: Name) {
-            taken[n.text]?.let { err(n.pos, "name-clash", "probe name '${n.text}' clashes with $it") }
-            locals.put(n.text, n.pos)?.let { err(n.pos, "name-clash", "probe name '${n.text}' is declared twice; the first is at $it") }
+            taken[n.text]?.let { err(n.pos, "name-clash", "$what name '${n.text}' clashes with $it") }
+            locals.put(n.text, n.pos)?.let { err(n.pos, "name-clash", "$what name '${n.text}' is declared twice; the first is at $it") }
         }
-        p.params.forEach { local(it.name) }
-        p.steps.filterIsInstance<ProbeCall>().forEach { call ->
+        params.forEach { local(it.name) }
+        calls.forEach { call ->
             call.outs.forEach(::local)
             // DESIGN-B.md 5.1: the result, then `exc` if the operation can throw (the emitter checks which).
             if (call.outs.size > 2) err(call.outs[2].pos, "probe-outs", "a probe call names at most two outs: the result and exc")

@@ -57,7 +57,7 @@ data class Mapped(
     val source: Source,
 )
 
-enum class MethodKind { ACTION, STRAY, INIT, LEMMA, PROBE }
+enum class MethodKind { ACTION, STRAY, INIT, LEMMA, PROBE, CELL }
 
 /**
  * One emitted Viper method. [label] is the name in reports (operation name, stray action id, `init`, `lemma P3c`,
@@ -83,8 +83,22 @@ data class BranchProbe(
 )
 
 /**
+ * One sidecar clause of the contract of [action] (an operation name or `stray action <id>`): an allowance clause,
+ * written or default, or an ensures, in emitted order. [index] counts from 0 per action; [pos] is null for a default
+ * clause. [range] holds its lines.
+ */
+data class EmittedClause(
+    val action: String,
+    val index: Int,
+    val name: String,
+    val pos: SPos?,
+    val range: VprRange,
+)
+
+/**
  * The Viper text, its position table and its methods. [warnings] are for the report (DESIGN-v0.md 5.4). [branches]
- * are the refute probes of a reachability program, empty in the verified program.
+ * are the refute probes of a reachability program, empty in the verified program. [clauses] are the sidecar clauses
+ * of the action methods that the text holds.
  */
 data class Emitted(
     val text: String,
@@ -92,6 +106,7 @@ data class Emitted(
     val methods: List<EmittedMethod>,
     val warnings: List<String>,
     val branches: List<BranchProbe> = emptyList(),
+    val clauses: List<EmittedClause> = emptyList(),
 ) {
     /** The innermost range that contains the Viper position (DESIGN-v0.md 5.7 step 2), or null. */
     fun sourceAt(

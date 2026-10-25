@@ -65,6 +65,8 @@ import kv.kvir.exprs
 import kv.kvir.walk
 import kv.sidecar.Allowance
 import kv.sidecar.AllowanceItem
+import kv.sidecar.CellAssume
+import kv.sidecar.CellDecl
 import kv.sidecar.EnsuresItem
 import kv.sidecar.IssueItem
 import kv.sidecar.OperationDecl
@@ -87,13 +89,54 @@ import kv.sidecar.Vexpr
  * the probe are left out.
  * The action methods whose labels are in [withoutHole] have no hole ensures (`ensures MI_INV_i(S)`) and keep every
  * other ensures: the program of the property check (pass 2, [kv.verify.verify]).
+ * With [contract], the program is the contract-only model of `kv spec check` ([ContractOnly]).
+ * With [onlyClause] = j, the program is clause isolation run j of `kv spec check` (DESIGN-C.md 4.1): each action
+ * method keeps its body and the tool ensures, and of its sidecar clauses ([Emitted.clauses]) only the one with index
+ * j; lemmas and probes are left out.
  */
 fun emitViper(
     module: Module,
     sidecar: Sidecar,
     reach: Boolean = false,
     withoutHole: Set<String> = emptySet(),
-): Emitted = Emitter(module, sidecar, reach, withoutHole).run()
+    contract: ContractOnly? = null,
+    onlyClause: Int? = null,
+): Emitted = Emitter(module, sidecar, reach, withoutHole, contract, onlyClause).run()
+
+/**
+ * A fact the contract-only model may assume to measure whether a cell needs it (DESIGN-C.md 10.2 O1, O2). It is
+ * assumed, not proven, and `kv verify` never emits it. [option] is its `kv spec check --assume-fact` value.
+ */
+enum class AssumedFact(
+    val option: String,
+) {
+    /** DESIGN-C.md 7.3 WITNESS, in MI: a held backed token is carried by its key's entry. */
+    WITNESS("witness"),
+
+    /** An action leaves every field of another key's entry as it was (FRAME says only that the entry is the same object). */
+    FIELD_FRAME("field-frame"),
+}
+
+/**
+ * The contract-only model of `kv spec check` (DESIGN-C.md 3.2): init and the action methods without bodies, so a call
+ * assumes only the contract (with the tool facts of 7.3); no stray action, lemma or probe; per cell, one method per
+ * outcome (`assert` it) and one that reaches the end (`refute false`), named by [cellMethod]. [holeTrue] is mode b:
+ * the hole is `true`, the sidecar clauses alone; otherwise mode a keeps the hole. [fromCode] is false for a module
+ * built from the sidecar alone ([kv.spec.sidecarModule]). [assumed] are measurement facts.
+ * init states no counter value: the sidecar alone does not give it, and both kinds of module get the same init.
+ */
+data class ContractOnly(
+    val cells: List<CellDecl>,
+    val holeTrue: Boolean,
+    val fromCode: Boolean,
+    val assumed: Set<AssumedFact> = emptySet(),
+)
+
+/** The Viper method of cell [cell]: outcome [outcome], or with null the method that checks that the end is reachable. */
+fun cellMethod(
+    cell: String,
+    outcome: String?,
+): String = if (outcome == null) "cell_${cell}_reach" else "cell_${cell}_out_$outcome"
 
 /** What kind of value a free value is, for comments and reports (DESIGN-v0.md 2.12). */
 internal fun Origin.kind(): String =
@@ -178,9 +221,13 @@ private class Emitter(
     private val s: Sidecar,
     private val reach: Boolean,
     private val withoutHole: Set<String>,
+    private val contract: ContractOnly?,
+    private val onlyClause: Int?,
 ) {
     private val w = VprWriter()
     private val methods = mutableListOf<EmittedMethod>()
+    private val clauses = mutableListOf<EmittedClause>()
+    private val assumed = contract?.assumed.orEmpty()
     private val warnings = mutableListOf<String>()
     private val branches = mutableListOf<BranchProbe>()
     private val anchor = s.modules.single().pos
@@ -211,7 +258,10 @@ private class Emitter(
     private val witnessDecl by lazy { s.witnesses.singleOrNull() ?: fail(anchor, "v0 emits a module with a 'witness' field (DESIGN-v0.md 3.5, END)") }
     private val witness by lazy { cls.fields.find { it.name == witnessDecl.field.text } ?: fail(witnessDecl.pos, "witness field ${witnessDecl.field.text} is not a field of ${cls.name}") }
     private val witnessSource by lazy { Source.Sidecar(witnessDecl.pos, "witness ${witnessDecl.cls.text}.${witnessDecl.field.text}") }
-    private val hole by lazy { splitHole(s.holes.single()) }
+    private val hole by lazy {
+        val decl = s.holes.single()
+        if (contract?.holeTrue == true) listOf(HoleConjunct(Vexpr("true", decl.textPos), listOf("mode b: the hole is true, so only the sidecar clauses hold"), null)) else splitHole(decl)
+    }
     private val invariants = s.properties.filter { it.kind == PropertyKind.INVARIANT }
 
     /** Local names written as another name while one action method is emitted: the action's out as the result. */
@@ -256,12 +306,13 @@ private class Emitter(
         m.operations.filter { it.action.status == Status.Supported }.forEach { op ->
             action(op.action, op, s.operations.single { it.name.text == op.name })
         }
-        m.strayActions.filter { it.status == Status.Supported }.forEach(::stray)
-        if (!reach) {
+        if (contract == null) m.strayActions.filter { it.status == Status.Supported }.forEach(::stray)
+        if (!reach && contract == null && onlyClause == null) {
             s.properties.filter { it.kind == PropertyKind.LEMMA }.forEach(::lemma)
             s.probes.forEach(::probe)
         }
-        return Emitted(w.text, w.ranges.toList(), methods.toList(), warnings.toList(), branches.toList())
+        contract?.cells?.forEach(::cell)
+        return Emitted(w.text, w.ranges.toList(), methods.toList(), warnings.toList(), branches.toList(), clauses.toList())
     }
 
     // ---- types and names ----
@@ -297,6 +348,12 @@ private class Emitter(
         if (withoutHole.isNotEmpty()) {
             w.comment("Property check (pass 2): ${withoutHole.sorted().joinToString()} without the hole ensures MI_INV_i; every other ensures stays.")
         }
+        contract?.let { c ->
+            w.comment("Contract-only model (kv spec check, DESIGN-C.md 3.2), mode ${if (c.holeTrue) "b: the hole is true" else "a: with the hole"}: no method has a body,")
+            w.comment("so a call assumes only the contract. ${if (c.fromCode) "The module comes from the code." else "The module comes from the sidecar alone (no code)."}")
+            if (c.assumed.isNotEmpty()) w.comment("Assumed for a measurement, not proven: ${c.assumed.joinToString { it.option }} (DESIGN-C.md 10.2).")
+        }
+        onlyClause?.let { w.comment("Clause isolation run $it (kv spec check, DESIGN-C.md 4.1): each action keeps the tool ensures and only its sidecar clause $it.") }
         w.put("\n")
     }
 
@@ -385,6 +442,7 @@ private class Emitter(
         w.line("has(S, qk1) && has(S, qk2) && qk1 != qk2 ==> S.$ms[qk1] != S.$ms[qk2])", indent = 5)
         w.line(")")
         w.put("\n")
+        if (AssumedFact.WITNESS in assumed) witnessDefine()
         setOnce.forEach { d ->
             val src = Source.Sidecar(d.pos, d.id.text)
             w.comment("---- Sidecar: set-once ${d.id.text}: ${d.map.text}. A mapped key keeps its value (every action, DESIGN-B.md 2.4) ----")
@@ -412,9 +470,30 @@ private class Emitter(
         w.comment("@HOLE-END MI_INV")
         w.line("define MI_INV(S) (${hole.indices.joinToString(" && ") { "MI_INV_${it + 1}(S)" }})", Source.Generated("MI_INV"))
         w.put("\n")
-        w.line("define MI(S) (${(listOf("MI_PERMS(S)", "MI_OWN(S)") + invariants.map { "${it.id.text}(S)" } + "MI_INV(S)").joinToString(" && ")})", Source.Generated("MI"))
+        val witnessPart = listOfNotNull("MI_WITNESS(S)".takeIf { AssumedFact.WITNESS in assumed })
+        w.line("define MI(S) (${(listOf("MI_PERMS(S)", "MI_OWN(S)") + witnessPart + invariants.map { "${it.id.text}(S)" } + "MI_INV(S)").joinToString(" && ")})", Source.Generated("MI"))
         w.put("\n")
         if (!b) hist()
+    }
+
+    /**
+     * The frozen ghost field the issue rules set to the action key (sidecar `gKey`): WITNESS names it. Null if no
+     * issue rule sets one.
+     */
+    private val keyField: String? by lazy {
+        m.operations.flatMap { op -> op.action.commit.filterIsInstance<Issue>().flatMap { issue -> issue.fields.filterValues { (it as? Var)?.local == op.action.key.local }.keys } }.distinct().singleOrNull()
+    }
+
+    /** DESIGN-C.md 7.3 WITNESS as a part of MI, assumed for a measurement (10.2 O1): a held backed token is carried. */
+    private fun witnessDefine() {
+        val index = stype(ghost.index.text)
+        val bk = backed ?: fail(ghost.pos, "WITNESS needs a frozen ghost field that the issue rule sets to carried(S, k, result)")
+        val kf = keyField ?: fail(ghost.pos, "WITNESS needs a frozen ghost field that the issue rule sets to the action key")
+        w.comment("Assumed for a measurement (DESIGN-C.md 10.2 O1), not proven: WITNESS, a held backed token is carried by its key's entry.")
+        w.line("define MI_WITNESS(S) (", Source.Generated("WITNESS"))
+        w.line("forall qt: $index :: { $g(qt).$held } $g(qt).$issued && $g(qt).$bk && $g(qt).$held ==> carried(S, $g(qt).$kf, qt)", indent = 2)
+        w.line(")")
+        w.put("\n")
     }
 
     /** HIST (DESIGN-v0.md 5.3 item 4): from the ghost field kinds, in declaration order. */
@@ -464,6 +543,11 @@ private class Emitter(
         method("init", MethodKind.INIT, "init", null) {
             w.line("method init() returns (S: Ref)")
             w.line("ensures MI(S)", Source.Generated("MI"), 2)
+            if (contract != null) {
+                // No body: a cell assumes MI and an empty map. A counter's value is not stated (ContractOnly).
+                m.state.filterIsInstance<MapVar>().forEach { w.line("ensures S.${it.name} == ${initial(it)}", Source.Kotlin(it.pos), 2) }
+                return@method
+            }
             m.state.forEach { w.line("ensures S.${it.name} == ${initial(it)}", Source.Kotlin(it.pos), 2) }
             w.line("{")
             w.line("S := new(${(m.state.map { it.name } + "created").joinToString()})", indent = 2)
@@ -492,9 +576,13 @@ private class Emitter(
     ) {
         val named = a.free.filter { it.sidecarName != null }
         val exc = b && raises(op)
-        w.comment("Action ${op.name}: ${map.kotlin}.${a.kind.method} ${at(a.pos)}, operation ${op.kotlin} ${at(op.pos)}")
-        w.comment("  ${origin(a.key)}")
-        a.free.forEach { w.comment("  ${origin(it)}${if (it.sidecarName == null) ", unnamed: arbitrary" else ""}") }
+        if (contract?.fromCode == false) {
+            w.comment("Action ${op.name}, operation ${op.kotlin}: from the sidecar alone, no code")
+        } else {
+            w.comment("Action ${op.name}: ${map.kotlin}.${a.kind.method} ${at(a.pos)}, operation ${op.kotlin} ${at(op.pos)}")
+            w.comment("  ${origin(a.key)}")
+            a.free.forEach { w.comment("  ${origin(it)}${if (it.sidecarName == null) ", unnamed: arbitrary" else ""}") }
+        }
         method(op.name, MethodKind.ACTION, op.name, a.pos) {
             val params = (listOf("S: Ref") + (listOf(a.key) + named).map { "${it.local.name}: ${vtype(it.local.type)}" }).joinToString()
             val outs = listOfNotNull(op.result?.let { "${it.name}: ${vtype(it.type)}" }, "exc: Bool".takeIf { exc })
@@ -503,17 +591,41 @@ private class Emitter(
             requires(a, op)
             if (!reach) {
                 ensuresInvariant(a, op.name)
-                if (!b) allowances(decl, op)
+                clauseNo = 0
+                if (!b) allowances(decl, op, op.name)
                 decl.items.filterIsInstance<EnsuresItem>().forEach { e ->
-                    w.put("  ensures ")
-                    sidecarExpr(e.expr, e.id.text)
-                    w.put("\n")
+                    clause(op.name, "ensures ${e.id.text}", e.pos) {
+                        w.put("  ensures ")
+                        sidecarExpr(e.expr, e.id.text)
+                        w.put("\n")
+                    }
                 }
             }
+            if (contract != null) return@method
             w.line("{")
             if (b) SectionBody(a, op, exc, op.name).run() else Body(a, op.name).run(op)
             w.put("}")
         }
+    }
+
+    /** The index of the next sidecar clause of the action method being written ([EmittedClause.index]). */
+    private var clauseNo = 0
+
+    /**
+     * Writes one sidecar clause of action [action] with [write], unless a clause isolation run keeps another index,
+     * and records where it went.
+     */
+    private fun clause(
+        action: String,
+        name: String,
+        pos: SPos?,
+        write: () -> Unit,
+    ) {
+        val index = clauseNo++
+        if (onlyClause != null && index != onlyClause) return
+        val start = w.line
+        write()
+        clauses += EmittedClause(action, index, name, pos, VprRange(start, 1, w.line - 1, Int.MAX_VALUE))
     }
 
     /**
@@ -584,6 +696,8 @@ private class Emitter(
         w.line("ensures MI_PERMS(S)", Source.Generated("MI_PERMS"), 2)
         frameFact(a)
         w.line("ensures MI_OWN(S)", Source.Generated("MI_OWN"), 2)
+        if (AssumedFact.WITNESS in assumed) w.line("ensures MI_WITNESS(S)", Source.Generated("WITNESS"), 2, "assumed for a measurement (DESIGN-C.md 10.2 O1)")
+        if (AssumedFact.FIELD_FRAME in assumed) fieldFrame(a)
         // DESIGN-B.md 5.4 rule 1 (JB1): each set-once line right after MI_OWN.
         setOnce.forEach { d -> w.line("ensures ${d.id.text}(S)", Source.Sidecar(d.pos, d.id.text), 2) }
         invariants.forEach { p -> w.line("ensures ${p.id.text}(S)", Source.Sidecar(p.expr.pos, p.id.text), 2) }
@@ -615,6 +729,20 @@ private class Emitter(
             Source.Generated(FACT_FRAME),
             2,
             "$FACT_FRAME: the action changes the map only at its key",
+        )
+    }
+
+    /** Every field of another key's entry is as it was: assumed for a measurement (DESIGN-C.md 10.2 O2), not proven. */
+    private fun fieldFrame(a: Action) {
+        val k = a.key.local.name
+        val ms = map.name
+        val same = objectFields.joinToString(" && ") { "S.$ms[qk].$it == old(S.$ms[qk].$it)" }
+        w.line(
+            // has(S, qk) in the premise makes `S.m[qk]` well-defined; FRAME gives it for every other key mapped before.
+            "ensures forall qk: $keyType :: { S.$ms[qk] } qk != $k && old(has(S, qk)) && has(S, qk) ==> $same",
+            Source.Generated("FIELD_FRAME"),
+            2,
+            "assumed for a measurement (DESIGN-C.md 10.2 O2): the fields of other keys' entries are unchanged",
         )
     }
 
@@ -676,16 +804,19 @@ private class Emitter(
     private fun allowances(
         decl: OperationDecl?,
         op: Operation?,
+        label: String,
     ) {
         val items = decl?.items?.filterIsInstance<AllowanceItem>().orEmpty()
         val ends = items.filter { it.kind == Allowance.ENDS_ONLY_IF }
         val endsHead = "forall qt: ${stype(ghost.index.text)} :: { $g(qt).$held }\n    " +
             (listOf(issued) + listOfNotNull(backed) + held).joinToString(" && ") { "old($g(qt).$it)" } + " && !$g(qt).$held ==>\n      ("
         if (ends.isEmpty()) {
-            w.comment("ends_only_if (default false): this action may end no acquisition.", 2)
-            w.line("ensures ${endsHead}false)", Source.Generated("ends_only_if default false"), 2)
+            clause(label, "ends_only_if (default false)", null) {
+                w.comment("ends_only_if (default false): this action may end no acquisition.", 2)
+                w.line("ensures ${endsHead}false)", Source.Generated("ends_only_if default false"), 2)
+            }
         }
-        ends.forEach { allowance(it, endsHead) }
+        ends.forEach { clause(label, "ends_only_if ${it.id.text}", it.pos) { allowance(it, endsHead) } }
         val issues = op?.action?.commit?.any { it is Issue } == true
         val unbacked = items.filter { it.kind == Allowance.UNBACKED_ONLY_IF }
         if (!issues) {
@@ -699,10 +830,12 @@ private class Emitter(
         val r = op!!.result!!.name
         val unbackedHead = "$r != NULL && !$g($r).$backed ==> ("
         if (unbacked.isEmpty()) {
-            w.comment("unbacked_only_if (default false): this operation issues no unbacked token.", 2)
-            w.line("ensures ${unbackedHead}false)", Source.Generated("unbacked_only_if default false"), 2)
+            clause(label, "unbacked_only_if (default false)", null) {
+                w.comment("unbacked_only_if (default false): this operation issues no unbacked token.", 2)
+                w.line("ensures ${unbackedHead}false)", Source.Generated("unbacked_only_if default false"), 2)
+            }
         }
-        unbacked.forEach { allowance(it, unbackedHead) }
+        unbacked.forEach { clause(label, "unbacked_only_if ${it.id.text}", it.pos) { allowance(it, unbackedHead) } }
     }
 
     /** One sidecar allowance clause: the whole ensures maps to the clause; its condition maps column by column. */
@@ -733,7 +866,8 @@ private class Emitter(
             if (!reach) {
                 // DESIGN-B.md 5.4 rule 5: MI and every set-once line, and no allowance clause without a ghost record.
                 ensuresInvariant(a, label)
-                if (!b) allowances(null, null)
+                clauseNo = 0
+                if (!b) allowances(null, null, label)
             }
             w.line("{")
             if (b) SectionBody(a, null, false, label).run() else Body(a, label).run(null)
@@ -1218,21 +1352,7 @@ private class Emitter(
             w.line("S := init()", Source.Sidecar(p.pos, p.label), 2)
             p.steps.forEach { step ->
                 when (step) {
-                    is ProbeCall -> {
-                        val op = ops.getValue(step.op.text)
-                        // The method's results in order: the sidecar result, then `exc` (DESIGN-B.md 5.1, instance modules).
-                        val types = listOfNotNull(op.result?.let { vtype(it.type) }, "Bool".takeIf { b && raises(op) })
-                        if (step.outs.size != types.size) {
-                            val want = listOfNotNull(op.result?.let { "the result" }, "exc".takeIf { types.size > (if (op.result != null) 1 else 0) })
-                            fail(step.pos, "operation ${op.name} returns ${want.joinToString(" and ").ifEmpty { "nothing" }}; the probe call names ${step.outs.size} out(s)")
-                        }
-                        val byName = step.args.filter { it.name != null }.associateBy { it.name!!.text }
-                        val args = listOf(step.args.first().value.text) + op.action.free.filter { it.sidecarName != null }.map { byName.getValue(it.sidecarName!!).value.text }
-                        step.outs.zip(types).forEach { (out, type) -> w.line("var ${out.text}: $type", indent = 2) }
-                        // DESIGN-C.md 7.2: without outs, the call of an operation without a result.
-                        val targets = if (step.outs.isEmpty()) "" else "${step.outs.joinToString { it.text }} := "
-                        w.line("$targets${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "${p.label} call ${op.name}"), 2)
-                    }
+                    is ProbeCall -> call(step, ops, p.label)
                     is ProbeAssert -> {
                         w.put("  assert ")
                         sidecarExpr(step.expr, "${p.label} assert")
@@ -1241,6 +1361,67 @@ private class Emitter(
                 }
             }
             w.put("}")
+        }
+    }
+
+    /** One call of a probe or a cell ([label] in the position table): the outs' declarations, then the call. */
+    private fun call(
+        step: ProbeCall,
+        ops: Map<String, Operation>,
+        label: String,
+    ) {
+        val op = ops.getValue(step.op.text)
+        // The method's results in order: the sidecar result, then `exc` (DESIGN-B.md 5.1, instance modules).
+        val types = listOfNotNull(op.result?.let { vtype(it.type) }, "Bool".takeIf { b && raises(op) })
+        if (step.outs.size != types.size) {
+            val want = listOfNotNull(op.result?.let { "the result" }, "exc".takeIf { types.size > (if (op.result != null) 1 else 0) })
+            fail(step.pos, "operation ${op.name} returns ${want.joinToString(" and ").ifEmpty { "nothing" }}; the probe call names ${step.outs.size} out(s)")
+        }
+        val byName = step.args.filter { it.name != null }.associateBy { it.name!!.text }
+        val args = listOf(step.args.first().value.text) + op.action.free.filter { it.sidecarName != null }.map { byName.getValue(it.sidecarName!!).value.text }
+        step.outs.zip(types).forEach { (out, type) -> w.line("var ${out.text}: $type", indent = 2) }
+        // DESIGN-C.md 7.2: without outs, the call of an operation without a result.
+        val targets = if (step.outs.isEmpty()) "" else "${step.outs.joinToString { it.text }} := "
+        w.line("$targets${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "$label call ${op.name}"), 2)
+    }
+
+    // ---- DESIGN-C.md 3.2: scenario cells of the contract-only model ----
+
+    /**
+     * The methods of cell [c]: one per outcome, which asserts it at the end, and [cellMethod] with null, which ends
+     * with `refute false`. That refute fails exactly when the end cannot be reached. Every method starts from init.
+     */
+    private fun cell(c: CellDecl) {
+        val ops = m.operations.filter { it.action.status == Status.Supported }.associateBy { it.name }
+        c.steps.filterIsInstance<ProbeCall>().firstOrNull { it.op.text !in ops }?.let { fail(it.pos, "cell ${c.id.text} calls ${it.op.text}, which is not emitted") }
+        val label = "cell ${c.id.text}"
+        w.comment("Cell ${c.id.text}${c.title?.let { ": $it" } ?: ""} (${c.pos.file.substringAfterLast('/')}:${c.pos.line})")
+        (c.outcomes.map { it.name.text to it } + (null to null)).forEach { (name, outcome) ->
+            val method = cellMethod(c.id.text, name)
+            method(method, MethodKind.CELL, if (name == null) "$label reach" else "$label outcome $name", null) {
+                w.line("method $method(${c.params.joinToString { "${it.name.text}: ${stype(it.type.text)}" }})", Source.Sidecar(c.pos, label))
+                w.line("{")
+                w.line("var S: Ref", indent = 2)
+                w.line("S := init()", Source.Sidecar(c.pos, label), 2)
+                c.steps.forEach { step ->
+                    when (step) {
+                        is ProbeCall -> call(step, ops, label)
+                        is CellAssume -> {
+                            w.put("  assume ")
+                            sidecarExpr(step.expr, "$label assume")
+                            w.put("\n")
+                        }
+                    }
+                }
+                if (outcome == null) {
+                    w.line("refute false", Source.Sidecar(c.pos, "$label reach"), 2, "fails exactly when the end is unreachable")
+                } else {
+                    w.put("  assert ")
+                    sidecarExpr(outcome.expr, "$label outcome $name")
+                    w.put("\n")
+                }
+                w.put("}")
+            }
         }
     }
 

@@ -200,13 +200,15 @@ object Frontend {
     /**
      * Loads and checks [sidecarFile], compiles the `source` files it names (relative to [root]), binds its Kotlin
      * names to FIR symbols, and lowers the module to KVIR. Stops at the first stage that reports errors.
-     * [onLowered] reads the FIR after the lowering (see [FrontendSession]).
+     * [onLowered] reads the FIR after the lowering (see [FrontendSession]). A [draft] is checked as not signed yet
+     * ([checkSidecar]).
      */
     fun resolve(
         sidecarFile: File,
         root: File,
         classpath: List<File>,
         kotlincArgs: List<String> = emptyList(),
+        draft: Boolean = false,
         onLowered: ((LoweredFir) -> Unit)? = null,
     ): ResolveOutcome {
         val sidecar =
@@ -215,7 +217,7 @@ object Frontend {
             } catch (e: SidecarException) {
                 return ResolveOutcome(e.errors, null, null, null)
             }
-        val errors = checkSidecar(sidecar)
+        val errors = checkSidecar(sidecar, draft)
         if (errors.isNotEmpty()) return ResolveOutcome(errors, null, null, null, sidecar)
         // DESIGN-B.md 5.1: a `source` directory means every .kt file under it.
         val files = sidecar.sources.associateWith { kotlinFiles(File(root, it.path)) }
