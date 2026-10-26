@@ -1,0 +1,1 @@
+(main-session summary) Compiles (1 of 10). Expired when now >= expiresAt in tryLock, unLock and monitor; takeover replaces with new token; unLock on an expired entry returns false and leaves it for the monitor; cap only for new key with lockMap.size; semaphore permit taken at acquisition and released at unLock; token generated before compute; monitor ScheduledExecutorService.

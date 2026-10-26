@@ -1,0 +1,25 @@
+com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion (keylocallock.coroutine.kv)    module: FAILED (Silicon 10.55 s)
+  step reserve tryLock  KeyLocalLock.kt:87:52   PROVEN
+  action tryLock        KeyLocalLock.kt:30:9   FAILED (property)
+      Postcondition of tryLock might not hold: sidecar ends_only_if P3a keylocallock.common.kv:65:3 (incomplete quantifiers)
+  action unLock         KeyLocalLock.kt:68:9   PROVEN
+  action sweep          KeyLocalLock.kt:105:17   FAILED (property)
+      Postcondition of sweep might not hold: sidecar ends_only_if P3a keylocallock.common.kv:96:3 (incomplete quantifiers)
+  init PROVEN · lemma P3c PROVEN · probe PROVEN
+Spec to review: ends_only_if tryLock P3a, unLock P3a, sweep P3a; unbacked_only_if tryLock P3b; issue tryLock
+Assumptions (not checked by Silicon):
+  Long unbounded: KeyLocalLock.kt:37:55, KeyLocalLock.kt:49:38, KeyLocalLock.kt:87:52
+  Free values:
+    tryLock: k <- lockKey 24:9 (action key), now <- now 25:9 (captured), timeout <- this.lockTimeoutMillis 37:61 (instance val lockTimeoutMillis), rej <- LocalLockLimit.rejectsNewEntry(...) 32:21 (trusted call LocalLockLimit.rejectsNewEntry), limit <- LocalLockLimit.rejectsNewEntry(...) 32:21 (trusted call LocalLockLimit.rejectsNewEntry), newToken__26 <- newToken 26:9 (reserved by the step before the action)
+    unLock: k <- lockKey 65:9 (action key), t <- token 63:9 (captured)
+    sweep: k <- lockKey 103:18 (action key), now <- now 104:17 (captured)
+  Reserve steps (DESIGN-D.md 2.1, one atomic counter step before the action): tryLock: newToken__26 <- tokenSequence.incrementAndGet() 87:52
+  Trusted models: jdk.ConcurrentHashMap.compute, jdk.ConcurrentHashMap.mappingCount, jdk.ConcurrentHashMap.racyRead, jdk.Semaphore, jdk.AtomicBoolean, jdk.AtomicLong, jdk.AtomicCell, jdk.System.currentTimeMillis, slf4j.Logger
+  Trusted project functions: nowToEpochTime (reviewed: ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()), rejectsNewEntry (reviewed: ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit)
+  Init: the ghost records are allocated by an inhale with no record issued or reserved (trusted)
+Racy reads (modeled as arbitrary values): lockMap.keys 103:29
+Not modeled (no module-state access): class KeyLocalLock 19:1, constructor of KeyLocalLock 19:19, fun tryLock 20:5, fun unLock 60:5, constructor of Companion 83:5, init 89:9, fun removeExpired 102:9
+Unsupported: none
+Branch reachability (INFO, not part of any verdict; DESIGN-v0.md 5.4): 11 branch(es) probed, 0 unreachable
+Note: init and probe do not check inductiveness; the action methods do (DESIGN-v0.md 5.4).
+Viper program: out/model.vpr
