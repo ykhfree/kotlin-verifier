@@ -37,7 +37,8 @@ internal fun checkInputs(
         l.inputs.mapNotNull { (name, from) ->
             val constructs = origins.of(from).mapNotNull { unsupported[it] }.filter { named.add(it.what to it.pos) }
             if (constructs.isEmpty()) return@mapNotNull null
-            val list = constructs.joinToString("; ") { "${it.what} at ${where(it.pos)}" }
+            // DESIGN-D.md 6.3: a counter increment that is not a reserve step says which rule it breaks.
+            val list = constructs.joinToString("; ") { "${it.what} at ${where(it.pos)}" + (ctx.notReserve[it.pos]?.let { r -> ", $r" } ?: "") }
             Unsupported("input $name", "its value comes from code outside the action that the model does not translate ($list); an unmodeled part may break what the proof relies on (DESIGN-v0.md 5.8)", ctx.posOf(from))
         }
     if (problems.isEmpty()) return l
@@ -48,7 +49,7 @@ internal fun checkInputs(
     val diagnostics = before?.diagnostics.orEmpty() + problems.map { unsupportedDiagnostic(it, a.id) }
     val action = a.copy(body = body, status = Status.Unsupported(diagnostics), value = null, out = null)
     // As for any unsupported action, the section keeps the plain shape and the result is dropped (W12).
-    return Lowered(action, l.cells, null, listOf(RunAction(a.pos), Return(null, a.pos)), l.freeSources, l.cellSymbols, l.helpers, l.inputs)
+    return Lowered(action, l.cells, null, listOf(RunAction(a.pos), Return(null, a.pos)), l.freeSources, l.cellSymbols, l.helpers, l.inputs, l.reserve)
 }
 
 /**

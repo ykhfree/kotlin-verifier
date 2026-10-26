@@ -48,6 +48,10 @@ data class LockFixture(
     val otherFiles: Map<String, String> = emptyMap(),
     /** The whole function `run` (indented 4 spaces); null for the default one built from [before], [body], [after]. */
     val run: String? = null,
+    /** The text of the sidecar hole MI_INV. */
+    val hole: String = "true",
+    /** The fields of the sidecar class Info, one per line (indented 2 spaces). */
+    val classFields: String = DEFAULT_CLASS_FIELDS,
 ) {
     private val defaultRun: String =
         """
@@ -102,10 +106,7 @@ data class LockFixture(
         |state m:   Map<Key, Info> = lockMap
         |state seq: Counter        = counter
         |class Info = Lock.Info {
-        |  permits:   Semaphore     = semaphore
-        |  isHeld:    AtomicBoolean = isHeld
-        |  token:     Token?        = token
-        |  expiresAt: Long          = expiresAt
+        |$classFields
         |}
         |use jdk.ConcurrentHashMap.compute
         |use jdk.ConcurrentHashMap.mappingCount
@@ -117,7 +118,7 @@ data class LockFixture(
         |use jdk.System.currentTimeMillis
         |use slf4j.Logger
         |$operations
-        |hole MI_INV ""${'"'} true ""${'"'}
+        |hole MI_INV ""${'"'} $hole ""${'"'}
         |
         """.trimMargin(),
         )
@@ -169,12 +170,20 @@ data class LockFixture(
         val s = parseSidecar(sidecarPath, if (withGhost) sidecar else sidecar + MINIMAL_GHOST)
         val module = if (withGhost) m else m.copy(ghost = GhostSchema("tok", mapOf("gIssued" to GhostKind.SET_ONCE, "gHeld" to GhostKind.ENDS)))
         val bound = bindGhosts(module, s)
-        assertEquals(emptyList(), checkWellFormed(bound), "W1-W14 after the ghost binder\n${printOperation(bound, "run")}")
+        // A module whose operation `run` is unsupported as a whole (U2) prints in full.
+        val text = if (bound.operations.any { it.name == "run" }) printOperation(bound, "run") else kv.kvir.printModule(bound)
+        assertEquals(emptyList(), checkWellFormed(bound), "W1-W14 after the ghost binder\n$text")
         val report = buildReport(bound, s, emitViper(bound, s), SiliconOutcome.Verified, null)
         assertEquals(ModuleVerdict.INCOMPLETE, report.verdict, report.render())
     }
 
     companion object {
+        const val DEFAULT_CLASS_FIELDS =
+            """  permits:   Semaphore     = semaphore
+  isHeld:    AtomicBoolean = isHeld
+  token:     Token?        = token
+  expiresAt: Long          = expiresAt"""
+
         const val DEFAULT_INFO =
             """        val semaphore: Semaphore,
         @Volatile var expiresAt: Long,

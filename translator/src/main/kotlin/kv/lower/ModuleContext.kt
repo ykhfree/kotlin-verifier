@@ -132,6 +132,9 @@ internal class ModuleContext(
     val diagnostics = mutableListOf<Diagnostic>()
     val abstraction = Abstraction()
 
+    /** Why a counter increment at a position is not a reserve step (DESIGN-D.md 6.3), for the input check ([findReserves]). */
+    val notReserve = mutableMapOf<Pos, String>()
+
     /** DESIGN-B.md 2.1: a class module is an instance module; an object or companion object is an object module. */
     val kind: ModuleKind = if (moduleClass.classKind == ClassKind.CLASS) ModuleKind.INSTANCE else ModuleKind.OBJECT
 

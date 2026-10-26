@@ -2,7 +2,7 @@ package kv.kvir
 
 import kv.model.TrustedModels
 
-/** A broken well-formedness rule. [rule] is `W1`..`W16` (DESIGN-v0.md 1.4, DESIGN-B.md 5.2). */
+/** A broken well-formedness rule. [rule] is `W1`..`W17` (DESIGN-v0.md 1.4, DESIGN-B.md 5.2, DESIGN-D.md 6.5). */
 data class Violation(
     val rule: String,
     val message: String,
@@ -12,7 +12,8 @@ data class Violation(
 }
 
 /**
- * Checks the well-formedness rules W1-W14 (DESIGN-v0.md 1.4) with the changes and the rules W15-W16 of DESIGN-B.md 5.2.
+ * Checks the well-formedness rules W1-W14 (DESIGN-v0.md 1.4) with the changes and the rules W15-W16 of DESIGN-B.md 5.2,
+ * and W17 and the W10 change of DESIGN-D.md 6.5 (reserve steps).
  * The emitter must not run on a module with a violation.
  * W2 (expressions are pure) holds by construction: no [Expr] subtype has an effect, and every effectful node is a
  * [Stmt], so the Kotlin compiler rejects an effectful node in an expression position.
@@ -33,6 +34,7 @@ internal fun Expr.children(): List<Expr> =
         is TokenOf -> listOf(n)
         is Carried -> listOf(key, token)
         is Elvis -> listOf(a, b)
+        is Ite -> listOf(cond, a, b)
     }
 
 /** This expression and all its subexpressions. */
@@ -135,6 +137,7 @@ private class WellFormedChecker(
         checkLedger()
         checkFresh()
         checkRacyGets()
+        checkReserves()
         for (op in m.operations) checkAction(op.action, op)
         for (a in m.strayActions) checkAction(a, null)
         return out
@@ -208,6 +211,10 @@ private class WellFormedChecker(
             op.result?.let(::local)
             stmts(op.body)
             action(op.action)
+            op.reserve?.let {
+                pos("reserve step of ${op.name}", it.pos)
+                local(it.local)
+            }
         }
         m.strayActions.forEach(::action)
         m.ledger.forEach { pos("ledger entry for node ${it.node}", it.pos) }
@@ -571,6 +578,10 @@ private class WellFormedChecker(
                 if (token !is KType.Abs || types[token.name]?.template == null) report("W5", e.token.pos, "carried needs a template token, got $token")
             }
             is Elvis -> if (!sameBase(e.a.type, e.b.type) || e.a.type !is KType.RefT) report("W5", e.pos, "?: needs two objects of one class, got ${e.a.type} and ${e.b.type}")
+            is Ite -> {
+                need(e.cond, KType.BoolT)
+                if (!assignable(e.a.type, e.type) || !assignable(e.b.type, e.type)) report("W5", e.pos, "if-else of type ${e.type} has values of type ${e.a.type} and ${e.b.type}")
+            }
             is IntLit, is BoolLit, is NullLit, is Var -> Unit
         }
     }
@@ -777,10 +788,10 @@ private class WellFormedChecker(
     /**
      * The values an operation returns (DESIGN-B.md 2.6 rule 2): section locals, the action's out, racy read values,
      * cells and constants; never a field, `carried`, the key or a named free value. An object module's operation
-     * returns only cells and constants (DESIGN-v0.md W10).
+     * returns only cells, constants and its reserved val (DESIGN-v0.md W10, DESIGN-D.md 6.5).
      */
     private fun results(op: Operation) {
-        val cells = op.cells.map { it.local }.toSet()
+        val cells = op.cells.map { it.local }.toSet() + listOfNotNull(op.reserve?.local)
         val inputs = (listOf(op.action.key) + op.action.free.filter { it.sidecarName != null }).map { it.local }.toSet()
         op.body.walk().filterIsInstance<Return>().forEach { r ->
             r.e?.walk()?.forEach { x ->
@@ -791,7 +802,7 @@ private class WellFormedChecker(
                         else -> true
                     }
                 if (!ok) {
-                    val allowed = if (m.kind == ModuleKind.OBJECT) "only cells and constants" else "section locals, the action out, racy reads, cells and constants"
+                    val allowed = if (m.kind == ModuleKind.OBJECT) "only cells, constants and the reserved val" else "section locals, the action out, racy reads, cells and constants"
                     report("W10", x.pos, "result of ${op.name} reads ${x::class.simpleName} ${(x as? Var)?.local?.name ?: ""}; $allowed")
                 }
             }
@@ -880,6 +891,7 @@ private class WellFormedChecker(
         a.body.walk().filterIsInstance<ModelOp>().filter { it.op in TrustedModels.unboundedLongOps }.forEach {
             assumption(it.assumption, it.pos, it.op)
         }
+        op?.reserve?.let { assumption(it.assumption, it.pos, "the increment of the reserve step of ${op.name}") }
     }
 
     // ---- W15: a Fresh is a call of a `returns fresh` function; the class it returns has no other construction ----
@@ -928,11 +940,41 @@ private class WellFormedChecker(
         return ran
     }
 
+    // ---- W17: a reserve step (DESIGN-D.md 6.3, 6.5) ----
+
+    /**
+     * An operation has at most one reserve step (one [Operation.reserve]); it is a `fun` operation of an object module
+     * whose action is a compute. The step increments a module counter, and every step of the module the same one. Its
+     * reserved val is the one free value of the action with origin [Reservation]: an Int, or a non-null template token.
+     */
+    private fun checkReserves() {
+        val counters = linkedSetOf<String>()
+        for (op in m.operations) {
+            val reserved = op.action.free.filter { it.origin is Reservation }
+            val r = op.reserve
+            if (r == null) {
+                reserved.forEach { report("W17", it.local.pos, "${it.local.name} of ${op.name} is a reserved val, but the operation has no reserve step") }
+                continue
+            }
+            if (m.kind != ModuleKind.OBJECT || op.action.kind != ActionKind.COMPUTE || !op.kotlin.startsWith("fun ")) {
+                report("W17", r.pos, "reserve step of ${op.name}: v1 has reserve steps only in `fun` operations of an object module whose action is a compute")
+            }
+            if (r.counter !in m.state) report("W17", r.pos, "reserve step of ${op.name} increments ${r.counter.name}, which is not module state")
+            counters += r.counter.name
+            if (reserved.map { it.local } != listOf(r.local)) report("W17", r.pos, "the reserved val ${r.local.name} of ${op.name} must be the one free value of origin reservation of its action")
+            val t = r.local.type
+            val ok = if (r.template == null) t == KType.IntT else t is KType.Abs && !t.nullable && types[t.name]?.template != null
+            if (!ok) report("W17", r.pos, "the reserved val ${r.local.name} has type $t: a raw Long is an Int, a template a non-null template token")
+        }
+        m.strayActions.flatMap { it.free }.filter { it.origin is Reservation }.forEach { report("W17", it.local.pos, "stray action value ${it.local.name} is a reserved val: only an operation has a reserve step") }
+        if (counters.size > 1) report("W17", m.operations.firstNotNullOf { it.reserve }.pos, "the reserve steps use the counters $counters; v1 allows one counter for all of them")
+    }
+
     // ---- W14: every FIR node of the module file has exactly one disposition ----
 
     private fun checkLedger() {
         val ledger = m.ledger.groupBy { it.node }
-        val translated = (m.operations.map { it.action } + m.strayActions).flatMap { it.translated }.toSet()
+        val translated = ((m.operations.map { it.action } + m.strayActions).flatMap { it.translated } + m.operations.flatMap { it.reserve?.translated.orEmpty() }).toSet()
         ledger.filterValues { it.size > 1 }.forEach { (node, entries) ->
             report("W14", entries[1].pos, "FIR node $node has ${entries.size} ledger entries")
         }

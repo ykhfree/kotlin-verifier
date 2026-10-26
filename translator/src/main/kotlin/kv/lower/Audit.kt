@@ -65,10 +65,11 @@ internal class Audit(
     private val reach = mutableMapOf<FirNamedFunctionSymbol, String?>()
 
     /**
-     * Nodes an operation section translated (DESIGN-B.md 2.6), and the parts of an action call that run before the
-     * action: the default-value lambda of getOrPut and the value argument of put. Their untranslated nodes are audited.
+     * Nodes an operation section or a reserve step (DESIGN-D.md 6.4) translated, and the parts of an action call that
+     * run before the action: the default-value lambda of getOrPut and the value argument of put. Their untranslated
+     * nodes are audited.
      */
-    private val translated: Set<Int> = lowered.flatMap { it.second.action.translated }.toSet()
+    private val translated: Set<Int> = lowered.flatMap { it.second.action.translated + it.second.reserve?.translated.orEmpty() }.toSet()
     private val outsideRoots: Set<FirElement> =
         lowered.mapNotNull { (found, _) ->
             when (found.kind) {

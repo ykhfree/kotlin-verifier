@@ -23,6 +23,9 @@ import kotlin.test.assertTrue
  * unsupported module-state access outside every action is itself unsupported, as DESIGN-v0.md 5.8 says for the
  * module. The reason names the construct and its position. Before the fix such an action was verified, and its
  * failures could rest on the unmodeled construct (AI-CODE.md 12.1, T-haiku-2).
+ *
+ * DESIGN-D.md JD4: a `val` that takes the counter's next value before the action is a reserve step now (ReserveTest),
+ * so the fixtures here keep the old reason with a `var`, which is no reserve step (DESIGN-D.md 6.3 rule 2).
  */
 class InputTest {
     @TempDir
@@ -39,13 +42,15 @@ class InputTest {
 
     @Test
     fun `a token the counter makes outside the action makes the action unsupported, and names the counter operation`() {
-        val f = LockFixture(install("token"), before = "        val token = \"local-\${counter.incrementAndGet()}\"", operations = LockFixture.RESULT_OPERATION)
+        val f = LockFixture(install("token"), before = "        var token = \"local-\${counter.incrementAndGet()}\"", operations = LockFixture.RESULT_OPERATION)
         val m = f.lower(dir)
-        val u = assertUnsupported(m, "input token", f.at("val token"))
+        val u = assertUnsupported(m, "input token", f.at("var token = "))
         assertTrue("counter operation outside an action: counter.incrementAndGet() at ${f.where("counter.incrementAndGet()")}" in u.reason, u.reason)
+        // DESIGN-D.md 6.3: the reason also names the rule of the reserve step that the increment breaks.
+        assertTrue("$NOT_RESERVE (DESIGN-D 6.3 rule 2): token is a var" in u.reason, u.reason)
         assertTrue("DESIGN-v0.md 5.8" in u.reason, u.reason)
         // The construct itself stays in the ledger as unsupported; the check only adds the action's reason.
-        assertTrue(m.ledger.any { it.kind == DispositionKind.UNSUPPORTED && it.pos.line == f.at("val token").first }, m.ledger.joinToString("\n"))
+        assertTrue(m.ledger.any { it.kind == DispositionKind.UNSUPPORTED && it.pos.line == f.at("var token = ").first }, m.ledger.joinToString("\n"))
     }
 
     @Test
@@ -64,9 +69,9 @@ class InputTest {
 
     @Test
     fun `an input from a helper call outside the action names the call and the operation in the helper`() {
-        val f = LockFixture(install("token"), before = "        val token = nextToken()", companion = NEXT_TOKEN, operations = LockFixture.RESULT_OPERATION)
-        val u = assertUnsupported(f.lower(dir), "input token", f.at("val token"))
-        val call = f.at("nextToken()", after = "val token").let { (l, c) -> "Lock.kt:$l:$c" }
+        val f = LockFixture(install("token"), before = "        var token = nextToken()", companion = NEXT_TOKEN, operations = LockFixture.RESULT_OPERATION)
+        val u = assertUnsupported(f.lower(dir), "input token", f.at("var token = "))
+        val call = f.at("nextToken()", after = "var token = ").let { (l, c) -> "Lock.kt:$l:$c" }
         assertTrue("call of nextToken, which changes module state" in u.reason && "outside an action: nextToken() at $call" in u.reason, u.reason)
         assertTrue("counter operation outside an action: counter.incrementAndGet() at ${f.where("counter.incrementAndGet()")}" in u.reason, u.reason)
     }
@@ -92,10 +97,10 @@ class InputTest {
     @Test
     fun `an action that is unsupported for another reason also lists the input`() {
         val body = "if (e != null) {\n    e.expiresAt = now * 2\n    return@compute e\n}\nresult.set(token)\nInfo(Semaphore(0), now, AtomicBoolean(true), token)"
-        val f = LockFixture(body, before = "        val token = \"local-\${counter.incrementAndGet()}\"", operations = LockFixture.RESULT_OPERATION)
+        val f = LockFixture(body, before = "        var token = \"local-\${counter.incrementAndGet()}\"", operations = LockFixture.RESULT_OPERATION)
         val m = f.lower(dir)
         assertUnsupported(m, "Long *", f.at("now * 2"))
-        assertUnsupported(m, "input token", f.at("val token"))
+        assertUnsupported(m, "input token", f.at("var token = "))
         val status = m.run.status as Status.Unsupported
         assertEquals(m.run.body.walk().filterIsInstance<Unsupported>().count(), status.diagnostics.size, m.runText)
     }
@@ -115,15 +120,16 @@ class InputTest {
 
     @Test
     fun `the coroutine KeyLocalLock with its token made before compute has an unsupported tryLock, not a FAILED one`() {
+        // A var is no reserve step (DESIGN-D.md 6.3 rule 2); ReserveVerifyTest has the val, which is one.
         Silicon.check(Silicon.defaultHome())
         val ws = Workspace(dir)
-        ws.editKotlin("coroutine", "val acquiredToken = AtomicReference<String?>(null)\n", "val acquiredToken = AtomicReference<String?>(null)\n        val fresh = nextToken()\n")
+        ws.editKotlin("coroutine", "val acquiredToken = AtomicReference<String?>(null)\n", "val acquiredToken = AtomicReference<String?>(null)\n        var fresh = nextToken()\n")
         ws.editKotlin("coroutine", "val token = nextToken()\n                    existing.isHeld.set(true)", "val token = fresh\n                    existing.isHeld.set(true)")
         ws.editKotlin("coroutine", "val token = nextToken()\n                val newLock", "val token = fresh\n                val newLock")
         val r = ws.verify("coroutine")
         val text = r.render()
         assertEquals(ModuleVerdict.INCOMPLETE, r.verdict, text)
-        val line = ws.kotlinLine("coroutine", "val fresh = nextToken()")
+        val line = ws.kotlinLine("coroutine", "var fresh = nextToken()")
         assertEquals(Verdict.UNSUPPORTED, r.row("tryLock").verdict, text)
         assertTrue("UNSUPPORTED input fresh in action tryLock#" in text && "at KeyLocalLock.kt:$line:9: its value comes from" in text, text)
         assertTrue("call of nextToken, which changes module state" in text, text)

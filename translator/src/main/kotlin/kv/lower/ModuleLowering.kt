@@ -54,6 +54,8 @@ internal fun lowerModule(
     val actionSites = computes.filter { maps[it] != null }
     actionSites.forEach { ctx.collectAbstractions(it, maps.getValue(it)!!.key.name) }
     ctx.fixAnnotations().takeIf { it.isNotEmpty() }?.let { throw SidecarException(it) }
+    // DESIGN-D.md 6.3: the reserve steps, found for all operations before any is lowered.
+    val reserves = findReserves(ctx, sidecar.operations.mapNotNull { decl -> resolver.computeOf[decl.name.text]?.takeIf { maps[it] != null }?.let { decl to it } })
 
     val lowered = mutableListOf<Pair<FoundAction, Lowered>>()
     val operationActions =
@@ -64,7 +66,7 @@ internal fun lowerModule(
                 ctx.diagnostics += Diagnostic("U${found.site.pos.line}_${found.site.pos.col}", DiagnosticKind.UNSUPPORTED, "operation ${decl.name.text}: ${notActions.getValue(found.call)}", found.site.pos)
                 return@mapNotNull null
             }
-            val l = ActionLowering(ctx, found, decl, "${decl.name.text}#${found.site.pos.line}", map).run()
+            val l = ActionLowering(ctx, found, decl, "${decl.name.text}#${found.site.pos.line}", map, reserves[decl.name.text]).run()
             lowered += found to l
             Triple(decl, found, l)
         }
@@ -91,7 +93,7 @@ internal fun lowerModule(
                     is Selector.Fun -> "fun ${sel.target.text}"
                     is Selector.ComputeIn -> "compute in ${sel.target.text}"
                 }
-            Operation(decl.name.text, kotlin, found.inFunction?.let { ctx.posOf(it) } ?: found.site.pos, l.action, l.cells, l.result, l.body)
+            Operation(decl.name.text, kotlin, found.inFunction?.let { ctx.posOf(it) } ?: found.site.pos, l.action, l.cells, l.result, l.body, l.reserve)
         }
     val stray = strayActions.map { checkInputs(ctx, it, accesses).action }
     return Module(

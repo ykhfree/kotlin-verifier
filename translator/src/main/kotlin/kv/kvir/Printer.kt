@@ -80,14 +80,14 @@ private class KvirPrinter(
 
     fun printOperation(op: Operation): String {
         operation(op)
-        val ids = ((op.body.walk() + op.action.body.walk()).flatMap { s -> s.exprs().flatMap { it.walk() }.filterIsInstance<Arith>().mapNotNull { it.assumption } + listOfNotNull((s as? ModelOp)?.assumption) }).toSet()
+        val ids = ((op.body.walk() + op.action.body.walk()).flatMap { s -> s.exprs().flatMap { it.walk() }.filterIsInstance<Arith>().mapNotNull { it.assumption } + listOfNotNull((s as? ModelOp)?.assumption) } + listOfNotNull(op.reserve?.assumption)).toSet()
         val used = m.diagnostics.filter { it.id in ids }
         if (used.isNotEmpty()) line(0, "assumptions")
         used.forEach { line(1, "${it.id} ${it.kind} ${it.message}", it.pos) }
         return out.toString()
     }
 
-    private fun translatedIds(): Set<Int> = (m.operations.map { it.action } + m.strayActions).flatMap { it.translated }.toSet()
+    private fun translatedIds(): Set<Int> = ((m.operations.map { it.action } + m.strayActions).flatMap { it.translated } + m.operations.flatMap { it.reserve?.translated.orEmpty() }).toSet()
 
     private fun allPositions(): List<Pos> =
         m.state.map { it.pos } + m.classes.map { it.pos } + m.operations.map { it.pos } + m.strayActions.map { it.pos } +
@@ -99,6 +99,12 @@ private class KvirPrinter(
      */
     private fun operation(op: Operation) {
         line(0, "operation ${op.name} = ${op.kotlin}", op.pos)
+        op.reserve?.let { r ->
+            // DESIGN-D.md 6.2: the reserve step runs before the action, outside it.
+            val value = if (r.template != null) "tokenOf(${r.counter.name}.incrementAndGet())" else "${r.counter.name}.incrementAndGet()"
+            line(1, "reserve ${decl(r.local)} := $value${r.assumption?.let { " [ASSUME $it]" } ?: ""}", r.pos)
+            line(2, "translates FIR nodes ${ranges(r.translated)}")
+        }
         op.cells.forEach { line(1, "cell   ${decl(it.local)} := ${expr(it.init)}", it.pos) }
         val returned = op.returnedValue
         val result = op.result
@@ -151,7 +157,8 @@ private class KvirPrinter(
     }
 
     private fun freeValue(fv: FreeValue): String {
-        val name = if (fv.sidecarName == null) "${fv.local.name} (unnamed)" else fv.local.name
+        // A reserved val has no sidecar name, but it is the exact value of the reserve step (DESIGN-D.md 6.2).
+        val name = if (fv.sidecarName == null && fv.origin !is Reservation) "${fv.local.name} (unnamed)" else fv.local.name
         return "$name: ${type(fv.local.type)} <- ${fv.kotlin} (${origin(fv.origin)})"
     }
 
@@ -164,6 +171,7 @@ private class KvirPrinter(
             is NondetCall -> "nondet ${o.model} ${at(o.pos)}"
             is RacyRead -> "racy read ${at(o.pos)}"
             is Computed -> "computed ${at(o.pos)}"
+            is Reservation -> "reserved ${at(o.pos)}"
         }
 
     private fun stmt(
@@ -261,12 +269,13 @@ private class KvirPrinter(
             is TokenOf -> "tokenOf(${expr(e.n)})"
             is Carried -> "carried(S, ${expr(e.key)}, ${expr(e.token)})"
             is Elvis -> "${operand(e.a)} ?: ${operand(e.b)}"
+            is Ite -> "if ${operand(e.cond)} then ${operand(e.a)} else ${operand(e.b)}"
         }
 
     /** Operators inside operators get parentheses, so the printed text has one reading. */
     private fun operand(e: Expr): String =
         when (e) {
-            is Arith, is Cmp, is And, is Or, is Not, is Elvis -> "(${expr(e)})"
+            is Arith, is Cmp, is And, is Or, is Not, is Elvis, is Ite -> "(${expr(e)})"
             else -> expr(e)
         }
 
