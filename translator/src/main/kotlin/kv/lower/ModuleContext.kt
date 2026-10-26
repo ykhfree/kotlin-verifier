@@ -541,9 +541,9 @@ internal class ModuleContext(
         model: String,
     ): Boolean = entriesOf(op).any { it.model == model && it.role == Role.OP && !(model == TrustedModels.KOTLINX_SEMAPHORE_MODEL && it.name == "release") }
 
-    /** The reads of property [sym] in the module file. */
+    /** The reads of property [sym] in the module file. The target of an assignment is not a read; its value is. */
     private fun reads(sym: FirPropertySymbol): List<FirPropertyAccessExpression> =
-        index.nodes.filterIsInstance<FirPropertyAccessExpression>().filter { calleeOf(it) == sym && index.parent(it) !is FirVariableAssignment }
+        index.nodes.filterIsInstance<FirPropertyAccessExpression>().filter { calleeOf(it) == sym && (index.parent(it) as? FirVariableAssignment)?.lValue !== it }
 
     /** Each constructor call of [field]'s class in the module file, with the argument for [field] (or its default). */
     private fun constructions(field: ObjField): List<Pair<FirFunctionCall, FirExpression?>> =

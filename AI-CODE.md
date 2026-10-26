@@ -405,3 +405,32 @@ S1, S2 수정의 확인 (메인 세션): 새 테스트 5개 중 결함 테스트
 2. 같은 새 12개에 수정 전 도구(`git worktree`, 이 절을 커밋한 HEAD)와 수정 뒤 도구를 모두 돌린다.
 3. **결정 기준 (결과 전):** 수정 뒤 도구의 판정 action 비율이 새 12개에서 75% 이상이면 A1-A5가 일반화한다고 본다. 75% 미만이면 2차 12개에 맞춘 것으로 본다. 참고값: 2b의 비율은 22/36 = 61%다.
 4. 놓침과 오경보를 말하려면 새 12개의 정답이 필요하다. 1차와 같은 블라인드 판정자 3명이 필요하다. 이 비용은 사용자가 정한다. 판정자가 없으면 일반화 결과는 판정 비율만 보고한다.
+
+### 14.4 3a 결과 (2차 12개, A1-A5 뒤; 2026-10-26, 메인 세션 확인)
+
+구현 `f3f267f`, 실행 `846d4e4` (`aicode/round3a/`). sidecar는 2b 뒤에 절 4개가 더해졌으므로, 같은 sidecar로 수정 전 도구를 돌린 `aicode/round3a/base/`의 action 행이 2b와 같음을 agent가 확인했다. 그래서 변화는 모두 lowering에서 왔다.
+
+| 대조 (action 36개, 메인 세션이 보고서 원문으로 다시 셈) | 2b | 3a |
+|---|---|---|
+| 검출 | 14 | 22 |
+| 맞은 PROVEN | 8 | 10 |
+| 놓침 | 0 | 0 |
+| 오경보 | 0 | 0 |
+| 판정 안 함 | 14 | 4 |
+
+예측 대조:
+
+| 예측 | 결과 |
+|---|---|
+| 1. 새 판정 11개 | 틀림 (10개). T-opus-2 tryLock은 A2가 값 if를 받아들인 뒤 드러난 `Long.MAX_VALUE` 읽기 때문에 UNSUPPORTED다 ("UNSUPPORTED read of Companion.MAX_VALUE in action tryLock#46 at KeyLocalLock.kt:85:33") |
+| 2. T-haiku-3 unLock, T-sonnet-3 unLock은 FAILED | 맞음 (`progress_owner`, `ends_only_if P3a`) |
+| 3. 새 tryLock·sweep은 FAILED, T-haiku-1·T-opus-1 unLock은 PROVEN | 맞음 |
+| 4. 놓침 0, 오경보 0, 판정 33개 | 일부 맞음: 놓침 0, 오경보 0, 판정 32개 |
+| 5. gate와 변이 63회는 그대로 | 맞음 (테스트 583개 통과, 불일치 0; 메인 세션 확인) |
+
+판정 안 함 4개: Part B tryLock 3개(T-haiku-1, T-haiku-2, T-haiku-4)와 T-opus-2 tryLock(`Long.MAX_VALUE`). `Long.MAX_VALUE`는 사전 등록한 A1-A5 밖이라 넣지 않았다. 14.3의 일반화 측정에서는 수정 뒤 도구를 바꾸지 않고 잰다.
+
+### 14.5 수정 중에 찾은 기존 결함 S3 (2026-10-26)
+
+`ModuleContext.reads()`는 대입문의 자식인 읽기를 모두 뺐다. 대입의 대상(왼쪽)만 빼야 하는데 값(오른쪽)까지 뺐다. 그래서 셀이나 평탄화 필드가 `x = cell`처럼 대입을 거쳐 새어도 escape 검사가 놓쳤다 (agent의 임시 probe: 그런 셀을 가진 action이 supported, 모듈이 complete). 메인 세션이 고쳤다: 대입의 대상인 읽기만 뺀다. 새 테스트 2개(셀, 평탄화 필드)는 수정 전 코드에서 실패하고 수정 뒤 통과한다.
+확인: 테스트 585개 통과, 변이 63회 불일치 0, 3a의 12개 보고서는 판정 줄이 모두 같다 (다시 돌림).
