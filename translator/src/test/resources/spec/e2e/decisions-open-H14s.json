@@ -1,9 +1,9 @@
 {"format": "kv-decisions/1",
- "from": "the decisions of the real run of 2026-10-26 (specdraft/e2e-2026-10-26/decisions.json) and the user's decision UC1 (DESIGN-C.md 10): no monitor duty, so H14s stays undecided. Not a signature",
+ "from": "the decisions of the real run of 2026-10-26 (specdraft/e2e-2026-10-26/decisions.json) and the user's decision UC1 (DESIGN-C.md 10): no monitor duty, so H14s stays undecided. D9 names its cell, so that a later run can take this file as earlier decisions (--decisions-ref). Not a signature",
  "decisions": [
  {"group": "D1", "option": "A", "note": "user decision 2026-10-24 (AI-CODE.md 11): strict; at exactly the lease end the lock is still held, for tryLock and for the monitor"},
  {"group": "D4", "option": "A", "note": "user decision 2026-10-24 (expired_takeover, MUTATION.md 9.5): tryLock takes over an expired lock at once"},
  {"group": "D7", "option": "A", "note": "the issue rule: a token's lease starts at its own acquisition (gLease = now + timeout)"},
  {"group": "D5", "option": "A", "note": "user decision 2026-10-25 (DESIGN-C UC9): unLock of an unbacked permit returns false"},
- {"group": "D9", "option": "open", "note": "user decision UC1 (DESIGN-C.md 10): no monitor duty; the signed sidecar leaves the cell open"}
+ {"group": "D9", "option": "open", "cells": {"H14s": "open"}, "note": "user decision UC1 (DESIGN-C.md 10): no monitor duty; the signed sidecar leaves the cell open"}
 ]}

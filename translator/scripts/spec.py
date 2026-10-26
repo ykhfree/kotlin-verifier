@@ -117,10 +117,11 @@ C4 form of questions (DESIGN-C.md 3.3, 3.6; user decision JC1 in 10):
        verdict nor OPEN. DESIGN-C.md 3.3 rule 4 asks for the failing clause that decides the cell; the pilot used
        this proxy.
     5. the cell is a boundary cell (`boundary` in the cell file: a clock reading equals a lease).
-    6. (with --reference or earlier decisions) a draft decides a cell that is left undecided on purpose: the reference
-       sidecar has the cell OPEN, or an earlier decision (--decisions-ref FILE) leaves it "open", and a draft has it
-       DETERMINED (DESIGN-C.md 10.6 finding 3: rule 4 skips the cells the reference leaves OPEN). A cell that an
-       earlier decision leaves open must be a scenario of these drafts.
+    6. (with --reference or earlier decisions) a draft decides a cell that is left undecided on purpose: an earlier
+       decision (--decisions-ref FILE) leaves it "open", or, in mode a only, the reference sidecar has it OPEN; and a
+       draft has it DETERMINED (DESIGN-C.md 10.6 finding 3: rule 4 skips the cells the reference leaves OPEN). In mode
+       b the hole is true, so a reference OPEN cell usually means that the hole decides it, not that it is left open
+       on purpose. A cell that an earlier decision leaves open must be a scenario of these drafts.
   Mode a (with the hole) is used if every check.json has it, else mode b; --mode picks one. Each rule reads that mode.
   With --groups, every question cell must be in exactly one group, and a group may list question cells only.
   --bundle writes the review bundle: one question per group in the shape of DESIGN-C.md 3.6.
@@ -1208,9 +1209,9 @@ class Draft:
             raise InputError("%s: %s: %s" % (name, answers_path, errors[0]))
 
 
-def rules_of(row, drafts, reference, boundary, left_open):
-    """The rules of DESIGN-C.md 3.3 (with JC1, and rule 6 of 10.6 finding 3) that make scenario row `row` a question.
-    LEFT_OPEN holds the rows that earlier decisions leave open."""
+def rules_of(row, drafts, reference, boundary, left_open, mode):
+    """The rules of DESIGN-C.md 3.3 (with JC1, and rule 6 of 10.6 finding 3) that make scenario row `row` a question in
+    MODE. LEFT_OPEN holds the rows that earlier decisions leave open."""
     formal = drafts[0].answers[row]["formal_cell"]
     st = [d.answers[row]["status"] for d in drafts]
     vs = [verdict(d.cells[formal]) for d in drafts]
@@ -1236,7 +1237,7 @@ def rules_of(row, drafts, reference, boundary, left_open):
                 hit.append(4)
     if boundary.get(formal):
         hit.append(5)
-    if (reference is not None and reference.get(formal) == "OPEN") or row in left_open:
+    if (mode == "a" and reference is not None and reference.get(formal) == "OPEN") or row in left_open:
         if any(kind == "DETERMINED" for kind, _ in vs):
             hit.append(6)
     return hit
@@ -1412,15 +1413,16 @@ def questions_cmd(args, quiet=False):
         raise InputError("the earlier decisions leave %s open, which is no scenario of these drafts (decisions of another cell file?)" % ", ".join(unknown))
     questions = {}
     for row in rows:
-        hit = rules_of(row, drafts, reference, boundary, left)
+        hit = rules_of(row, drafts, reference, boundary, left, mode)
         if hit:
             questions[row] = hit
     rule1 = "the author answered open or assumed" if len(drafts) == 1 else "one author answered open, or two or more assumed"
-    rule6 = (["the reference's OPEN cells"] if reference is not None else []) + (["%d cell(s) that earlier decisions leave open" % len(left)] if refs else [])
+    rule6 = (["the reference's OPEN cells"] if reference is not None and mode == "a" else []) + (["%d cell(s) that earlier decisions leave open" % len(left)] if refs else [])
+    rule6_off = "off (no earlier decisions; the reference's OPEN cells count in mode a only)" if reference is not None else "off (no --reference, no earlier decisions)"
     say("kv spec questions: %d draft(s) (%s), mode %s; rule 1: %s; rule 2 %s; rule 4 %s; rule 6 %s" % (
         len(drafts), ", ".join(d.name for d in drafts), mode, rule1,
         "on" if len(drafts) > 1 else "off (one draft)", "on (proxy: --reference)" if reference is not None else "off (no --reference)",
-        "on (%s)" % ", ".join(rule6) if rule6 else "off (no --reference, no earlier decisions)"))
+        "on (%s)" % ", ".join(rule6) if rule6 else rule6_off))
     for row, hit in questions.items():
         f = drafts[0].answers[row]["formal_cell"]
         say("  %s%s rules %s | answers %s | drafts %s%s" % (

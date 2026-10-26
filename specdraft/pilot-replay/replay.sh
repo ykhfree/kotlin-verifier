@@ -48,7 +48,8 @@ step 06-outcomes-D1 outcomes --run "$RUN" --group D1 --option "A=$R/pilot-c/alig
 # Step 8: the alignment box, the stand-in alignment, the check.
 step 07-align align --run "$RUN" --decisions "$HERE/decisions-opus.json"
 cp "$R/pilot-c/aligned/opus.kv" "$RUN/align/box/DRAFT.kv"
-# The pilot's aligned draft decides C16, which D9 leaves open: the check fails (exit 1) and writes FEEDBACK-1.md.
+# The pilot's aligned draft decides C16, which D9 leaves open: the check fails (exit 1) and writes FEEDBACK-1.md
+# (copied to results/align-feedback-1.md).
 step 08-align-check align --run "$RUN" --check || true
 
 # Cost data (DESIGN-C.md 10.4): the phase-2 box of the generated cells, on the same draft.
@@ -60,6 +61,7 @@ step 11-generated-cells cells --run "$GEN"
 cp "$RUN/bundle.md" "$RUN/questions.json" "$OUT/"
 cp "$RUN/outcomes/D1.json" "$OUT/outcomes-D1.json"
 cp "$RUN/align/result.json" "$OUT/align-result.json"
+cp "$RUN/align/box/FEEDBACK-1.md" "$OUT/align-feedback-1.md"
 cp "$RUN/cells/cost.json" "$OUT/cost-pilot-cells.json"
 cp "$GEN/cells/cost.json" "$OUT/cost-generated-cells.json"
 cp "$GEN/cells/scenario.cells" "$OUT/generated.cells"

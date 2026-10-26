@@ -145,13 +145,14 @@ class SpecQuestionsScriptTest {
      * DESIGN-C.md 10.6 finding 3 on the real run's data: `kv spec check --root` with the run's 65 cells on the run's
      * phase-1 draft (spec/e2e/check-d1.json) and on the current signed sidecar (check-reference.json): the files
      * WORK/run/drafts/d1/check/check.json and WORK/run/reference/check/check.json of
-     * specdraft/keylocallock/e2e-open-decision.sh, with the WORK and repository paths removed. The answers are the run's. Mode a: rule 6 adds H14s alone (the
-     * monitor duty that the user declined, UC1) to the run's 15 question cells. Mode b: the reference's clauses alone
-     * also leave open the 4 cells after a monitor step that took t1's entry (its hole decides them), and rule 6 asks
-     * them too.
+     * specdraft/keylocallock/e2e-open-decision.sh, with the WORK and repository paths removed. The answers are the run's.
+     * Mode a: rule 6 adds H14s alone (the monitor duty that the user declined, UC1) to the run's 15 question cells.
+     * Mode b: the reference's clauses alone also leave open 4 cells after a monitor step that took t1's entry (O8r,
+     * O8s, O9s, O10s; its hole decides them), so the reference's OPEN cells do not count; only an earlier decision
+     * that leaves H14s open makes it a question.
      */
     @Test
-    fun `rule 6 on the real run - mode a adds H14s alone to the run's 15 questions, mode b adds 4 more cells`() {
+    fun `rule 6 on the real run - mode a adds H14s alone to the run's 15 questions, mode b only from an earlier open decision`() {
         val run = File(pilotDir.parentFile, "specdraft/e2e-2026-10-26")
         val args = listOf("--check", "d1=${specResource("e2e/check-d1.json")}", "--answers", "d1=${File(run, "answers.json")}", "--reference", specResource("e2e/check-reference.json").path)
         val earlier = ((parseJson(File(run, "questions.json").readText()) as Map<*, *>)["questions"] as List<*>).map { (it as Map<*, *>)["cell"] as String }
@@ -162,8 +163,13 @@ class SpecQuestionsScriptTest {
         assertEquals(mapOf("H14s" to listOf(6)), rules(a).filterValues { 6 in it }, a)
         assertTrue("  H14s rules 6 | answers d1=no_entry/settled | drafts d1=no_entry | reference open" in a, a)
         val (_, b) = questions(*args.toTypedArray(), "--mode", "b")
-        assertEquals(listOf("H14s", "O8r", "O8s", "O9s", "O10s"), rules(b).filterValues { 6 in it }.keys.toList(), b)
-        assertEquals(20, selected(b).size, b)
+        assertEquals(emptyMap(), rules(b).filterValues { 6 in it }, b)
+        assertEquals(earlier, selected(b), b)
+        assertTrue(b.lines().first().endsWith("; rule 6 off (no earlier decisions; the reference's OPEN cells count in mode a only)"), b)
+        val (_, decided) = questions(*args.toTypedArray(), "--mode", "b", "--decisions-ref", specResource("e2e/decisions-open-H14s.json").path)
+        assertEquals(mapOf("H14s" to listOf(6)), rules(decided).filterValues { 6 in it }, decided)
+        assertEquals((earlier + "H14s").toSet(), selected(decided).toSet(), decided)
+        assertTrue(decided.lines().first().endsWith("; rule 6 on (1 cell(s) that earlier decisions leave open)"), decided)
     }
 
     private fun groupFile(edit: (String) -> String): File = File(dir, "groups.json").apply { writeText(edit(specResource("questions/pilot-groups.json").readText())) }
