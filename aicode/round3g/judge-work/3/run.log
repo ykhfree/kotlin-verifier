@@ -1,0 +1,108 @@
+=== G-haiku-3 ===
+-- S1 tryLock at the lease boundary (lockTimeoutMillis=100, first tryLock at T)
+  T+0   tryLock(s1) -> local-1 ; entry LockInfo@59690aa4(token=local-1, expiresAt=1794007085179, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+  T+99  tryLock(s1) -> null ; entry LockInfo@59690aa4(token=local-1, expiresAt=1794007085179, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+  T+100 tryLock(s1) -> local-3 ; before LockInfo@59690aa4(token=local-1, expiresAt=1794007085179, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after LockInfo@1bc6a36e(token=local-3, expiresAt=1794007085279, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+        [progress_live requires null here; P3a requires that local-1 stays held]
+  T+100 unLock(s1, local-1) -> false ; entry LockInfo@1bc6a36e(token=local-3, expiresAt=1794007085279, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+  control s1b: T+0 -> local-4 ; T+101 -> local-5 ; entry LockInfo@7006c658(token=local-5, expiresAt=1794007085280, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) [expired_takeover]
+-- S2 owner's unLock while its entry still carries its token (lease T+100, no monitor pass)
+  s2a: tryLock at T -> local-6 ; unLock at T+99 -> true ; before LockInfo@6fffcba5(token=local-6, expiresAt=1794007095179, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after absent
+  s2b: tryLock at T -> local-7 ; unLock at T+100 -> false ; before LockInfo@d7b1517(token=local-7, expiresAt=1794007095179, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after LockInfo@d7b1517(token=local-7, expiresAt=1794007095179, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+  s2c: tryLock at T -> local-8 ; unLock at T+5000 -> false ; before LockInfo@16c0663d(token=local-8, expiresAt=1794007095179, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after LockInfo@16c0663d(token=local-8, expiresAt=1794007095179, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+        [progress_owner requires true in all three rows]
+-- S4 sidecar probe (fixed clock)
+  t1=local-9 backed=true ; t2=null ; unLock(t1)=true ; unLock(t1) again=false ; entry absent
+-- S5 cap (LocalLockLimit.maxEntries = current map size)
+  new key at cap: tryLock -> local-12 ; entry absent [cap_unbacked]
+  unLock of the unbacked token -> false ; entry absent [P1: false]
+  existing key at cap, live (local-11): tryLock -> null [progress_live: null]
+  existing key at cap, expired: tryLock -> local-14 ; entry LockInfo@36d64342(token=local-14, expiresAt=1794007115280, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) [expired_takeover]
+-- S6 stress: 8 threads x 20000 rounds on 4 keys, fixed clock
+  acquired=67961 overlapping holders=0 owner unLock refused=0 entries left=0
+-- S3 one monitor pass while System.currentTimeMillis() == expiresAt (real clock)
+  trial 2: the clock read 1793007085269 before and after the pass
+    lease r   (local-160017): before LockInfo@97e1986(token=local-160017, expiresAt=1793007085269, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after absent
+    lease r+1        : before LockInfo@26f67b76(token=local-160018, expiresAt=1793007085270, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after LockInfo@26f67b76(token=local-160018, expiresAt=1793007085270, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+        [sweep P3a: a pass with now == 1793007085269 must not end local-160017, whose lease is 1793007085269]
+=== G-sonnet-4 ===
+-- S1 tryLock at the lease boundary (lockTimeoutMillis=100, first tryLock at T)
+  T+0   tryLock(s1) -> local-1 ; entry LockInfo@59690aa4(token=local-1, expiresAt=1794007085470, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+  T+99  tryLock(s1) -> null ; entry LockInfo@59690aa4(token=local-1, expiresAt=1794007085470, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+  T+100 tryLock(s1) -> local-2 ; before LockInfo@59690aa4(token=local-1, expiresAt=1794007085470, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after LockInfo@59690aa4(token=local-2, expiresAt=1794007085570, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+        [progress_live requires null here; P3a requires that local-1 stays held]
+  T+100 unLock(s1, local-1) -> false ; entry LockInfo@59690aa4(token=local-2, expiresAt=1794007085570, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+  control s1b: T+0 -> local-3 ; T+101 -> local-4 ; entry LockInfo@61a52fbd(token=local-4, expiresAt=1794007085571, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) [expired_takeover]
+-- S2 owner's unLock while its entry still carries its token (lease T+100, no monitor pass)
+  s2a: tryLock at T -> local-5 ; unLock at T+99 -> true ; before LockInfo@7cdbc5d3(token=local-5, expiresAt=1794007095470, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after absent
+  s2b: tryLock at T -> local-6 ; unLock at T+100 -> true ; before LockInfo@6adca536(token=local-6, expiresAt=1794007095470, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after absent
+  s2c: tryLock at T -> local-7 ; unLock at T+5000 -> true ; before LockInfo@357246de(token=local-7, expiresAt=1794007095470, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after absent
+        [progress_owner requires true in all three rows]
+-- S4 sidecar probe (fixed clock)
+  t1=local-8 backed=true ; t2=null ; unLock(t1)=true ; unLock(t1) again=false ; entry absent
+-- S5 cap (LocalLockLimit.maxEntries = current map size)
+  new key at cap: tryLock -> local-10 ; entry absent [cap_unbacked]
+  unLock of the unbacked token -> false ; entry absent [P1: false]
+  existing key at cap, live (local-9): tryLock -> null [progress_live: null]
+  existing key at cap, expired: tryLock -> local-11 ; entry LockInfo@34ce8af7(token=local-11, expiresAt=1794007115571, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) [expired_takeover]
+-- S6 stress: 8 threads x 20000 rounds on 4 keys, fixed clock
+  acquired=73605 overlapping holders=0 owner unLock refused=0 entries left=0
+-- S3 one monitor pass while System.currentTimeMillis() == expiresAt (real clock)
+  trial 1: the clock read 1793007085551 before and after the pass
+    lease r   (local-73617): before LockInfo@735b478(token=local-73617, expiresAt=1793007085551, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after absent
+    lease r+1        : before LockInfo@2c9f9fb0(token=local-73618, expiresAt=1793007085552, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore) ; after LockInfo@2c9f9fb0(token=local-73618, expiresAt=1793007085552, isHeld=true, permits=0, semaphore=java.util.concurrent.Semaphore)
+        [sweep P3a: a pass with now == 1793007085551 must not end local-73617, whose lease is 1793007085551]
+=== G-opus-1 ===
+-- S1 tryLock at the lease boundary (lockTimeoutMillis=100, first tryLock at T)
+  T+0   tryLock(s1) -> local-1 ; entry LockInfo@65e579dc(token=local-1, expiresAt=1794007085753, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore)
+  T+99  tryLock(s1) -> null ; entry LockInfo@65e579dc(token=local-1, expiresAt=1794007085753, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore)
+  T+100 tryLock(s1) -> local-3 ; before LockInfo@65e579dc(token=local-1, expiresAt=1794007085753, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore) ; after LockInfo@483bf400(token=local-3, expiresAt=1794007085853, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore)
+        [progress_live requires null here; P3a requires that local-1 stays held]
+  T+100 unLock(s1, local-1) -> false ; entry LockInfo@483bf400(token=local-3, expiresAt=1794007085853, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore)
+  control s1b: T+0 -> local-4 ; T+101 -> local-5 ; entry LockInfo@2eee9593(token=local-5, expiresAt=1794007085854, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore) [expired_takeover]
+-- S2 owner's unLock while its entry still carries its token (lease T+100, no monitor pass)
+  s2a: tryLock at T -> local-6 ; unLock at T+99 -> true ; before LockInfo@725bef66(token=local-6, expiresAt=1794007095753, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore) ; after absent
+  s2b: tryLock at T -> local-7 ; unLock at T+100 -> true ; before LockInfo@5e025e70(token=local-7, expiresAt=1794007095753, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore) ; after absent
+  s2c: tryLock at T -> local-8 ; unLock at T+5000 -> true ; before LockInfo@1fbc7afb(token=local-8, expiresAt=1794007095753, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore) ; after absent
+        [progress_owner requires true in all three rows]
+-- S4 sidecar probe (fixed clock)
+  t1=local-9 backed=true ; t2=null ; unLock(t1)=true ; unLock(t1) again=false ; entry absent
+-- S5 cap (LocalLockLimit.maxEntries = current map size)
+  new key at cap: tryLock -> local-12 ; entry absent [cap_unbacked]
+  unLock of the unbacked token -> false ; entry absent [P1: false]
+  existing key at cap, live (local-11): tryLock -> null [progress_live: null]
+  existing key at cap, expired: tryLock -> local-14 ; entry LockInfo@17f6480(token=local-14, expiresAt=1794007115854, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore) [expired_takeover]
+-- S6 stress: 8 threads x 20000 rounds on 4 keys, fixed clock
+  acquired=72404 overlapping holders=0 owner unLock refused=0 entries left=0
+-- S3 one monitor pass while System.currentTimeMillis() == expiresAt (real clock)
+  trial 1: the clock read 1793007085811 before and after the pass
+    lease r   (local-160015): before LockInfo@12843fce(token=local-160015, expiresAt=1793007085811, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore) ; after absent
+    lease r+1        : before LockInfo@3dd3bcd(token=local-160016, expiresAt=1793007085812, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore) ; after LockInfo@3dd3bcd(token=local-160016, expiresAt=1793007085812, isHeld=true, permits=1, semaphore=java.util.concurrent.Semaphore)
+        [sweep P3a: a pass with now == 1793007085811 must not end local-160015, whose lease is 1793007085811]
+=== G-opus-2 ===
+-- S1 tryLock at the lease boundary (lockTimeoutMillis=100, first tryLock at T)
+  T+0   tryLock(s1) -> local-1 ; entry LockInfo@5a42bbf4(token=local-1, expiresAt=1794007086012, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl)
+  T+99  tryLock(s1) -> null ; entry LockInfo@5a42bbf4(token=local-1, expiresAt=1794007086012, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl)
+  T+100 tryLock(s1) -> local-2 ; before LockInfo@5a42bbf4(token=local-1, expiresAt=1794007086012, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl) ; after LockInfo@61443d8f(token=local-2, expiresAt=1794007086112, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl)
+        [progress_live requires null here; P3a requires that local-1 stays held]
+  T+100 unLock(s1, local-1) -> false ; entry LockInfo@61443d8f(token=local-2, expiresAt=1794007086112, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl)
+  control s1b: T+0 -> local-3 ; T+101 -> local-4 ; entry LockInfo@649d209a(token=local-4, expiresAt=1794007086113, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl) [expired_takeover]
+-- S2 owner's unLock while its entry still carries its token (lease T+100, no monitor pass)
+  s2a: tryLock at T -> local-5 ; unLock at T+99 -> true ; before LockInfo@23223dd8(token=local-5, expiresAt=1794007096012, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl) ; after absent
+  s2b: tryLock at T -> local-6 ; unLock at T+100 -> true ; before LockInfo@7d417077(token=local-6, expiresAt=1794007096012, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl) ; after absent
+  s2c: tryLock at T -> local-7 ; unLock at T+5000 -> true ; before LockInfo@7dc36524(token=local-7, expiresAt=1794007096012, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl) ; after absent
+        [progress_owner requires true in all three rows]
+-- S4 sidecar probe (fixed clock)
+  t1=local-8 backed=true ; t2=null ; unLock(t1)=true ; unLock(t1) again=false ; entry absent
+-- S5 cap (LocalLockLimit.maxEntries = current map size)
+  new key at cap: tryLock -> local-10 ; entry absent [cap_unbacked]
+  unLock of the unbacked token -> false ; entry absent [P1: false]
+  existing key at cap, live (local-9): tryLock -> null [progress_live: null]
+  existing key at cap, expired: tryLock -> local-11 ; entry LockInfo@edf4efb(token=local-11, expiresAt=1794007116113, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl) [expired_takeover]
+-- S6 stress: 8 threads x 20000 rounds on 4 keys, fixed clock
+  acquired=70690 overlapping holders=0 owner unLock refused=0 entries left=0
+-- S3 one monitor pass while System.currentTimeMillis() == expiresAt (real clock)
+  trial 1: the clock read 1793007086089 before and after the pass
+    lease r   (local-70702): before LockInfo@6276ae34(token=local-70702, expiresAt=1793007086089, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl) ; after absent
+    lease r+1        : before LockInfo@7946e1f4(token=local-70703, expiresAt=1793007086090, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl) ; after LockInfo@7946e1f4(token=local-70703, expiresAt=1793007086090, isHeld=true, permits=0, semaphore=kotlinx.coroutines.sync.SemaphoreImpl)
+        [sweep P3a: a pass with now == 1793007086089 must not end local-70702, whose lease is 1793007086089]

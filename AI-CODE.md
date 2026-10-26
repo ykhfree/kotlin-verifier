@@ -470,3 +470,20 @@ S1, S2 수정의 확인 (메인 세션): 새 테스트 5개 중 결함 테스트
 6. 2차의 T-opus-2 tryLock(`Long.MAX_VALUE`)과 3g의 G-opus-2 tryLock(셀을 helper에 넘김)은 Part B 밖이므로 UNSUPPORTED 그대로다.
 
 결과: 2차 12개는 판정 32 → 35 (36개 중), 3g 12개는 31 → 35 (36개 중)로 예측한다.
+
+### 14.7 새 12개의 정답과 대조 (2026-10-26)
+
+판정자 3명 (블라인드 deep-reasoner, 각 4개; `aicode/round3g/judgments-{1,2,3}.md`, harness는 `judge-work/`). 판정자는 도구 결과, AI-CODE.md, HISTORY.md, git 기록을 보지 않았다.
+
+정답 (action 단위): tryLock과 sweep은 12개 모두 결함이다 (`progress_live`·P3a, 경계 `now == expiresAt`를 만료로 봄). unLock은 G-haiku-3만 결함이다 (`progress_owner`: 만료된 entry의 주인 해제를 거부). sidecar 밖 결함과 undecided는 0이다. 세 판정자 모두 harness로 경계 시나리오를 재현했다 (lease − 1에서 null, lease에서 새 토큰).
+
+| 대조 (action 36개, 메인 세션이 보고서 원문으로 셈) | 수정 전 도구 | 수정 뒤 도구 |
+|---|---|---|
+| 검출 | 17 | 20 |
+| 맞은 PROVEN | 9 | 11 |
+| **놓침** | **0** | **0** |
+| **오경보** | **0** | **0** |
+| 판정 안 함 | 10 | 5 |
+
+결론: 새 코드에서도 도구가 판정한 action은 모두 정답과 맞았다. A1-A5는 새 코드의 판정 범위를 넓히면서 놓침과 오경보를 만들지 않았다 (n = 12개 구현, 36 action).
+판정자들의 공통 지적: SPEC.md의 "once `lockTimeoutMillis` has passed"는 경계를 정하지 않는다. 경계 결함은 서명된 sidecar(`>`) 기준이다.

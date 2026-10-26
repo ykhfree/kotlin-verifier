@@ -1,0 +1,28 @@
+### G-haiku-4: compile
+### G-haiku-4: run
+== A: tryLock around the lease. Holder 1 acquires at base; its lease is base+100.
+  now = base+99: holder1=local-1 entry(token=local-1, expiresAt=1794007128460, isHeld=true, permits=0)
+    tryLock -> null ; map: entry(token=local-1, expiresAt=1794007128460, isHeld=true, permits=0) ; then unLock(holder1) -> true   [sidecar: res == NULL (progress_live); holder 1 stays held (P3a)]
+  now = base+100: holder1=local-3 entry(token=local-3, expiresAt=1794007128460, isHeld=true, permits=0)
+    tryLock -> local-4 ; map: entry(token=local-4, expiresAt=1794007128560, isHeld=true, permits=0) ; then unLock(holder1) -> false   [sidecar: res == NULL (progress_live); holder 1 stays held (P3a)]
+  now = base+101: holder1=local-5 entry(token=local-5, expiresAt=1794007128460, isHeld=true, permits=0)
+    tryLock -> local-6 ; map: entry(token=local-6, expiresAt=1794007128561, isHeld=true, permits=0) ; then unLock(holder1) -> false   [sidecar: res != NULL and backed (expired_takeover)]
+== E: real clock, timeout=5: holder1=local-7 lease=1793007128402; tryLock with now=1793007128402 -> local-8 ; map: entry(token=local-8, expiresAt=1793007128407, isHeld=true, permits=0) ; unLock(holder1) -> false
+== C: other clauses
+  progress_free/P1a_entry: new key -> local-9 ; entry(token=local-9, expiresAt=1794007138460, isHeld=true, permits=0)
+  refusal_keeps_entry: live key at base+10 -> null ; entry(token=local-9, expiresAt=1794007138460, isHeld=true, permits=0)
+  unLock(wrong token) -> false ; entry(token=local-9, expiresAt=1794007138460, isHeld=true, permits=0)
+  progress_owner: unLock(owner) -> true ; no entry ; removed object: entry(token=local-9, expiresAt=1794007138460, isHeld=false, permits=1)
+  P1: unLock(same token again) -> false ; no entry
+  no_entry_created: unLock(absent key) -> false ; no entry
+  cap_unbacked (max-entries=1, map size 2): new key -> local-12 ; no entry ; unLock -> false
+  capped map, live key (holder local-11) -> null ; entry(token=local-11, expiresAt=1794007138460, isHeld=true, permits=0)
+  capped map, expired key -> local-14 ; entry(token=local-14, expiresAt=1794007138561, isHeld=true, permits=0)
+== D: exclusion, 8 threads x 20000 tries: acquisitions=38298, overlaps=0, failed owner releases=0, no entry
+== B: monitor at the lease boundary: 3500 of 3500 entries made; the window opens in 1490 ms
+  entries the monitor removed while the real clock read exactly their expiresAt: 5
+    expiresAt = 1793007130365 (window offset 358 ms)
+    expiresAt = 1793007131358 (window offset 1351 ms)
+    expiresAt = 1793007131359 (window offset 1352 ms)
+    expiresAt = 1793007132360 (window offset 2353 ms)
+    expiresAt = 1793007133364 (window offset 3357 ms)
