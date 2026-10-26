@@ -19,3 +19,5 @@ mutation/judge-work/*/kotlin/build/
 aicode/judge-work/*/build/
 aicode/judge-work/*/out/
 aicode/judge-work/*/check/out/
+aicode/round3g/judge-work/*/build/
+aicode/round3g/judge-work/*/*/classes/
