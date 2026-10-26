@@ -1,0 +1,55 @@
+// E6 (DESIGN-D): minimal module. Counter seq; tokens are counter values; one ghost record per token.
+domain TokRec {
+  function tok(t: Int): Ref
+  function tokOf(r: Ref): Int
+  axiom tok_injective { forall t: Int :: { tok(t) } tokOf(tok(t)) == t }
+}
+define NULL (-1)
+field seq: Int
+field gIssued: Bool
+
+define GHOST_PERMS (forall qt: Int :: { tok(qt) } acc(tok(qt).gIssued))
+define MI_PERMS(S) (acc(S.seq) && GHOST_PERMS)
+// Hole (an inductive invariant a hole writer could give):
+define MI_INV(S) (0 <= S.seq && (forall qt: Int :: { tok(qt).gIssued } tok(qt).gIssued ==> 0 <= qt && qt <= S.seq) && !tok(S.seq).gIssued)
+define MI(S) (MI_PERMS(S) && MI_INV(S))
+define MI_PEND(S) (forall qt: Int :: { tok(qt).gPend } tok(qt).gPend ==> !tok(qt).gIssued && 0 <= qt && qt <= S.seq)
+define HIST (forall qt: Int :: { tok(qt).gIssued } old(tok(qt).gIssued) ==> tok(qt).gIssued)
+
+method init() returns (S: Ref)
+  ensures MI(S)
+{
+  S := new(seq)
+  S.seq := 0
+  inhale GHOST_PERMS && (forall qt: Int :: { tok(qt) } !tok(qt).gIssued)
+}
+
+method Y(S: Ref) returns (res: Int)
+  requires MI(S)
+  ensures MI(S)
+  ensures HIST
+  ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued  // P1a
+{
+  S.seq := S.seq + 1  // moved into the action (DESIGN-D c, C1 ignored)
+  var n: Int := S.seq
+  var c: Int := S.seq  // seq.get() in the action
+  if (n != c) { res := n } else { res := NULL }
+  if (res != NULL) {
+    assert !tok(res).gIssued
+    tok(res).gIssued := true
+  }
+}
+
+method X(S: Ref) returns (res: Int)
+  requires MI(S)
+  ensures MI(S)
+  ensures HIST
+  ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued  // P1a
+{
+  res := S.seq
+  S.seq := S.seq + 1
+  if (res != NULL) {
+    assert !tok(res).gIssued
+    tok(res).gIssued := true
+  }
+}

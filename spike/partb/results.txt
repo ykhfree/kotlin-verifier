@@ -1,0 +1,153 @@
+=== ref.vpr
+Silicon finished verification successfully in 5.11s.
+wall: 5.36 s
+=== a_h1.vpr
+Silicon found 2 errors in 10.03s:
+  [0] Postcondition of tryLock might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (a_h1.vpr@185.11--187.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] Postcondition of sweep might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (a_h1.vpr@318.11--320.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 10.28 s
+=== a_h1_fixed.vpr
+Silicon finished verification successfully in 9.90s.
+wall: 10.15 s
+=== a_h2.vpr
+Silicon found 2 errors in 10.29s:
+  [0] Postcondition of tryLock might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (a_h2.vpr@185.11--187.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] Postcondition of sweep might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (a_h2.vpr@309.11--311.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 10.55 s
+=== a_h2_fixed.vpr
+Silicon finished verification successfully in 12.39s.
+wall: 12.66 s
+=== a_h4.vpr
+Silicon found 2 errors in 12.13s:
+  [0] Postcondition of tryLock might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (a_h4.vpr@185.11--187.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] Postcondition of sweep might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (a_h4.vpr@311.11--313.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 12.39 s
+=== a_h4_fixed.vpr
+Silicon finished verification successfully in 10.91s.
+wall: 11.21 s
+=== c_h1.vpr
+Silicon found 2 errors in 6.28s:
+  [0] Postcondition of tryLock might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (c_h1.vpr@141.11--143.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] Postcondition of sweep might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (c_h1.vpr@270.11--272.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 6.58 s
+=== c_h1_fixed.vpr
+Silicon finished verification successfully in 6.23s.
+wall: 6.52 s
+=== c_h2.vpr
+Silicon found 2 errors in 6.34s:
+  [0] Postcondition of tryLock might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (c_h2.vpr@141.11--143.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] Postcondition of sweep might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (c_h2.vpr@261.11--263.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 6.63 s
+=== c_h2_fixed.vpr
+Silicon finished verification successfully in 6.66s.
+wall: 6.96 s
+=== c_h4.vpr
+Silicon found 2 errors in 6.58s:
+  [0] Postcondition of tryLock might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (c_h4.vpr@141.11--143.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] Postcondition of sweep might not hold. Assertion (forall qt: Int :: { tok(qt).gHeld } old(tok(qt).gIssued) && (old(tok(qt).gBacked) && (old(tok(qt).gHeld) && !tok(qt).gHeld)) ==> now > old(tok(qt).gLease)) might not hold. (c_h4.vpr@263.11--265.34)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 6.86 s
+=== c_h4_fixed.vpr
+Silicon finished verification successfully in 6.06s.
+wall: 6.33 s
+=== a_h2_fixed_mono.vpr
+Silicon found 1 error in 12.26s:
+  [0] Postcondition of tryLock might not hold. Assertion res != -1 ==> (forall qt: Int :: { tok(qt).gIssued } old(tok(qt).gIssued) ==> qt < res) might not hold. (a_h2_fixed_mono.vpr@199.11--199.100)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 12.55 s
+=== c_h2_fixed_mono.vpr
+Silicon finished verification successfully in 6.20s.
+wall: 6.49 s
+=== a_fence.vpr
+Silicon found 1 error in 5.42s:
+  [0] Postcondition of tryLock might not hold. Assertion old((k in domain(S.m)) && S.m[k] != null) && now > old(S.m[k].expiresAt) ==> res != -1 && tok(res).gBacked might not hold. (a_fence.vpr@201.11--201.92)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 5.69 s
+=== b_fence.vpr
+Silicon finished verification successfully in 4.43s.
+wall: 4.71 s
+=== c_fence.vpr
+Silicon finished verification successfully in 4.01s.
+wall: 4.35 s
+=== a_steal.vpr
+Silicon found 1 error in 2.51s:
+  [0] Assert might fail. Assertion !tok(res).gPend might not hold. (a_steal.vpr@77.12--77.27)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 2.88 s
+=== bc_steal.vpr
+Silicon finished verification successfully in 1.78s.
+wall: 2.06 s
+=== c_steal.vpr
+Silicon finished verification successfully in 2.10s.
+wall: 2.37 s
+=== a_steal_ok.vpr
+Silicon finished verification successfully in 2.39s.
+wall: 2.73 s
+=== pb6_a_h4_always_token.vpr
+Silicon found 1 error in 12.04s:
+  [0] Postcondition of tryLock might not hold. Assertion res != -1 && !tok(res).gBacked ==> !old((k in domain(S.m)) && S.m[k] != null) && (rej && limit != 0) might not hold. (pb6_a_h4_always_token.vpr@189.11--189.86)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 12.35 s
+=== brk1_a_steal_no_pend_check.vpr
+Silicon found 1 error in 1.78s:
+  [0] Postcondition of X might not hold. Assertion (forall qt$4: Int :: { tok(qt$4).gPend } tok(qt$4).gPend ==> !tok(qt$4).gIssued && (0 <= qt$4 && qt$4 <= S.seq)) might not hold. (brk1_a_steal_no_pend_check.vpr@68.11--68.21)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 2.02 s
+=== brk2_a_h2_no_consume.vpr
+Silicon found 2 errors in 10.60s:
+  [0] Postcondition of tryLock might not hold. Assertion (forall qt: Int :: { tok(qt).gPend } tok(qt).gPend == (old(tok(qt).gPend) && qt != newToken__45)) might not hold. (brk2_a_h2_no_consume.vpr@183.11--183.106)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] Assert might fail. Assertion !tok(res).gPend might not hold. (brk2_a_h2_no_consume.vpr@228.12--228.27)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 10.85 s
+=== exp_nopendframe.vpr
+Silicon found 2 errors in 13.33s:
+  [0] The precondition of method tryLock might not hold. Assertion tok(r1).gPend might not hold. (exp_nopendframe.vpr@339.3--339.50)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] The precondition of method tryLock might not hold. Assertion tok(r2).gPend might not hold. (exp_nopendframe.vpr@344.3--344.50)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 13.64 s
+=== exp_pendinmi.vpr
+Silicon found 3 errors in 36.79s:
+  [0] The precondition of method tryLock might not hold. Assertion (forall qt$0: Int :: { tok(qt$0).gPend } tok(qt$0).gPend ==> !tok(qt$0).gIssued && (0 <= qt$0 && qt$0 <= S.seq)) might not hold. (exp_pendinmi.vpr@334.3--334.50)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [1] The precondition of method reserve_tryLock might not hold. Assertion (forall qt$0: Int :: { tok(qt$0).gPend } tok(qt$0).gPend ==> !tok(qt$0).gIssued && (0 <= qt$0 && qt$0 <= S.seq)) might not hold. (exp_pendinmi.vpr@337.3--337.27)
+
+Potential prover incompleteness: (incomplete quantifiers)
+  [2] The precondition of method tryLock might not hold. Assertion (forall qt$0: Int :: { tok(qt$0).gPend } tok(qt$0).gPend ==> !tok(qt$0).gIssued && (0 <= qt$0 && qt$0 <= S.seq)) might not hold. (exp_pendinmi.vpr@339.3--339.50)
+
+Potential prover incompleteness: (incomplete quantifiers)
+wall: 37.07 s

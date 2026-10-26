@@ -1,0 +1,8 @@
+[
+ {"claim": "judge 3 note 1: T-haiku-2 P1a holds in execution; verifier may not prove it", "file": "/Users/ykhfree/AI/kotlin-verifier/aicode/judgments-3.md", "quote": "번호는 호출마다 하나뿐이므로 실행에서는 P1a가 성립한다. 검증기는 이것을 증명하지 못할 수 있다"},
+ {"claim": "judge 1 sec 8: token number gaps do not affect properties (T-haiku-1, T-haiku-4)", "file": "/Users/ykhfree/AI/kotlin-verifier/aicode/judgments-1.md", "quote": "| 실패한 tryLock도 토큰 번호를 씀 | T-haiku-1, T-haiku-4 | 토큰 번호를 compute 전에 만든다 (41행, 37행). 번호에 빈칸이 생길 뿐 성질에는 영향이 없다 |"},
+ {"claim": "judge 1: properties hold for all 4 including expired_takeover, cap_unbacked", "file": "/Users/ykhfree/AI/kotlin-verifier/aicode/judgments-1.md", "quote": "아래 성질은 4개 구현 모두에서 성립한다: P1, P1a, P1a_entry, P3a(unLock), P3b, P3c, P2, progress_free, progress_owner, cap_unbacked, expired_takeover."},
+ {"claim": "judge 1: Long overflow secondary defect, model-dependent", "file": "/Users/ykhfree/AI/kotlin-verifier/aicode/judgments-1.md", "quote": "2. **`now + lockTimeoutMillis`의 Long overflow (4개 모두, 부 결함, 모델 의존).** R3 참조."},
+ {"claim": "judge 1: CTRL-strict changed only one line of T-haiku-1", "file": "/Users/ykhfree/AI/kotlin-verifier/aicode/judgments-1.md", "quote": "대조군 CTRL-strict는 T-haiku-1에서 이 한 줄만 바꿨다."},
+ {"claim": "clock model has no monotonicity", "file": "/Users/ykhfree/AI/kotlin-verifier/DESIGN-v0.md", "quote": "role    clock                       // an arbitrary Long; no monotonicity assumed"}
+]

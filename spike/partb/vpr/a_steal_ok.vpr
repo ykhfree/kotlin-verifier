@@ -1,0 +1,80 @@
+// E6 (DESIGN-D): minimal module. Counter seq; tokens are counter values; one ghost record per token.
+domain TokRec {
+  function tok(t: Int): Ref
+  function tokOf(r: Ref): Int
+  axiom tok_injective { forall t: Int :: { tok(t) } tokOf(tok(t)) == t }
+}
+define NULL (-1)
+field seq: Int
+field gIssued: Bool
+field gPend: Bool
+define GHOST_PERMS (forall qt: Int :: { tok(qt) } acc(tok(qt).gIssued) && acc(tok(qt).gPend))
+define MI_PERMS(S) (acc(S.seq) && GHOST_PERMS)
+// Hole (an inductive invariant a hole writer could give):
+define MI_INV(S) (0 <= S.seq && (forall qt: Int :: { tok(qt).gIssued } tok(qt).gIssued ==> 0 <= qt && qt <= S.seq))  // control hole: without !issued(S.seq)
+define MI(S) (MI_PERMS(S) && MI_INV(S))
+define MI_PEND(S) (forall qt: Int :: { tok(qt).gPend } tok(qt).gPend ==> !tok(qt).gIssued && 0 <= qt && qt <= S.seq)
+define HIST (forall qt: Int :: { tok(qt).gIssued } old(tok(qt).gIssued) ==> tok(qt).gIssued)
+
+method init() returns (S: Ref)
+  ensures MI(S)
+  ensures MI_PEND(S)
+{
+  S := new(seq)
+  S.seq := 0
+  inhale GHOST_PERMS && (forall qt: Int :: { tok(qt) } !tok(qt).gIssued && !tok(qt).gPend)
+}
+
+method reserve_Y(S: Ref) returns (n: Int)
+  requires MI(S)
+  requires MI_PEND(S)
+  ensures MI(S)
+  ensures MI_PEND(S)
+  ensures HIST
+  ensures forall qt: Int :: { tok(qt).gPend } tok(qt).gPend == (old(tok(qt).gPend) || qt == n)
+{
+  S.seq := S.seq + 1
+  n := S.seq
+  assert 0 <= n
+  assert !tok(n).gIssued
+  assert !tok(n).gPend
+  tok(n).gPend := true
+}
+
+method Y(S: Ref, n: Int) returns (res: Int)
+  requires MI(S)
+  requires MI_PEND(S)
+  requires tok(n).gPend
+  ensures MI(S)
+  ensures MI_PEND(S)
+  ensures HIST
+  ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued  // P1a
+  ensures forall qt: Int :: { tok(qt).gPend } tok(qt).gPend == (old(tok(qt).gPend) && qt != n)
+{
+  var c: Int := S.seq  // seq.get() in the action
+  if (n != c) { res := n } else { res := NULL }
+  tok(n).gPend := false
+  if (res != NULL) {
+    assert !tok(res).gIssued
+    assert !tok(res).gPend
+    tok(res).gIssued := true
+  }
+}
+
+method X(S: Ref) returns (res: Int)
+  requires MI(S)
+  requires MI_PEND(S)
+  ensures MI(S)
+  ensures MI_PEND(S)
+  ensures HIST
+  ensures res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued  // P1a
+  ensures forall qt: Int :: { tok(qt).gPend } tok(qt).gPend == old(tok(qt).gPend)
+{
+  S.seq := S.seq + 1  // control: X increments, then issues the new value
+  res := S.seq
+  if (res != NULL) {
+    assert !tok(res).gIssued
+    assert !tok(res).gPend
+    tok(res).gIssued := true
+  }
+}
