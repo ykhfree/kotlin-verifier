@@ -1,0 +1,17 @@
+kv spec questions: 1 draft(s) (d1), mode a; rule 1: the author answered open or assumed; rule 2 off (one draft); rule 4 on (proxy: --reference)
+  H2r rules 1,5 | answers d1=null/open | drafts d1=open | reference null
+  H2s rules 1,5 | answers d1=holds_t1/open | drafts d1=open | reference holds_t1
+  H3r rules 1 | answers d1=null/open | drafts d1=open | reference backed
+  H3s rules 1 | answers d1=holds_t1/open | drafts d1=open | reference holds_r
+  H5r rules 1,5 | answers d1=null/open | drafts d1=open | reference null
+  H5s rules 1,5 | answers d1=holds_t1/open | drafts d1=open | reference holds_t1
+  H6r rules 1 | answers d1=null/open | drafts d1=open | reference backed
+  H6s rules 1 | answers d1=holds_t1/open | drafts d1=open | reference holds_r
+  H8r rules 1,5 | answers d1=null/open | drafts d1=open | reference null
+  H8s rules 1,5 | answers d1=holds_t1/open | drafts d1=open | reference holds_t1
+  H9r rules 1 | answers d1=null/open | drafts d1=open | reference backed
+  H9s rules 1 | answers d1=holds_t1/open | drafts d1=open | reference holds_r
+  H13s rules 1,5 | answers d1=no_entry/open | drafts d1=open | reference holds_t1
+  O4s rules 1 | answers d1=holds_t2/assumed | drafts d1=holds_t2 | reference holds_t2
+  U2r rules 1 | answers d1=false/assumed | drafts d1=false | reference false
+question cells: 15 H2r H2s H3r H3s H5r H5s H6r H6s H8r H8s H9r H9s H13s O4s U2r

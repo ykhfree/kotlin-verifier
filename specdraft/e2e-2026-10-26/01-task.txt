@@ -1,0 +1,3 @@
+phase-1 box of d1: run/boxes/d1/phase1
+prompt (also in run/harness/d1/prompt-phase1.txt):
+Read TASK.md in the directory run/boxes/d1/phase1 and do the task it describes. Work only inside run/boxes/d1/phase1: do not read, list or search anything outside it.

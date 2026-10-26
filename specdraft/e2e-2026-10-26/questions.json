@@ -1,0 +1,253 @@
+{
+ "mode": "a",
+ "drafts": [
+  "d1"
+ ],
+ "rule1": "the author answered open or assumed",
+ "questions": [
+  {
+   "cell": "H2r",
+   "formal_cell": "H2r",
+   "rules": [
+    1,
+    5
+   ]
+  },
+  {
+   "cell": "H2s",
+   "formal_cell": "H2s",
+   "rules": [
+    1,
+    5
+   ]
+  },
+  {
+   "cell": "H3r",
+   "formal_cell": "H3r",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "H3s",
+   "formal_cell": "H3s",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "H5r",
+   "formal_cell": "H5r",
+   "rules": [
+    1,
+    5
+   ]
+  },
+  {
+   "cell": "H5s",
+   "formal_cell": "H5s",
+   "rules": [
+    1,
+    5
+   ]
+  },
+  {
+   "cell": "H6r",
+   "formal_cell": "H6r",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "H6s",
+   "formal_cell": "H6s",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "H8r",
+   "formal_cell": "H8r",
+   "rules": [
+    1,
+    5
+   ]
+  },
+  {
+   "cell": "H8s",
+   "formal_cell": "H8s",
+   "rules": [
+    1,
+    5
+   ]
+  },
+  {
+   "cell": "H9r",
+   "formal_cell": "H9r",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "H9s",
+   "formal_cell": "H9s",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "H13s",
+   "formal_cell": "H13s",
+   "rules": [
+    1,
+    5
+   ]
+  },
+  {
+   "cell": "O4s",
+   "formal_cell": "O4s",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "U2r",
+   "formal_cell": "U2r",
+   "rules": [
+    1
+   ]
+  }
+ ],
+ "group_errors": [],
+ "groups": [
+  {
+   "id": "D1",
+   "title": "Expiry boundary",
+   "question": "At exactly the lease end (clock = lease), is a lock that nobody released still held, for tryLock and for the cleanup monitor?",
+   "cells": [
+    "H2r",
+    "H2s",
+    "H5r",
+    "H5s",
+    "H8r",
+    "H8s",
+    "H13s"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "H2r": "null",
+      "H2s": "holds_t1",
+      "H5r": "null",
+      "H5s": "holds_t1",
+      "H8r": "null",
+      "H8s": "holds_t1",
+      "H13s": "holds_t1"
+     },
+     "who": [
+      "reference"
+     ]
+    },
+    {
+     "letter": "B",
+     "cells": {
+      "H2r": "open",
+      "H2s": "open",
+      "H5r": "open",
+      "H5s": "open",
+      "H8r": "open",
+      "H8s": "open",
+      "H13s": "open"
+     },
+     "who": [
+      "draft d1"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "D4",
+   "title": "Takeover of an expired lock",
+   "question": "After the lease end, does tryLock take over an expired lock before the cleanup monitor drops it?",
+   "cells": [
+    "H3r",
+    "H3s",
+    "H6r",
+    "H6s",
+    "H9r",
+    "H9s"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "H3r": "backed",
+      "H3s": "holds_r",
+      "H6r": "backed",
+      "H6s": "holds_r",
+      "H9r": "backed",
+      "H9s": "holds_r"
+     },
+     "who": [
+      "reference"
+     ]
+    },
+    {
+     "letter": "B",
+     "cells": {
+      "H3r": "open",
+      "H3s": "open",
+      "H6r": "open",
+      "H6s": "open",
+      "H9r": "open",
+      "H9s": "open"
+     },
+     "who": [
+      "draft d1"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "D7",
+   "title": "Lease start after a takeover",
+   "question": "After tryLock takes over an expired lock, does the new holder's lease start at its own acquisition?",
+   "cells": [
+    "O4s"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "O4s": "holds_t2"
+     },
+     "who": [
+      "reference",
+      "draft d1"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "D5",
+   "title": "unLock of an unbacked permit",
+   "question": "Does unLock of a permit that no map entry backs (the cap path) return false?",
+   "cells": [
+    "U2r"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "U2r": "false"
+     },
+     "who": [
+      "reference",
+      "draft d1"
+     ]
+    }
+   ]
+  }
+ ]
+}
