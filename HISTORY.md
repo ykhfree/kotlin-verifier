@@ -340,3 +340,9 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 대상: req-shield `ReqShield` (요청 합치기). 측정 계획과 예측은 `PROTOCOL2.md` (결과 전).
 - 설계 시작 (deep-reasoner, `DESIGN-E.md`).
 - 두 번째 프로토콜 설계 (`DESIGN-E.md`, `c400308`; `PROTOCOL2.md` 4절): ReqShield는 새 층(L3, 자원 사용 규율)이 필요하다. 손 모델: 원본 PROVEN, 결함 변이 12개 FAILED, 대조 3개 PROVEN (메인 세션 재실행). 구현 추정 core 12.5-19.5 인일 (aspect 캐시의 약 1.6배). 사용자 결정 6개 (UE1-UE6). 예측 3개 모두 맞음.
+
+### 사용자 결정 (2026-10-26): ReqShield core 구현
+
+- 진행: core 변형 구현 (E0-E4). 성질 범위: 호출 하나의 규율 (UE1). 신뢰 가정: Error는 치명적, 받은 과제는 실행됨 (UE2, UE4). lock 저장소 실패 때 이미 얻은 결과를 잃지 않아야 함 (UE3) → 원본 core는 세 경로(RET_hit, RET_recheck, RET_supplier_error)에서 FAILED가 될 것이다.
+- advisor 권고: (1) UE3 때문에 완료 기준이 바뀌었다. 손 모델을 "A2 끔"으로 다시 맞추고, 고친 core의 손 모델(PROVEN)을 더한다. (2) req-shield 코드는 도구가 세 실패를 보고한 뒤에 고친다. (3) 예측을 등록하고, 위험한 E2부터 세로 조각으로 나눠 구현한다. (4) 사용자 서명 수도 비용으로 센다.
+- 손 모델 다시 맞추기 시작 (설계 agent 재개).
