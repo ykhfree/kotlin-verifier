@@ -346,3 +346,5 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 진행: core 변형 구현 (E0-E4). 성질 범위: 호출 하나의 규율 (UE1). 신뢰 가정: Error는 치명적, 받은 과제는 실행됨 (UE2, UE4). lock 저장소 실패 때 이미 얻은 결과를 잃지 않아야 함 (UE3) → 원본 core는 세 경로(RET_hit, RET_recheck, RET_supplier_error)에서 FAILED가 될 것이다.
 - advisor 권고: (1) UE3 때문에 완료 기준이 바뀌었다. 손 모델을 "A2 끔"으로 다시 맞추고, 고친 core의 손 모델(PROVEN)을 더한다. (2) req-shield 코드는 도구가 세 실패를 보고한 뒤에 고친다. (3) 예측을 등록하고, 위험한 E2부터 세로 조각으로 나눠 구현한다. (4) 사용자 서명 수도 비용으로 센다.
 - 손 모델 다시 맞추기 시작 (설계 agent 재개).
+- 손 모델 다시 맞춤 (`cc15490`, 메인 세션 재실행): 기준 모델(lock 호출이 던질 수 있음)에서 원본 core는 정확히 RET_hit, RET_recheck, RET_supplier_error에서 실패하고, 고친 core(`spike/protocol2/fixed-core.patch`)는 PROVEN이다. 결함 변이 12개는 두 모델에서 모두 잡힌다. 이름 붙인 가정 A4(던진 unLock은 의무를 끝냄), A5(던진 tryLock은 의무를 남기지 않음)를 더했다. 서명 수: 의도 절 12 + 가정 4 = 16, 신뢰 선언 6, 어휘 층 승인 1.
+- 구현 예측 등록 (`PROTOCOL2.md` 5절), E0-E2 구현 시작 (feature-developer). 설계 agent 비용 합계: 약 74만 토큰.
