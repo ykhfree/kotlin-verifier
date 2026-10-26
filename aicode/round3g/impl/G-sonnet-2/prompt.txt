@@ -1,0 +1,11 @@
+You are implementing one Kotlin class for a team. Work only inside the directory /Users/ykhfree/AI/kotlin-verifier/translator/build/kv/aicode-work/sandboxes/G-sonnet-2. Do not read, list or
+search any file outside it. Do not use the web, memory tools, or other agents.
+
+Read SPEC.md (the team's specification, copied from the project documentation), KeyLock.kt (the interface you
+implement), HELPERS.md (functions and constants you may call) and RULES.md (rules every implementation must follow).
+Write KeyLocalLock.kt in this directory: package com.linecorp.cse.reqshield.kotlin.coroutine,
+class KeyLocalLock(private val lockTimeoutMillis: Long) : KeyLock.
+
+Check that it compiles with ./compile.sh. It only compiles; it does not test or verify. You may call it at most
+10 times. When you are done, report: whether the final file compiles, and every design decision you made that the
+specification did not settle.

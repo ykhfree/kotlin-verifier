@@ -434,3 +434,21 @@ S1, S2 수정의 확인 (메인 세션): 새 테스트 5개 중 결함 테스트
 
 `ModuleContext.reads()`는 대입문의 자식인 읽기를 모두 뺐다. 대입의 대상(왼쪽)만 빼야 하는데 값(오른쪽)까지 뺐다. 그래서 셀이나 평탄화 필드가 `x = cell`처럼 대입을 거쳐 새어도 escape 검사가 놓쳤다 (agent의 임시 probe: 그런 셀을 가진 action이 supported, 모듈이 complete). 메인 세션이 고쳤다: 대입의 대상인 읽기만 뺀다. 새 테스트 2개(셀, 평탄화 필드)는 수정 전 코드에서 실패하고 수정 뒤 통과한다.
 확인: 테스트 585개 통과, 변이 63회 불일치 0, 3a의 12개 보고서는 판정 줄이 모두 같다 (다시 돌림).
+
+### 14.6 일반화 측정 결과 (새 구현 12개, 2026-10-26)
+
+새 구현 `aicode/round3g/impl/` (G-haiku/sonnet/opus-1..4): 1차와 같은 과제와 프롬프트, 12개 모두 컴파일 1회에 통과. 수정 전 도구(`2d479ee`, worktree)의 결과는 `aicode/round3g/pre/`, 수정 뒤 도구(`b82d47c`: A1-A5와 S3)의 결과는 `aicode/round3g/`다. 메인 세션은 도구를 돌리기 전에 새 코드를 읽지 않았다.
+
+묶기 조정 (1·2차와 같은 규칙, 두 도구에 같게 적용): `class LockInfo LockInfo` 5개(G-haiku-1, -3, -4, G-sonnet-1, -2), `use kotlinx.Semaphore` 3개(G-opus-2, -4, G-sonnet-3).
+
+| 도구 | 판정한 action (36개 중) | 비율 |
+|---|---|---|
+| 수정 전 | 26 | 72% |
+| 수정 뒤 | 31 | **86%** |
+
+**결정 기준(14.3.3, 75%)을 넘었다. A1-A5는 일반화한다고 본다.** 다만 수정 전 도구도 새 12개에서 72%를 판정했다 (2b의 2차 12개는 61%). 그래서 개선 폭(+14점)은 2차 12개의 개선 폭(61% → 89%, +28점)보다 작다.
+
+- 수정 뒤에도 판정하지 못한 5개: Part B(compute 밖 토큰) tryLock 4개 (G-haiku-3, G-haiku-4, G-opus-1, G-sonnet-1)와 G-opus-2 tryLock(셀을 helper에 인자로 넘김: `newHeldEntry(now, acquiredToken)`, A1-A5 밖의 새 구문, 수정 전에도 미지원).
+- 모듈 판정: 12개 모두 FAILED. **12개 모두 sweep이 `ends_only_if P3a` 위반이고, 12개 모두 만료를 `now >= expiresAt` (또는 `expiresAt <= now`)로 썼다** (소스 grep). 1차·2차 12개와 합쳐 AI 구현 24개가 모두 같은 경계를 골랐다.
+- G-haiku-3 unLock은 FAILED (`progress_owner`): 만료된 entry의 unLock을 거부한다 (생성 보고서 4번). 서명된 결정 D2(만료 뒤 주인의 unLock = true, UC9)와 다르다.
+- 정답(블라인드 판정자)은 아직 없다. 그래서 놓침과 오경보는 아직 말할 수 없다 (14.3.4). 위 두 FAILED 이유는 메인 세션이 소스로 확인한 것이다.

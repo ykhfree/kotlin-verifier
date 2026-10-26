@@ -1,0 +1,1 @@
+(main-session summary) Compiles (1 of 10). jdk Semaphore(1); busy iff entry, isHeld, now < expiresAt (expired at now == expiresAt); takeover replaces with new LockInfo; cap via rejectsNewEntry(lockMap.mappingCount()) inside compute only for absent key; refusal returns token, no entry; unLock releases on token match incl. after expiry; monitor coroutine, removes now >= expiresAt.
