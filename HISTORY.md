@@ -308,3 +308,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 서명 (사용자 승인 2026-10-26, `2137e85`): KeyLocalLock unLock·sweep의 `no_entry_created`, Aspect의 `factory_throw`. C4의 칸 생성이 찾은 빈틈이다.
   - 결과: KeyLocalLock 방식 b OPEN 11 → 5 (남은 것은 모두 UC1에서 나옴), Aspect는 모든 칸이 정해짐. 여섯 모듈 PROVEN.
   - 5차 재측정 (`MUTATION.md` 9.8): KeyLocalLock 변화 0 (예측 맞음). Aspect 변이 15회는 판정 그대로, `factory_throw`가 진짜 위반으로 더 보고됨.
+- C5 시작 (사용자 요청 2026-10-26, feature-developer): `scripts/spec.py`의 task, collect(교정 2회, 오류 줄만), cells(2단계 상자), questions, align, outcomes. 파일럿을 opus 초안 하나로 처음부터 다시 돌려 재현한다. 65칸 답의 비용 자료를 낸다. 실제 LLM 작성자 실행은 그 뒤 메인 세션이 한다.
