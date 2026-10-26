@@ -311,3 +311,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - C5 시작 (사용자 요청 2026-10-26, feature-developer): `scripts/spec.py`의 task, collect(교정 2회, 오류 줄만), cells(2단계 상자), questions, align, outcomes. 파일럿을 opus 초안 하나로 처음부터 다시 돌려 재현한다. 65칸 답의 비용 자료를 낸다. 실제 LLM 작성자 실행은 그 뒤 메인 세션이 한다.
 - C5 완료 (`8007476`, `1eb2df5`; `DESIGN-C.md` 10.5): `scripts/spec.py`가 단계마다 명령 하나로 흐름을 돈다. 파일럿을 opus 초안 하나로 다시 돌려 같은 결과를 얻었다. 메인 세션 확인: 테스트 546개, 변이 63회 불일치 0.
 - 다음: 실제 LLM 작성자 하나로 처음부터 끝까지 한 번 돌린다 (생성 칸 65개, 비용 측정).
+- 실제 실행 시작 (2026-10-26): 작성자 agent 하나(opus)가 1단계 상자로 초안을 쓴다. 실행 폴더는 저장소 밖 scratch(`e2e/run`)다. 단계마다 결과를 기록한다.
