@@ -26,22 +26,25 @@ class ReasonTest {
 
     @Test
     fun `an unsupported condition does not hide an unsupported construction in a later branch`() {
-        // The shape of T-haiku-3's tryLock in round 1, with `now * 2` for the `Int toLong` of that round.
-        val f = LockFixture("if (e != null && now * 2 > e.expiresAt) e\nelse Info(Semaphore(1).also { it.tryAcquire() }, now)")
+        // The shape of T-haiku-3's tryLock in round 1, with `now * 2` for the `Int toLong` of that round. Its
+        // `Semaphore(1).also { it.tryAcquire() }` is supported since AI-CODE.md 14.1 A1, so the also lambda here
+        // does something else as well.
+        val f = LockFixture("if (e != null && now * 2 > e.expiresAt) e\nelse Info(Semaphore(1).also { it.toString() }, now)")
         val m = f.lower(dir)
         assertUnsupported(m, "Long *", f.at("now * 2"))
         val u = assertUnsupported(m, "flattened field semaphore", f.at("Semaphore(1).also"))
-        assertTrue("a construction of semaphore does not pass a new jdk.Semaphore object at ${f.where("Semaphore(1).also")}" in u.reason, u.reason)
+        assertTrue("the lambda of also does something other than a jdk.Semaphore operation on its receiver whose result is unused at ${f.where("it.toString()")}" in u.reason, u.reason)
         // The argument for semaphore is given; it is not a missing constructor default.
         assertEquals(listOf("Long *", "flattened field semaphore"), m.constructs(), m.runText)
     }
 
     @Test
     fun `a local alias does not hide its initializer`() {
-        // T-opus-4's tryLock: `val entry = if (existing == null || ...) LockInfo(...) else existing`.
-        val f = LockFixture("val x = if (e == null) Info(Semaphore(1), now) else e\nx")
+        // T-opus-4's tryLock as a var: `var entry = if (existing == null || ...) LockInfo(...) else existing`. The
+        // val is supported since AI-CODE.md 14.1 A3.
+        val f = LockFixture("var x = if (e == null) Info(Semaphore(1), now) else e\nx")
         val m = f.lower(dir)
-        assertUnsupported(m, "local alias x", f.at("val x"))
+        assertUnsupported(m, "local alias x", f.at("var x"))
         assertUnsupported(m, "if/when used as a value", f.at("if (e == null)"))
         assertEquals(2, m.constructs().size, m.runText)
     }
@@ -64,12 +67,13 @@ class ReasonTest {
 
     @Test
     fun `the reason of a flattened field names each construction that breaks it`() {
-        val body = "if (e == null) return@compute Info(Semaphore(1).also { it.tryAcquire() }, now)\nif (now < 0) return@compute Info(Semaphore(1).apply { tryAcquire() }, now)\ne"
+        // Each lambda does something other than model operations on its receiver (AI-CODE.md 14.1 A1).
+        val body = "if (e == null) return@compute Info(Semaphore(1).also { it.toString() }, now)\nif (now < 0) return@compute Info(Semaphore(1).apply { hashCode() }, now)\ne"
         val f = LockFixture(body)
         val m = f.lower(dir)
         val u = assertUnsupported(m, "flattened field semaphore", f.at("Semaphore(1).also"))
-        for (fragment in listOf("Semaphore(1).also", "Semaphore(1).apply")) {
-            assertTrue("a construction of semaphore does not pass a new jdk.Semaphore object at ${f.where(fragment)}" in u.reason, u.reason)
+        for ((scope, fragment) in listOf("also" to "it.toString()", "apply" to "hashCode()")) {
+            assertTrue("the lambda of $scope does something other than a jdk.Semaphore operation on its receiver whose result is unused at ${f.where(fragment)}" in u.reason, u.reason)
         }
         // Each construction is reported where the lowering meets it, with the same reasons.
         val at = m.run.body.walk().filterIsInstance<Unsupported>().filter { it.what == "flattened field semaphore" }.map { it.pos.line to it.pos.col }.toList()

@@ -67,9 +67,15 @@ class ConstructTest {
     }
 
     @Test
-    fun `if used as a value outside result position is unsupported`() {
+    fun `if used as a value outside result position is a local that each branch assigns`() {
+        // AI-CODE.md 14.1 A2; ValueIfTest has the other shapes.
         val f = LockFixture("val t = if (e == null) 0L else e.expiresAt\ne")
-        assertUnsupported(f.lower(dir), "if/when used as a value", f.at("if (e == null)"))
+        val (l, c) = f.at("if (e == null)")
+        val t = "t__${f.line("val t =")}"
+        assertEquals(
+            listOf("var value_${l}_$c: Int := 0", "if ${f.e()} == null", "  value_${l}_$c := 0", "else", "  value_${l}_$c := ${f.e()}.expiresAt", "let $t: Int := value_${l}_$c", "exit keep"),
+            shape(assertSupported(f.lower(dir))),
+        )
     }
 
     // ---- early return@compute ----

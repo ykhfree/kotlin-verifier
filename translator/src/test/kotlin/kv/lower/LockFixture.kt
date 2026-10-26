@@ -41,6 +41,8 @@ data class LockFixture(
     val members: String = "",
     val topLevel: String = "",
     val info: String = DEFAULT_INFO,
+    /** Members of class `Info` (indented 8 spaces); empty for a class without a body. */
+    val infoMembers: String = "",
     val operations: String = DEFAULT_OPERATION,
     /** More source files of package `fixture`, by file name. */
     val otherFiles: Map<String, String> = emptyMap(),
@@ -75,7 +77,7 @@ data class LockFixture(
         |class Lock(private val timeout: Long) {
         |    private class Info(
         |$info
-        |    )
+        |    )${if (infoMembers.isEmpty()) "" else " {\n$infoMembers\n    }"}
         |
         |    companion object {
         |        private val lockMap = ConcurrentHashMap<String, Info>()

@@ -37,6 +37,9 @@ import org.jetbrains.kotlin.fir.declarations.FirProperty
 import org.jetbrains.kotlin.fir.declarations.FirRegularClass
 import org.jetbrains.kotlin.fir.declarations.FirValueParameter
 import org.jetbrains.kotlin.fir.declarations.FirVariable
+import org.jetbrains.kotlin.contracts.description.EventOccurrencesRange
+import org.jetbrains.kotlin.fir.expressions.FirAnonymousFunctionExpression
+import org.jetbrains.kotlin.fir.expressions.FirBlock
 import org.jetbrains.kotlin.fir.expressions.FirEqualityOperatorCall
 import org.jetbrains.kotlin.fir.expressions.FirExpression
 import org.jetbrains.kotlin.fir.expressions.FirFunctionCall
@@ -44,6 +47,8 @@ import org.jetbrains.kotlin.fir.expressions.FirLiteralExpression
 import org.jetbrains.kotlin.fir.expressions.FirPropertyAccessExpression
 import org.jetbrains.kotlin.fir.expressions.FirQualifiedAccessExpression
 import org.jetbrains.kotlin.fir.expressions.FirReturnExpression
+import org.jetbrains.kotlin.fir.expressions.FirSafeCallExpression
+import org.jetbrains.kotlin.fir.expressions.FirWhenExpression
 import org.jetbrains.kotlin.fir.expressions.FirSmartCastExpression
 import org.jetbrains.kotlin.fir.expressions.FirStringConcatenationCall
 import org.jetbrains.kotlin.fir.expressions.FirThisReceiverExpression
@@ -77,11 +82,34 @@ import org.jetbrains.kotlin.realElement
 private val VOLATILE = ClassId.fromString("kotlin/jvm/Volatile")
 private val LONG_OPS = setOf("kotlin/Long", "kotlin/Int")
 
+/** The models whose objects model operations may prepare before a construction passes them (AI-CODE.md 14.1 A1). */
+private val PREPARED_MODELS = setOf("jdk.Semaphore", TrustedModels.KOTLINX_SEMAPHORE_MODEL)
+
 /** A reason v0 cannot model something, with the Kotlin position that shows it. */
 internal data class Problem(
     val reason: String,
     val pos: Pos,
 )
+
+/**
+ * How a construction gets the object of a flattened field (DESIGN-v0.md 2.11 rule 5, AI-CODE.md 14.1 A1): a new
+ * model object, or the problem that keeps it from being one.
+ */
+internal sealed interface Made {
+    /**
+     * [ctor] makes the object. [ops] are the model operations on it before the pass, in source order; their results
+     * are unused. [local] is the `val` that holds the object between [ctor] and the pass; null for a direct argument.
+     */
+    data class New(
+        val ctor: FirFunctionCall,
+        val ops: List<FirFunctionCall>,
+        val local: FirProperty?,
+    ) : Made
+
+    data class Broken(
+        val problem: Problem,
+    ) : Made
+}
 
 /** A sidecar `type ... = template "prefix${Long}suffix"`. */
 internal data class Template(
@@ -205,6 +233,11 @@ internal class ModuleContext(
 
     /** Every reason why [field] cannot be folded into its owner (DESIGN-v0.md 2.11 rule 5); empty for a plain or valid field. */
     fun flattenProblems(field: ObjField): List<Problem> = flattenProblems[field].orEmpty()
+
+    /** The `val`s that hold a new model object until a construction passes it (A1), with the field and the object. */
+    private val madeLocals = mutableMapOf<FirPropertySymbol, Pair<ObjField, Made.New>>()
+
+    fun madeLocal(sym: FirBasedSymbol<*>): Pair<ObjField, Made.New>? = madeLocals[sym]
 
     init {
         state =
@@ -357,8 +390,13 @@ internal class ModuleContext(
                 }
             val made =
                 constructions(field).mapNotNull { (call, arg) ->
-                    val ok = arg is FirFunctionCall && entriesOf(arg).any { it.model == model && it.role == Role.CTOR }
-                    if (ok) null else Problem("a construction of ${field.kotlin} does not pass a new $model object", posOf(arg ?: call))
+                    when (val m = madeObject(arg, call, field)) {
+                        is Made.Broken -> m.problem
+                        is Made.New -> {
+                            m.local?.let { madeLocals[it.symbol] = field to m }
+                            null
+                        }
+                    }
                 }
             // The maximum needs constructions that all pass a new kotlinx Semaphore.
             val problems = (listOfNotNull(notVal) + uses + made).ifEmpty { if (model == TrustedModels.KOTLINX_SEMAPHORE_MODEL) semaphoreMaximum(field) else emptyList() }
@@ -371,7 +409,7 @@ internal class ModuleContext(
      * literal permits (see [kotlinxPermits]), all the same. Records it, or returns the problems.
      */
     private fun semaphoreMaximum(field: ObjField): List<Problem> {
-        val made = constructions(field).map { it.second as FirFunctionCall }
+        val made = constructions(field).map { (call, arg) -> (madeObject(arg, call, field) as Made.New).ctor }
         val notLiteral = made.filter { kotlinxPermits(it) == null }
         if (notLiteral.isNotEmpty()) {
             return notLiteral.map { Problem("kotlinx Semaphore(...) of ${field.kotlin} needs Int literals with 1 <= permits and 0 <= acquiredPermits <= permits", posOf(it)) }
@@ -384,6 +422,124 @@ internal class ModuleContext(
         semaphoreMaxima[field] = maxima[0]
         return emptyList()
     }
+
+    private fun isCtor(
+        e: FirExpression?,
+        model: String,
+    ): Boolean = e is FirFunctionCall && entriesOf(e).any { it.model == model && it.role == Role.CTOR }
+
+    /**
+     * How [arg], the argument of construction [call] for flattened [field], makes its object (DESIGN-v0.md 2.11 rule
+     * 5). A model constructor call is a new object. For a Semaphore model, AI-CODE.md 14.1 A1 also accepts an object
+     * that model operations change before the pass: `Semaphore(1).apply { tryAcquire() }`, `Semaphore(1).also {
+     * it.tryAcquire() }`, and a local `val s = Semaphore(1)` whose other uses are statements `s.op()` before the
+     * statement that passes it. The object is new, only model operations use it, the construction is its only
+     * pass, and nothing reads it after the pass; so its operations may run on the new entry's field right after
+     * the construction. Each operation must not throw: kotlinx `release` (a proof obligation) is excluded.
+     */
+    fun madeObject(
+        arg: FirExpression?,
+        call: FirFunctionCall,
+        field: ObjField,
+    ): Made {
+        val model = field.model!!
+        if (isCtor(arg, model)) return Made.New(arg as FirFunctionCall, emptyList(), null)
+        val broken = Made.Broken(Problem("a construction of ${field.kotlin} does not pass a new $model object", posOf(arg ?: call)))
+        if (model !in PREPARED_MODELS) return broken
+        val x = unwrap(arg)
+        val scope = (x as? FirFunctionCall)?.let { calleeOf(it)?.callableId }?.takeIf { it.classId == null && it.packageName.asString() == "kotlin" }?.callableName?.asString()
+        return when {
+            x is FirFunctionCall && (scope == "apply" || scope == "also") && isCtor(unwrap(x.extensionReceiver), model) -> scopeObject(x, scope, model)
+            x is FirPropertyAccessExpression && (calleeOf(x) as? FirPropertySymbol)?.isLocal == true -> localObject(x, call, model)
+            else -> broken
+        }
+    }
+
+    /** `Semaphore(1).apply { ... }` or `.also { ... }`: each statement of the lambda is a model operation on its receiver. */
+    private fun scopeObject(
+        c: FirFunctionCall,
+        scope: String,
+        model: String,
+    ): Made {
+        val lam = (c.arguments.singleOrNull() as? FirAnonymousFunctionExpression)?.anonymousFunction
+        if (lam == null || lam.invocationKind != EventOccurrencesRange.EXACTLY_ONCE) {
+            return Made.Broken(Problem("the $scope argument is not a lambda literal that runs exactly once", posOf(c)))
+        }
+        val subject: FirBasedSymbol<*>? = if (scope == "apply") lam.receiverParameter?.symbol else lam.valueParameters.firstOrNull()?.symbol
+        val ops = lam.body?.statements.orEmpty()
+        for (s in ops) {
+            val op = s as? FirFunctionCall
+            val receiver = unwrap(op?.dispatchReceiver)
+            val onSubject =
+                when (receiver) {
+                    is FirThisReceiverExpression -> receiver.calleeReference.boundSymbol == subject
+                    is FirPropertyAccessExpression -> calleeOf(receiver) == subject
+                    else -> false
+                }
+            if (op == null || !onSubject || !preparing(op, model)) {
+                return Made.Broken(Problem("the lambda of $scope does something other than a ${model} operation on its receiver whose result is unused", posOf(s)))
+            }
+        }
+        return Made.New(unwrap(c.extensionReceiver) as FirFunctionCall, ops.map { it as FirFunctionCall }, null)
+    }
+
+    /**
+     * A local `val s = Semaphore(...)` that [call] passes: every other read of s is the receiver of a statement
+     * `s.op()` of the block that declares s, after the declaration and before the statement that holds the pass, in
+     * the same function or lambda.
+     */
+    private fun localObject(
+        pass: FirPropertyAccessExpression,
+        call: FirFunctionCall,
+        model: String,
+    ): Made {
+        val sym = calleeOf(pass) as FirPropertySymbol
+        val name = sym.name.asString()
+        val decl = declarations[sym] as? FirProperty
+
+        fun broken(
+            reason: String,
+            at: FirElement,
+        ) = Made.Broken(Problem("$name $reason", posOf(at)))
+        if (decl == null || !decl.isVal) return broken("is not a val", decl ?: pass)
+        val init = unwrap(decl.initializer)
+        if (!isCtor(init, model)) return broken("is not made by a new $model object", decl)
+        val block = index.parent(decl) as? FirBlock ?: return broken("is not declared in a block", decl)
+        val function = enclosing(decl) { it is FirFunction }
+        if (enclosing(pass) { it is FirFunction } !== function) return broken("is passed inside another function or lambda than the one that makes it", call)
+        val statements = block.statements
+
+        // The index of the statement of the block that holds [e]; -1 if [e] is not in the block.
+        fun statementOf(e: FirElement): Int {
+            var x: FirElement = e
+            while (index.parent(x) !== block) x = index.parent(x) ?: return -1
+            return statements.indexOf(x)
+        }
+        val passAt = statementOf(pass)
+        if (passAt < 0) return broken("is passed outside the block that declares it", call)
+        val ops = mutableListOf<FirFunctionCall>()
+        // Every read, the right side of an assignment included ([reads] leaves out every read under an assignment).
+        val others = index.nodes.filterIsInstance<FirPropertyAccessExpression>().filter { calleeOf(it) == sym && it !== pass }
+        for (read in others) {
+            val owner = enclosing(read) { it is FirFunctionCall } as FirFunctionCall?
+            val op = owner?.takeIf { it.dispatchReceiver === read && entriesOf(it).any { e -> e.model == model && e.role == Role.OP } }
+            when {
+                owner != null && constructedClass(calleeOf(owner)) != null && owner.arguments.any { unwrap(it) === read } -> return broken("is passed to more than one constructor", read)
+                statementOf(read) > passAt -> return broken("is used after the statement that passes it", read)
+                op == null -> return broken("is used other than as the receiver of a $model operation or as one constructor argument", read)
+                op !in statements -> return broken("is the receiver of an operation whose result is used or that is not a statement of the block that declares it", op)
+                !preparing(op, model) -> return broken("gets a $model operation that may throw before the pass", op)
+                else -> ops += op
+            }
+        }
+        return Made.New(init as FirFunctionCall, ops.sortedBy { statements.indexOf(it) }, decl)
+    }
+
+    /** True if [op] is a model operation of [model] that cannot throw: kotlinx `release` has a proof obligation. */
+    private fun preparing(
+        op: FirFunctionCall,
+        model: String,
+    ): Boolean = entriesOf(op).any { it.model == model && it.role == Role.OP && !(model == TrustedModels.KOTLINX_SEMAPHORE_MODEL && it.name == "release") }
 
     /** The reads of property [sym] in the module file. */
     private fun reads(sym: FirPropertySymbol): List<FirPropertyAccessExpression> =
@@ -508,6 +664,10 @@ internal class ModuleContext(
                             is FirEqualityOperatorCall -> e.arguments.takeIf { it.size == 2 }?.let { (a, b) -> abstraction.union(slotOf(a), slotOf(b)) }
                             is FirReturnExpression -> (e.target.labeledElement as? FirNamedFunction)?.let { abstraction.union(it.symbol, slotOf(e.result)) }
                             is FirStringConcatenationCall -> templateOf(e)?.let { abstraction.fix(e, it.first.type, posOf(e)) }
+                            // A String value of an if or when is each branch's value; that of `a?.s` is s's (AI-CODE.md 14.1 A2, A4).
+                            is FirWhenExpression ->
+                                if (isString(e)) e.branches.forEach { b -> (b.result.statements.lastOrNull() as? FirExpression)?.let { abstraction.union(slotOf(e), slotOf(it)) } }
+                            is FirSafeCallExpression -> if (isString(e)) (e.selector as? FirExpression)?.let { abstraction.union(slotOf(e), slotOf(it)) }
                             is FirFunctionCall -> call(e)
                             else -> Unit
                         }
@@ -562,6 +722,8 @@ internal class ModuleContext(
         }
         return errors
     }
+
+    private fun isString(e: FirExpression): Boolean = e.resolvedType.lowerBoundIfFlexible().classId?.asString() == "kotlin/String"
 
     /** The template type [e] builds, with the Long part; null if no sidecar template matches its parts. */
     fun templateOf(e: FirStringConcatenationCall): Pair<Template, FirExpression>? {
