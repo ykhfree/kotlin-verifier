@@ -254,6 +254,22 @@ class ConstructTest {
         assertTrue("used other than as the receiver of set or get at Lock.kt:${f.line("println(result)")}" in u.reason, u.reason)
     }
 
+    @Test
+    fun `a cell assigned to another variable escapes`() {
+        val f = LockFixture("if (e != null) result.set(e.token)\ne", after = "        var other: Any? = null\n        other = result\n        println(other)", operations = LockFixture.RESULT_OPERATION)
+        val u = assertUnsupported(f.lower(dir), "cell escapes", f.at("result.set"))
+        assertTrue("used other than as the receiver of set or get at Lock.kt:${f.line("other = result")}" in u.reason, u.reason)
+    }
+
+    @Test
+    fun `a flattened field assigned to a variable breaks the flattening`() {
+        val f = LockFixture("if (e != null) e.semaphore.release()\ne", members = "    private fun peek(i: Info): Any? {\n        var s: Any? = null\n        s = i.semaphore\n        return s\n    }")
+        val m = f.lower(dir)
+        assertTrue(m.incomplete, m.runText)
+        val reasons = m.run.body.walk().filterIsInstance<Unsupported>().map { it.reason } + m.diagnostics.map { it.message }
+        assertTrue(reasons.any { "semaphore is used other than as the receiver of a jdk.Semaphore operation at Lock.kt:${f.line("s = i.semaphore")}" in it }, reasons.joinToString("\n"))
+    }
+
     // ---- constructor defaults ----
 
     @Test

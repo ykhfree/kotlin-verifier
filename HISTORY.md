@@ -322,3 +322,5 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 계획과 예측은 결과 전에 `AI-CODE.md` 14절에 등록했다 (`2d479ee`). 2b에서 판정하지 못한 action 14개를 원인별로 셌다: Semaphore를 먼저 만들고 넘기는 모양 9, 값으로 쓴 if/when·별칭 2, `?.`·멤버 helper 3, compute 밖 토큰 3 (겹침 있음).
 - A1-A5 구현 시작 (feature-developer), Part B(compute 밖 토큰) 설계 시작 (deep-reasoner, `DESIGN-D.md`).
 - 과적합 검사: 구현 뒤 새 AI 구현 12개를 만들어 수정 전·후 도구를 모두 돌린다. 기준: 수정 뒤 판정 비율 75% 이상.
+- 3a 완료 (`f3f267f`, `846d4e4`; `AI-CODE.md` 14.4): 2차 12개에서 판정 22 → 32 (36개 중), 놓침 0, 오경보 0. 판별 예측(T-haiku-3, T-sonnet-3 unLock FAILED) 맞음. 예측 1은 하나 틀림(T-opus-2의 `Long.MAX_VALUE`).
+- S3 (기존 결함, 메인 세션이 고침, `AI-CODE.md` 14.5): `reads()`가 대입의 값 쪽 읽기까지 빼서 셀·평탄화 필드의 escape를 놓쳤다. 테스트 585개, 변이 63회 불일치 0, 3a 결과 변화 없음.
