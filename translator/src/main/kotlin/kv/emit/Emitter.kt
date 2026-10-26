@@ -48,6 +48,14 @@ import kv.kvir.RacyGet
 import kv.kvir.Return
 import kv.kvir.Raise
 import kv.kvir.Elvis
+import kv.kvir.EnumLit
+import kv.kvir.Call
+import kv.kvir.Try
+import kv.kvir.Throw
+import kv.kvir.Spawn
+import kv.kvir.While
+import kv.kvir.Break
+import kv.kvir.Inline
 import kv.kvir.returnedValue
 import kv.kvir.canThrow
 import kv.kvir.Local
@@ -353,6 +361,7 @@ private class Emitter(
             KType.BoolT -> "Bool"
             is KType.Abs -> stype(t.name)
             is KType.RefT -> "Ref"
+            is KType.EnumT -> error("enum type ${t.name}: client modules are emitted from DESIGN-E E3 on")
         }
 
     private fun at(pos: Pos) = "@${pos.line}:${pos.col}"
@@ -1167,6 +1176,7 @@ private class Emitter(
                     }
                 is Unsupported -> error("unsupported statement in supported action ${a.id}")
                 is RunAction, is Fresh, is RacyGet, is Return, is Raise -> error("B statement ${s::class.simpleName} at ${s.pos}: emitted from DESIGN-B.md 8, B3 on")
+                is Call, is Try, is Throw, is Spawn, is While, is Break, is Inline -> error("client statement ${s::class.simpleName} at ${s.pos}: client modules are emitted from DESIGN-E E3 on")
             }
         }
 
@@ -1389,6 +1399,7 @@ private class Emitter(
                 is New -> fail(anchor, "an instance module creates objects only with a `returns fresh` function (DESIGN-B.md 3.3 rule 4); new ${s.cls.name} at ${at(s.pos)}")
                 is ModelOp -> fail(anchor, "the instance-module emitter has no Viper form for model operation ${s.op} at ${at(s.pos)}")
                 is RunAction, is Unsupported -> error("${s::class.simpleName} at ${s.pos} in ${a.id}")
+                is Call, is Try, is Throw, is Spawn, is While, is Break, is Inline -> error("client statement ${s::class.simpleName} at ${s.pos}: client modules are emitted from DESIGN-E E3 on")
             }
         }
 
@@ -1654,6 +1665,7 @@ private class Emitter(
             is Elvis -> "${operand(e.a, PREC_EQ + 1)} != null ? ${operand(e.a, 1)} : ${operand(e.b, 0)}"
             // An operation result (DESIGN-D.md 7): Viper's conditional, right-associative and weakest.
             is Ite -> "${operand(e.cond, 1)} ? ${operand(e.a, 1)} : ${operand(e.b, 0)}"
+            is EnumLit -> error("enum entry ${e.type.name}.${e.entry}: client modules are emitted from DESIGN-E E3 on")
         }
 
     private fun operand(

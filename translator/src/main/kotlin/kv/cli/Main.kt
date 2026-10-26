@@ -9,6 +9,7 @@ import kv.emit.emitViper
 import kv.frontend.LoweredFir
 import kv.frontend.ResolveOutcome
 import kv.kvir.checkWellFormed
+import kv.kvir.ModuleKind
 import kv.kvir.incomplete
 import kv.kvir.printModule
 import kv.lower.bindGhosts
@@ -55,7 +56,8 @@ private const val USAGE = """usage:
       With --draft (DESIGN-C.md 7.1), an intent clause without a 'reviewed' note is no error; in a client sidecar
       (DESIGN-E 2.5) neither is a trusted declaration without one.
   kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] [--draft] SIDECAR.kv
-      As resolve, then prints the module in KVIR and checks W1-W16. Exit 1 if a rule is broken.
+      As resolve, then prints the module in KVIR and checks W1-W16 (a client module: W1-W22, DESIGN-E 6.3). Exit 1
+      if a rule is broken.
   kv emit --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] SIDECAR.kv
       As lower, then writes the Viper program (to stdout without --out). With --out, also writes the position
       table to FILE.vpr.positions. Exit 1 if a rule is broken or the sidecar cannot be emitted.
@@ -232,15 +234,13 @@ private fun lower(
     draft: Boolean,
 ): Int {
     val (outcome, code) = resolved("lower", options, err, draft)
-    if (outcome?.sidecar?.client == true && outcome.module == null) {
-        err.println("kv: ${options.files.single().path} is a client module; its lowering comes with DESIGN-E E2")
-        return 1
-    }
     val module = outcome?.module ?: return code
     out.print(printModule(module))
     val violations = checkWellFormed(module)
     violations.forEach { err.println("kv: $it") }
-    out.println("module ${if (module.incomplete) "INCOMPLETE (unsupported parts above)" else "complete"}; W1-W16: ${violations.size} violation(s)")
+    // DESIGN-E 6.3: a client module has the rules W1-W22 (ClientWellFormed).
+    val rules = if (module.kind == ModuleKind.CLIENT) "W1-W22" else "W1-W16"
+    out.println("module ${if (module.incomplete) "INCOMPLETE (unsupported parts above)" else "complete"}; $rules: ${violations.size} violation(s)")
     return if (violations.isEmpty()) 0 else 1
 }
 
@@ -253,6 +253,10 @@ private fun emitted(
     val (outcome, code) = resolved(command, options, err)
     val module = outcome?.module ?: return null to code
     val sidecar = outcome.sidecar!!
+    if (sidecar.client) {
+        err.println("kv: ${options.files.single().path} is a client module; its Viper program comes with DESIGN-E E3")
+        return null to 1
+    }
     return try {
         val bound = bindGhosts(module, sidecar)
         val violations = checkWellFormed(bound)
@@ -305,6 +309,10 @@ private fun verify(
     val (outcome, code) = resolved("verify", options, err, draft = draft)
     // A compile error or a sidecar error is ERROR; only a usage error keeps its own code.
     val module = outcome?.module ?: return if (code == 2) 2 else verdictExit(ModuleVerdict.ERROR)
+    if (outcome.sidecar?.client == true) {
+        err.println("kv: ${options.files.single().path} is a client module; its verification comes with DESIGN-E E3")
+        return verdictExit(ModuleVerdict.ERROR)
+    }
     val vpr = options.out ?: File.createTempFile("kv-", ".vpr")
     val budget = SiliconBudget(options.assertTimeoutMs ?: 20_000, options.assertTimeoutMs ?: 20_000, options.wallSeconds ?: 300)
     val report =
@@ -327,8 +335,12 @@ private fun mutationSites(
     err: PrintStream,
 ): Int {
     var found: Pair<SiteList, List<LibraryTrusted>>? = null
-    val (outcome, code) = resolved("mutation-sites", options, err) { found = moduleSites(it, options.root!!) }
+    val (outcome, code) = resolved("mutation-sites", options, err) { if (!it.sidecar.client) found = moduleSites(it, options.root!!) }
     outcome ?: return code
+    if (outcome.sidecar?.client == true) {
+        err.println("kv: ${options.files.single().path} is a client module; its mutation sites come with DESIGN-E E4")
+        return 1
+    }
     val (module, library) = found ?: run {
         err.println("kv: the module was not lowered")
         return 1

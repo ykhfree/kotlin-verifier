@@ -35,6 +35,7 @@ private class KvirPrinter(
     }
 
     fun print(): String {
+        if (m.kind == ModuleKind.CLIENT) return printClient()
         line(0, "module ${m.id}${if (m.kind == ModuleKind.INSTANCE) " (instance: S is one object of the class)" else ""}")
         line(0, "files ${allPositions().map { it.file.substringAfterLast('/') }.distinct().sorted().joinToString()}")
         line(0, "types")
@@ -61,6 +62,11 @@ private class KvirPrinter(
         m.operations.forEach(::operation)
         if (m.strayActions.isEmpty()) line(0, "stray actions: none")
         m.strayActions.forEach { action(0, "stray action", it) }
+        return ledgerAndDiagnostics()
+    }
+
+    /** The ledger (consecutive nodes of one construct on one line) and the diagnostics. */
+    private fun ledgerAndDiagnostics(): String {
         line(0, "ledger: ${m.firNodeCount} FIR nodes, ${m.ledger.size} in the ledger, ${translatedIds().size} translated")
         // Consecutive nodes of one construct share a line: `first-last kind what`.
         val runs = mutableListOf<MutableList<Disposition>>()
@@ -87,7 +93,61 @@ private class KvirPrinter(
         return out.toString()
     }
 
-    private fun translatedIds(): Set<Int> = ((m.operations.map { it.action } + m.strayActions).flatMap { it.translated } + m.operations.flatMap { it.reserve?.translated.orEmpty() }).toSet()
+    private fun translatedIds(): Set<Int> =
+        (
+            (m.operations.map { it.action } + m.strayActions).flatMap { it.translated } + m.operations.flatMap { it.reserve?.translated.orEmpty() } +
+                m.entries.flatMap { it.translated } + m.tasks.flatMap { it.translated }
+        ).toSet()
+
+    // ---- client modules (DESIGN-E 6.3) ----
+
+    /** A client module: its vocabulary, each entry and each task with its precondition, then the ledger. */
+    private fun printClient(): String {
+        line(0, "client module ${m.id}")
+        line(0, "files ${(m.entries.map { it.pos } + m.tasks.map { it.pos } + m.ledger.map { it.pos } + m.diagnostics.map { it.pos }).map { it.file.substringAfterLast('/') }.distinct().sorted().joinToString()}")
+        line(0, "types")
+        m.types.forEach { line(1, "${it.name} = ${it.template?.let { t -> "template \"$t\"" } ?: "opaque"}${it.kclass?.let { k -> " ${k.replace('/', '.')}" } ?: ""}") }
+        line(0, "enums")
+        m.enums.forEach { line(1, "${it.name} = ${it.kotlin} {${it.entries.joinToString()}}") }
+        m.classes.forEach { c ->
+            line(0, "class ${c.name} = ${c.kotlin}")
+            c.fields.forEach { f -> line(1, "${f.name}: ${type(f.type)} = ${f.kotlin}") }
+        }
+        m.obligations.forEach { o -> line(0, "obligation ${o.name}(${o.types.joinToString { type(it) }})") }
+        line(0, "thrown ${m.thrown.joinToString { it.label }.ifEmpty { "none" }}")
+        for (e in m.entries) {
+            line(0, "entry ${e.name} = ${e.kotlin}", e.pos)
+            e.params.forEach { line(1, "param ${decl(it)}", it.pos) }
+            e.free.forEach { line(1, "free  ${freeValue(it)}", it.local.pos) }
+            e.result?.let { line(1, "result ${decl(it)}") }
+            unitTail(e.status, e.translated, e.body)
+        }
+        for (t in m.tasks) {
+            line(0, "task ${t.id} = lambda in ${t.inFunction}${if (t.via.isEmpty()) "" else " via ${t.via.joinToString()}"}, spawned by ${t.spawnedBy}", t.pos)
+            t.params.forEach { line(1, "param ${decl(it)}", it.pos) }
+            t.free.forEach { line(1, "free  ${freeValue(it)}", it.local.pos) }
+            t.requires.forEach { line(1, "requires ${expr(it)}", it.pos) }
+            t.holds.forEach { h -> line(1, "holds ${h.cond?.let { "${operand(it)} ==> " } ?: ""}${h.obligation}(${h.args.joinToString { expr(it) }})", h.pos) }
+            unitTail(t.status, t.translated, t.body)
+        }
+        return ledgerAndDiagnostics()
+    }
+
+    private fun unitTail(
+        status: Status,
+        translated: Set<Int>,
+        body: List<Stmt>,
+    ) {
+        if (status is Status.Unsupported) {
+            line(1, "status unsupported")
+            status.diagnostics.forEach { line(2, "${it.id} ${it.message}", it.pos) }
+        }
+        line(1, "translates FIR nodes ${ranges(translated)}")
+        line(1, "body")
+        body.forEach { stmt(2, it) }
+    }
+
+    private fun kinds(ks: List<ExcKind>) = ks.joinToString { it.label }
 
     private fun allPositions(): List<Pos> =
         m.state.map { it.pos } + m.classes.map { it.pos } + m.operations.map { it.pos } + m.strayActions.map { it.pos } +
@@ -227,6 +287,38 @@ private class KvirPrinter(
             }
             is Return -> line(indent, "return${s.e?.let { " ${expr(it)}" } ?: ""}", s.pos)
             is Raise -> line(indent, "raise", s.pos)
+            is Call -> {
+                val outs = if (s.outs.isEmpty()) "" else "${s.outs.joinToString { decl(it) }} := "
+                val throws = if (s.throws.isEmpty()) "" else " throws ${kinds(s.throws)}"
+                val obligation =
+                    s.obligation?.let { o ->
+                        "; ${if (o.creates) "creates" else "consumes"} ${o.obligation}(${o.args.joinToString { expr(it) }})${o.ifNotNull?.let { " if ${it.name} != null" } ?: ""}"
+                    } ?: ""
+                line(indent, "call $outs${s.fn}(${s.args.joinToString { expr(it) }})$throws$obligation$suffix", s.pos)
+            }
+            is Try -> {
+                line(indent, "try", s.pos)
+                s.body.forEach { stmt(indent + 1, it) }
+                s.catches.forEach { c ->
+                    line(indent, "catch ${c.type}: ${kinds(c.kinds)}", c.pos)
+                    c.body.forEach { stmt(indent + 1, it) }
+                }
+                s.fin?.let { f ->
+                    line(indent, "finally")
+                    f.forEach { stmt(indent + 1, it) }
+                }
+            }
+            is Throw -> line(indent, s.kind?.let { "throw ${it.label}" } ?: "rethrow", s.pos)
+            is Spawn -> line(indent, "spawn ${s.task}(${s.args.joinToString { expr(it) }}) by ${s.model}${if (s.throws.isEmpty()) "" else " throws ${kinds(s.throws)}"}", s.pos)
+            is While -> {
+                line(indent, "while ${expr(s.cond)}${s.hole?.let { " [hole $it]" } ?: ""}${s.measure?.let { " [measure ${expr(it)}]" } ?: ""}$suffix", s.pos)
+                s.body.forEach { stmt(indent + 1, it) }
+            }
+            is Break -> line(indent, "break", s.pos)
+            is Inline -> {
+                line(indent, "inline ${s.fn}${s.out?.let { " -> ${decl(it)}" } ?: ""}", s.pos)
+                s.body.forEach { stmt(indent + 1, it) }
+            }
         }
     }
 
@@ -252,6 +344,7 @@ private class KvirPrinter(
             KType.BoolT -> "Bool"
             is KType.Abs -> t.name + if (t.nullable) "?" else ""
             is KType.RefT -> t.cls + if (t.nullable) "?" else ""
+            is KType.EnumT -> t.name + if (t.nullable) "?" else ""
         }
 
     private fun expr(e: Expr): String =
@@ -270,6 +363,7 @@ private class KvirPrinter(
             is Carried -> "carried(S, ${expr(e.key)}, ${expr(e.token)})"
             is Elvis -> "${operand(e.a)} ?: ${operand(e.b)}"
             is Ite -> "if ${operand(e.cond)} then ${operand(e.a)} else ${operand(e.b)}"
+            is EnumLit -> "${e.type.name}.${e.entry}"
         }
 
     /** Operators inside operators get parentheses, so the printed text has one reading. */

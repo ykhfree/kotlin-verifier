@@ -277,6 +277,9 @@ internal class ModuleContext(
                             when (f.type.text) {
                                 "Semaphore", "Long" -> KType.IntT
                                 "AtomicBoolean" -> KType.BoolT
+                                // DESIGN-E 6.2: a client class field is Int or Bool (an object module's FTYPE has neither).
+                                "Int" -> KType.IntT
+                                "Bool" -> KType.BoolT
                                 else -> KType.Abs(f.type.text, f.nullable)
                             }
                         val volatile = prop.backingFieldSymbol?.resolvedAnnotationClassIds?.contains(VOLATILE) == true
@@ -650,8 +653,19 @@ internal class ModuleContext(
         val keyArg = found.call.arguments.firstOrNull() ?: return
         abstraction.fix(slotOf(keyArg), keyType, posOf(keyArg))
         found.lambda?.valueParameters?.firstOrNull()?.let { abstraction.union(it.symbol, slotOf(keyArg)) }
+        walkConstraints(listOfNotNull(found.lambda))
+    }
+
+    /**
+     * Collects the String abstraction constraints (2.13) of [start] and of the module-file helpers they call; [onCall]
+     * sees every call first (a client module fixes the slots of trusted calls there, DESIGN-E 6.4).
+     */
+    fun walkConstraints(
+        start: List<FirElement>,
+        onCall: (FirFunctionCall) -> Unit = {},
+    ) {
         val visited = mutableSetOf<FirNamedFunctionSymbol>()
-        val roots = ArrayDeque<FirElement>(listOfNotNull(found.lambda))
+        val roots = ArrayDeque<FirElement>(start)
         while (roots.isNotEmpty()) {
             roots.removeFirst().accept(
                 object : FirVisitorVoid() {
@@ -677,6 +691,7 @@ internal class ModuleContext(
                     }
 
                     private fun call(c: FirFunctionCall) {
+                        onCall(c)
                         val sym = calleeOf(c)
                         val mapping = c.resolvedArgumentMapping.orEmpty()
                         val helper = (sym as? FirNamedFunctionSymbol)?.let { index.functions[it] }

@@ -20,6 +20,12 @@ sealed interface KType {
         val cls: String,
         val nullable: Boolean,
     ) : KType
+
+    /** A sidecar `enum` (DESIGN-E 6.2): its entries are Int constants in declaration order. */
+    data class EnumT(
+        val name: String,
+        val nullable: Boolean,
+    ) : KType
 }
 
 /**
@@ -32,8 +38,11 @@ data class AbsType(
     val kclass: String? = null,
 )
 
-/** An object module (v0: a Kotlin object or companion object) or an instance module (DESIGN-B.md 2.1: a class, S = this). */
-enum class ModuleKind { OBJECT, INSTANCE }
+/**
+ * An object module (v0: a Kotlin object or companion object), an instance module (DESIGN-B.md 2.1: a class, S = this)
+ * or a client module (DESIGN-E 6.1: no state; each public function is checked as one thread's run).
+ */
+enum class ModuleKind { OBJECT, INSTANCE, CLIENT }
 
 enum class GhostKind { SET_ONCE, FROZEN, ENDS }
 
@@ -63,6 +72,16 @@ data class Module(
     val freshFunctions: Map<String, String> = emptyMap(),
     /** The module file. Positions in other files print with their file name. */
     val file: String? = null,
+    /** A client module's enums (DESIGN-E 6.2). */
+    val enums: List<EnumDef> = emptyList(),
+    /** A client module's obligations (DESIGN-E 3.1). */
+    val obligations: List<ObligationDef> = emptyList(),
+    /** The exception kinds a client module's code throws (DESIGN-E 3.5), in source order. */
+    val thrown: List<Thrown> = emptyList(),
+    /** A client module's public functions (DESIGN-E 6.1). */
+    val entries: List<EntryFun> = emptyList(),
+    /** The tasks a client module's entries hand to an executor (DESIGN-E 3.4). */
+    val tasks: List<Task> = emptyList(),
 )
 
 sealed interface StateVar {
@@ -515,6 +534,13 @@ data class Elvis(
     override val type get() = b.type
 }
 
+/** An entry of a sidecar enum (DESIGN-E 6.2), e.g. `LockType.UPDATE`. */
+data class EnumLit(
+    override val type: KType.EnumT,
+    val entry: String,
+    override val pos: Pos,
+) : Expr
+
 /** `if (cond) a else b` as a value (DESIGN-D.md 6.2, 7): an operation result. [type] is the type of both values. */
 data class Ite(
     val cond: Expr,
@@ -570,6 +596,9 @@ enum class DispositionKind(
 
     /** The body of a reviewed trusted function: read by a person, checked by the tool, not translated (DESIGN-B.md 3.3 rule 5). */
     TRUSTED("trusted"),
+
+    /** Code the client lowering checked has no effect on the model, e.g. a callback that only logs (DESIGN-E 6.4 row 10). */
+    NO_EFFECT("no-effect"),
 }
 
 /** How the translator handled one FIR node outside the actions. */
@@ -590,7 +619,8 @@ val Module.incomplete: Boolean
     get() =
         (operations.map { it.action } + strayActions).any { it.status is Status.Unsupported } ||
             ledger.any { it.kind == DispositionKind.UNSUPPORTED } ||
-            diagnostics.any { it.kind == DiagnosticKind.UNSUPPORTED }
+            diagnostics.any { it.kind == DiagnosticKind.UNSUPPORTED } ||
+            entries.any { it.status is Status.Unsupported } || tasks.any { it.status is Status.Unsupported }
 
 data class Diagnostic(
     val id: String,
