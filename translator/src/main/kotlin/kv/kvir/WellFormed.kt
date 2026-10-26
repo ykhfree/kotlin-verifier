@@ -18,13 +18,13 @@ data class Violation(
  * W2 (expressions are pure) holds by construction: no [Expr] subtype has an effect, and every effectful node is a
  * [Stmt], so the Kotlin compiler rejects an effectful node in an expression position.
  */
-fun checkWellFormed(module: Module): List<Violation> = WellFormedChecker(module).run()
+fun checkWellFormed(module: Module): List<Violation> = if (module.kind == ModuleKind.CLIENT) ClientWellFormed(module).run() else WellFormedChecker(module).run()
 
 // ---- tree walks, shared by the checker and the printer ----
 
 internal fun Expr.children(): List<Expr> =
     when (this) {
-        is IntLit, is BoolLit, is NullLit, is Var -> emptyList()
+        is IntLit, is BoolLit, is NullLit, is Var, is EnumLit -> emptyList()
         is FieldRead -> listOf(obj)
         is Arith -> listOf(a, b)
         is Cmp -> listOf(a, b)
@@ -57,6 +57,10 @@ internal fun Stmt.exprs(): List<Expr> =
         is Exit -> listOfNotNull((result as? ExitResult.Put)?.e)
         is RacyGet -> listOf(key)
         is Return -> listOfNotNull(e)
+        is Call -> args + obligation?.args.orEmpty()
+        is Spawn -> args
+        is While -> listOfNotNull(cond, measure)
+        is Try, is Throw, is Break, is Inline -> emptyList()
     }
 
 /** These statements and all statements nested in them, in source order. */
@@ -64,9 +68,20 @@ internal fun List<Stmt>.walk(): Sequence<Stmt> =
     sequence {
         for (s in this@walk) {
             yield(s)
-            if (s is If) {
-                yieldAll(s.then.walk())
-                yieldAll(s.els.walk())
+            when (s) {
+                is If -> {
+                    yieldAll(s.then.walk())
+                    yieldAll(s.els.walk())
+                }
+                // Client modules (DESIGN-E 6.3).
+                is Try -> {
+                    yieldAll(s.body.walk())
+                    s.catches.forEach { yieldAll(it.body.walk()) }
+                    s.fin?.let { yieldAll(it.walk()) }
+                }
+                is While -> yieldAll(s.body.walk())
+                is Inline -> yieldAll(s.body.walk())
+                else -> Unit
             }
         }
     }
@@ -82,6 +97,7 @@ private fun KType.isNullable(): Boolean =
     when (this) {
         is KType.Abs -> nullable
         is KType.RefT -> nullable
+        is KType.EnumT -> nullable
         KType.IntT, KType.BoolT -> false
     }
 
@@ -93,6 +109,7 @@ private fun sameBase(
     when (a) {
         is KType.Abs -> b is KType.Abs && a.name == b.name
         is KType.RefT -> b is KType.RefT && a.cls == b.cls
+        is KType.EnumT -> b is KType.EnumT && a.name == b.name
         KType.IntT, KType.BoolT -> a == b
     }
 
@@ -364,6 +381,8 @@ private class WellFormedChecker(
                 is Fresh -> decl(Binding(s.v, false, Kind.LOCAL))
                 is RacyGet -> decl(Binding(s.v, false, Kind.LOCAL))
                 is RunAction -> run?.invoke(scope)
+                // Client statements (DESIGN-E 6.3) are checked by ClientWellFormed; no object or instance module has one.
+                is Call, is Try, is Throw, is Spawn, is While, is Break, is Inline -> Unit
                 is Nondet ->
                     s.outs.forEach { o ->
                         val b = scope[o.name]
@@ -404,6 +423,7 @@ private class WellFormedChecker(
             when (t) {
                 is KType.Abs -> if (t.name !in types) report("W5", pos, "$what has type ${t.name}, which is not a sidecar type")
                 is KType.RefT -> if (t.cls !in classes) report("W5", pos, "$what has type ${t.cls}, which is not a module class")
+                is KType.EnumT -> report("W5", pos, "$what has enum type ${t.name}; only a client module has enums (DESIGN-E 6.2)")
                 KType.IntT, KType.BoolT -> Unit
             }
         }
@@ -484,6 +504,7 @@ private class WellFormedChecker(
                         if (s.cond.type != KType.BoolT) report("W5", s.cond.pos, "condition has type ${s.cond.type}")
                     }
                     is Exit -> (s.result as? ExitResult.Put)?.let { assign(it.e, mapValue(a), "put") }
+                    is Call, is Try, is Throw, is Spawn, is While, is Break, is Inline -> Unit
                     is Fresh -> {
                         local(s.v)
                         if (s.v.type != KType.RefT(s.cls.name, false)) report("W5", s.pos, "fresh ${s.v.name} must have type ${s.cls.name}")
@@ -567,6 +588,7 @@ private class WellFormedChecker(
                 need(e.a, KType.BoolT)
                 need(e.b, KType.BoolT)
             }
+            is EnumLit -> Unit
             is TokenOf -> {
                 need(e.n, KType.IntT)
                 if (types[e.type.name]?.template == null || e.type.nullable) report("W5", e.pos, "token type ${e.type} is not a non-null template type")

@@ -1,6 +1,7 @@
 package kv.frontend
 
 import kv.kvir.Module
+import kv.lower.lowerClient
 import kv.lower.lowerModule
 import kv.sidecar.Sidecar
 import kv.sidecar.SidecarError
@@ -117,8 +118,17 @@ class FrontendSession(
         resolution = res
         errors += errs
         if (errs.isNotEmpty()) return
-        // DESIGN-E 6.10: a client module is resolved here; its lowering is E2.
-        if (sidecar.client) return
+        if (sidecar.client) {
+            // DESIGN-E 6.3-6.4: a client module's entries, tasks and ledger.
+            try {
+                kvir = lowerClient(sidecar, resolver, file, moduleClass)
+            } catch (e: SidecarException) {
+                errors += e.errors
+                return
+            }
+            onLowered?.invoke(LoweredFir(sidecar, resolver, file, seen.map { it.first }, kvir!!))
+            return
+        }
         try {
             kvir = lowerModule(sidecar, resolver, res, file, seen.map { it.first }, found, moduleClass)
         } catch (e: SidecarException) {

@@ -8,7 +8,10 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** DESIGN-E 6.10 E1: `kv resolve` on the draft core ReqShield sidecar, with and without --draft. */
+/**
+ * DESIGN-E 6.10 E1 and E2: `kv resolve` and `kv lower` on the draft core ReqShield sidecar, with and without --draft;
+ * `kv emit` and `kv verify` refuse a client module until E3.
+ */
 class ClientCliTest {
     private val sidecar = File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv")
 
@@ -33,5 +36,25 @@ class ClientCliTest {
         val (exit, _, err) = kv("resolve", sidecar.path)
         assertEquals(1, exit)
         assertEquals(22, err.lines().count { "error[unreviewed]" in it }, err)
+    }
+
+    @Test
+    fun `lower --draft prints the client KVIR, complete and well formed`() {
+        val (exit, out, err) = kv("lower", "--draft", sidecar.path)
+        assertEquals(0, exit, err)
+        assertTrue(out.startsWith("client module com.linecorp.cse.reqshield.ReqShield\n"), out)
+        assertTrue(out.lines().any { it.startsWith("task task_125 = lambda in createReqShieldData via runInBackground, spawned by getAndSet") }, out)
+        assertTrue(out.trimEnd().endsWith("module complete; W1-W22: 0 violation(s)"), out)
+    }
+
+    @Test
+    fun `verify refuses a client module until E3, and emit the unsigned draft`() {
+        // kv emit takes no --draft: the draft's unsigned clauses stop it before the client check.
+        val (emitExit, _, emitErr) = kv("emit", sidecar.path)
+        assertEquals(1, emitExit)
+        assertTrue("error[unreviewed]" in emitErr, emitErr)
+        val (verifyExit, _, verifyErr) = kv("verify", "--draft", sidecar.path)
+        assertEquals(4, verifyExit)
+        assertTrue("its verification comes with DESIGN-E E3" in verifyErr, verifyErr)
     }
 }

@@ -39,13 +39,14 @@ object ClientConstructs {
                 ),
                 Snippet(
                     """
-                    val cur = config.get.invoke(key)
-                    val again = cur?.let { return@let it }
-                    if (again != null) return again
+                    run {
+                        if (config.maxAttempt < 0) return@run
+                        config.lock.tryLock(key, Kind.CREATE)
+                    }
                     $SUPPLIED
                     """,
                 ),
-                "return@let",
+                "return@run",
             ),
             Construct(
                 2,
@@ -410,11 +411,17 @@ object ClientConstructs {
                 ),
                 Snippet(
                     """
-                    if (config.mode.ordinal > 0) config.lock.tryLock(key, Kind.UPDATE)
+                    val kind =
+                        when (config.mode) {
+                            Mode.ONLY_CREATE -> Kind.CREATE
+                            else -> Kind.UPDATE
+                        }
+                    val token = config.lock.tryLock(key, kind)
+                    if (token != null) config.lock.unLock(key, kind, token)
                     $SUPPLIED
                     """,
                 ),
-                "ordinal",
+                "when with subject",
             ),
             Construct(
                 14,

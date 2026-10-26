@@ -216,6 +216,13 @@ val resolveClient by tasks.registering(JavaExec::class) {
     kv("resolve", "--root", reqShieldDir, "--draft", layout.projectDirectory.file("../specs/reqshield/reqshield.core.kv").asFile.path)
 }
 
+// `./gradlew lowerClient`: DESIGN-E 6.10 E2. `kv lower --draft` on the same sidecar: the KVIR of the entry, its two
+// tasks and the ledger, checked against W1-W22.
+val lowerClient by tasks.registering(JavaExec::class) {
+    description = "Prints the KVIR of the draft ReqShield core sidecar and checks W1-W22 (DESIGN-E)."
+    kv("lower", "--root", reqShieldDir, "--draft", layout.projectDirectory.file("../specs/reqshield/reqshield.core.kv").asFile.path)
+}
+
 // `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of the three
 // KeyLocalLock variants, runs the installed `kv verify` on each, and checks the verdicts and failing obligations
 // against scripts/mutants-expected.txt. Needs python3 and Silicon. It takes about a minute, so `test` does not run it.

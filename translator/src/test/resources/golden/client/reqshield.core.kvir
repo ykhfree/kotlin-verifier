@@ -1,0 +1,183 @@
+client module com.linecorp.cse.reqshield.ReqShield
+files ReqShield.kt
+types
+  Key = opaque
+  Token = opaque
+enums
+  LockType = com.linecorp.cse.reqshield.LockType {CREATE, UPDATE}
+  Mode = com.linecorp.cse.reqshield.config.ReqShieldWorkMode {CREATE_AND_UPDATE_CACHE, ONLY_CREATE_CACHE, ONLY_UPDATE_CACHE}
+class Data = ReqShieldData
+  value: Int = value
+obligation Lease(Key, LockType, Token)
+thrown ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR)
+entry getAndSet = fun ReqShield.getAndSetReqShieldData            @38:5
+  param k: Key                                                    @39:9
+  free  mode: Mode <- this.reqShieldConfig.reqShieldWorkMode (instance val reqShieldConfig.reqShieldWorkMode @63:31) @63:31
+  free  maxAttempt: Int <- this.reqShieldConfig.maxAttemptGetCache (instance val reqShieldConfig.maxAttemptGetCache @181:27) @181:27
+  result res: Data
+  translates FIR nodes 12-110,134-249,261-279,295-455,501-543
+  body
+    inline executeGetCacheFunction -> currentReqShieldData__43: Data? @43:36
+      try                                                         @223:9
+        call r_224_13_at43: Data? := ReqShieldConfiguration.getCacheFunction(k) throws RTE, CHK @224:13
+        return r_224_13_at43                                      @223:9 fake=FromExpressionBody
+      catch Throwable: REE, RTE, CHK, INTR, ERR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @225:21
+        throw ClientException(GET_CACHE_ERROR)                    @226:13
+    if currentReqShieldData__43 != null                           @44:9
+      inline shouldUpdateCache -> r_45_17: Bool                   @45:17
+        call r_55_9: Bool := decideToUpdateCache()                @55:9
+        return r_55_9                                             @55:9 fake=FromExpressionBody
+      if r_45_17                                                  @45:13
+        inline updateReqShieldData                                @46:17
+          let lockType__62: LockType := LockType.UPDATE           @62:9
+          let onlyCreateCache__63: Bool := mode == Mode.ONLY_CREATE_CACHE @63:9
+          var token__66: Token? := null                           @66:21
+          if !onlyCreateCache__63                                 @66:21
+            call token__66: Token? := KeyLock.tryLock(k, lockType__62) throws RTE; creates Lease(k, lockType__62, token__66) if token__66 != null @66:52
+          if onlyCreateCache__63 || (token__66 != null)           @68:9
+            inline runInBackground                                @69:13
+              try                                                 @143:9
+                spawn task_69(k, lockType__62, token__66) by jdk.CompletableFuture.runAsync throws REE @144:13
+              catch RejectedExecutionException: REE               @147:18
+                if token__66 != null                              @149:13
+                  try                                             @151:17
+                    call KeyLock.unLock(k, lockType__62, token__66) throws RTE; consumes Lease(k, lockType__62, token__66) @152:21
+                  catch Exception: REE, RTE, CHK, INTR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @153:26
+      return currentReqShieldData__43                             @48:13
+    else
+      inline handleLockForCacheCreation -> out_50_20: Data        @50:20
+        let lockType__85: LockType := LockType.CREATE             @85:9
+        let onlyUpdateCache__86: Bool := mode == Mode.ONLY_UPDATE_CACHE @86:9
+        var token__89: Token? := null                             @89:21
+        if !onlyUpdateCache__86                                   @89:21
+          call token__89: Token? := KeyLock.tryLock(k, lockType__85) throws RTE; creates Lease(k, lockType__85, token__89) if token__89 != null @89:52
+        if token__89 != null                                      @91:9
+          var cacheCreationRequired__92: Bool := false            @92:13
+          try                                                     @93:13
+            inline executeGetCacheFunction -> cachedData__95: Data? @95:34
+              try                                                 @223:9
+                call r_224_13_at95: Data? := ReqShieldConfiguration.getCacheFunction(k) throws RTE, CHK @224:13
+                return r_224_13_at95                              @223:9 fake=FromExpressionBody
+              catch Throwable: REE, RTE, CHK, INTR, ERR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @225:21
+                throw ClientException(GET_CACHE_ERROR)            @226:13
+            if cachedData__95 != null                             @96:17
+              return cachedData__95                               @96:41
+            cacheCreationRequired__92 := true                     @97:17
+          finally
+            if !cacheCreationRequired__92                         @100:17
+              call KeyLock.unLock(k, lockType__85, token__89) throws RTE; consumes Lease(k, lockType__85, token__89) @101:21
+        if onlyUpdateCache__86 || (token__89 != null)             @106:16
+          inline createReqShieldData -> out_107_13: Data          @107:13
+            inline executeCallable -> arg_122_17: Int             @122:17
+              try                                                 @261:9
+                call r_262_13_at122: Int := Callable.call() throws RTE, CHK, INTR @262:13
+                return r_262_13_at122                             @261:9 fake=FromExpressionBody
+              catch Throwable: REE, RTE, CHK, INTR, ERR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @263:21
+                if (token__89 != null) && (lockType__85 != null)  @264:13
+                  call KeyLock.unLock(k, lockType__85, token__89) throws RTE; consumes Lease(k, lockType__85, token__89) @265:17
+                throw ClientException(SUPPLIER_ERROR)             @267:13
+            inline buildReqShieldData -> reqShieldData__120: Data @121:13
+              new new_214_9_at121: Data {value := arg_122_17}     @214:9
+              return new_214_9_at121                              @214:9 fake=FromExpressionBody
+            inline runInBackground                                @125:9
+              try                                                 @143:9
+                spawn task_125(k, lockType__85, token__89, reqShieldData__120) by jdk.CompletableFuture.runAsync throws REE @144:13
+              catch RejectedExecutionException: REE               @147:18
+                if token__89 != null                              @149:13
+                  try                                             @151:17
+                    call KeyLock.unLock(k, lockType__85, token__89) throws RTE; consumes Lease(k, lockType__85, token__89) @152:21
+                  catch Exception: REE, RTE, CHK, INTR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @153:26
+            return reqShieldData__120                             @129:9
+          return out_107_13                                       @106:9
+        else
+          inline handleLockFailure -> out_109_13: Data            @109:13
+            var attempts__178: Int := 0                           @178:9
+            var consecutiveFailures__179: Int := 0                @179:9
+            while attempts__178 < maxAttempt [hole ReqShield.handleLockFailure@181] [measure maxAttempt - attempts__178] @181:9
+              attempts__178 := attempts__178 + 1 [ASSUME A182_13] @182:13 fake=PostfixInc
+              inline sleepBetweenPolls                            @183:13
+                try                                               @201:9
+                  call jdk.Thread.sleep() throws INTR             @202:13
+                catch InterruptedException: INTR                  @203:18
+                  throw ClientException(GET_CACHE_ERROR)          @206:13
+              try                                                 @185:13
+                call cachedData__186: Data? := ReqShieldConfiguration.getCacheFunction(k) throws RTE, CHK @186:34
+                if cachedData__186 != null                        @187:17
+                  return cachedData__186                          @187:41
+                consecutiveFailures__179 := 0                     @189:17
+              catch Exception: REE, RTE, CHK, INTR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @190:22
+                consecutiveFailures__179 := consecutiveFailures__179 + 1 [ASSUME A192_21] @192:21 fake=PrefixInc
+                if consecutiveFailures__179 >= 3                  @192:17
+                  break                                           @192:82
+            inline executeCallable -> arg_197_35: Int             @197:35
+              try                                                 @261:9
+                call r_262_13_at197: Int := Callable.call() throws RTE, CHK, INTR @262:13
+                return r_262_13_at197                             @261:9 fake=FromExpressionBody
+              catch Throwable: REE, RTE, CHK, INTR, ERR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @263:21
+                if (null != null) && (null != null)               @264:13
+                  call KeyLock.unLock(k, null, null) throws RTE; consumes Lease(k, null, null) @265:17
+                throw ClientException(SUPPLIER_ERROR)             @267:13
+            inline buildReqShieldData -> out_197_16: Data         @197:16
+              new new_214_9_at197: Data {value := arg_197_35}     @214:9
+              return new_214_9_at197                              @214:9 fake=FromExpressionBody
+            return out_197_16                                     @197:9
+          return out_109_13                                       @106:9
+      return out_50_20                                            @50:13
+task task_69 = lambda in updateReqShieldData via runInBackground, spawned by getAndSet @69:51
+  param k: Key                                                    @39:9
+  param lockType__62: LockType                                    @62:9
+  param token__66: Token?                                         @66:9
+  free  mode: Mode <- this.reqShieldConfig.reqShieldWorkMode (instance val reqShieldConfig.reqShieldWorkMode @63:31) @63:31
+  requires lockType__62 == LockType.UPDATE                        @144:13
+  requires (mode == Mode.ONLY_CREATE_CACHE) || (token__66 != null) @68:13
+  holds (token__66 != null) ==> Lease(k, lockType__62, token__66) @265:17
+  translates FIR nodes 110-133,424-431,456-543
+  body
+    inline executeCallable -> arg_72_25: Int                      @72:25
+      try                                                         @261:9
+        call r_262_13_at72: Int := Callable.call() throws RTE, CHK, INTR @262:13
+        return r_262_13_at72                                      @261:9 fake=FromExpressionBody
+      catch Throwable: REE, RTE, CHK, INTR, ERR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @263:21
+        if (token__66 != null) && (lockType__62 != null)          @264:13
+          call KeyLock.unLock(k, lockType__62, token__66) throws RTE; consumes Lease(k, lockType__62, token__66) @265:17
+        throw ClientException(SUPPLIER_ERROR)                     @267:13
+    inline buildReqShieldData -> reqShieldData__70: Data          @71:21
+      new new_214_9_at71: Data {value := arg_72_25}               @214:9
+      return new_214_9_at71                                       @214:9 fake=FromExpressionBody
+    inline executeSetCacheFunction                                @75:17
+      try                                                         @236:9
+        call ReqShieldConfiguration.setCacheFunction(k, reqShieldData__70) throws RTE, CHK @237:13
+      catch Exception: REE, RTE, CHK, INTR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @238:18
+        throw ClientException(SET_CACHE_ERROR)                    @239:13
+      finally
+        if token__66 != null                                      @241:13
+          call unlocked__243_at75: Bool := KeyLock.unLock(k, lockType__62, token__66) throws RTE; consumes Lease(k, lockType__62, token__66) @243:32
+task task_125 = lambda in createReqShieldData via runInBackground, spawned by getAndSet @125:47
+  param k: Key                                                    @39:9
+  param lockType__85: LockType                                    @85:9
+  param token__89: Token?                                         @89:9
+  param reqShieldData__120: Data                                  @120:9
+  free  mode: Mode <- this.reqShieldConfig.reqShieldWorkMode (instance val reqShieldConfig.reqShieldWorkMode @63:31) @63:31
+  requires lockType__85 == LockType.CREATE                        @144:13
+  requires (mode == Mode.ONLY_UPDATE_CACHE) || (token__89 != null) @106:20
+  holds (token__89 != null) ==> Lease(k, lockType__85, token__89) @243:32
+  translates FIR nodes 249-260,456-500
+  body
+    inline executeSetCacheFunction                                @126:13
+      try                                                         @236:9
+        call ReqShieldConfiguration.setCacheFunction(k, reqShieldData__120) throws RTE, CHK @237:13
+      catch Exception: REE, RTE, CHK, INTR, ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR) @238:18
+        throw ClientException(SET_CACHE_ERROR)                    @239:13
+      finally
+        if token__89 != null                                      @241:13
+          call unlocked__243_at126: Bool := KeyLock.unLock(k, lockType__85, token__89) throws RTE; consumes Lease(k, lockType__85, token__89) @243:32
+ledger: 567 FIR nodes, 50 in the ledger, 517 translated
+  0-5 not-modeled property log                                    @33:1
+  6 structure client module class ReqShield                       @35:1
+  7-9 structure constructor of ReqShield                          @35:19
+  10-11 structure property reqShieldConfig of ReqShield           @36:5
+  280-294 no-effect whenComplete callback: logs only              @146:31
+  544-566 no-effect fun logAsyncFailure: called by a no-effect callback @270:5
+diagnostics
+  A182_13 ASSUMPTION Int unbounded: attempts++                    @182:13 fake=PostfixInc
+  A192_21 ASSUMPTION Int unbounded: ++consecutiveFailures         @192:21 fake=PrefixInc

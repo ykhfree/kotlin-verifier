@@ -306,3 +306,38 @@ aspect file first, then the others in path order.
 The node counts are 653 (core-spring: 640 in the ledger, 13 translated), 700 (webflux: 687 and 13) and 802
 (coroutine: 789 and 13). The class `Shield` prints at the module class position: `ReqShield` is a library class
 (the core jars), so it has no source position in the audited files.
+
+## Client module: core ReqShield (DESIGN-E, E2)
+
+`ClientGoldenTest` compares the lowering of req-shield core `ReqShield.kt` (draft sidecar
+`specs/reqshield/reqshield.core.kv`, `kv lower --draft`) with `client/reqshield.core.kvir`. Reference model:
+`spike/protocol2/target.vpr` (the canonical model of DESIGN-E 5); its line numbers below. `./gradlew lowerClient` prints
+the module.
+
+| KVIR | Kotlin | target.vpr | Note |
+|---|---|---|---|
+| `entry getAndSet`, `param k: Key`, `free mode`, `free maxAttempt`, `result res` | 38:5, 39:9, 63:31, 181:27 | 319 `getAndSetReqShieldData(k, mode, maxAttempt) returns (exc, res, tr)` | `k` is the parameter of the obligation's key type (DESIGN-E 3.1) |
+| `inline executeGetCacheFunction -> currentReqShieldData__43`, its `try` / `catch Throwable` / `throw ClientException(GET_CACHE_ERROR)` | 43:36, 223-226 | 339-345 | runCatching + getOrElse is a try that catches every Throwable (DESIGN-E 3.3) |
+| `if currentReqShieldData__43 != null` ... `return currentReqShieldData__43`, `else` | 44:9, 48:13, 49:14 | 347-395 | `?.let { ...; return it } ?: run { ... }`: the let lambda never returns, so the elvis is an if |
+| `inline shouldUpdateCache`, `call r_55_9 := decideToUpdateCache()` | 45:17, 55:9 | 350-351 `upd__45` | |
+| `inline updateReqShieldData`: `lockType__62`, `onlyCreateCache__63`, `var token__66 := null`, `if !onlyCreateCache__63 { call token__66 := KeyLock.tryLock(...) }` | 46-77 | 353-364 | the value if of 66 assigns the var in its else branch |
+| `inline runInBackground` at 69: `try { spawn task_69(k, lockType__62, token__66) }`, `catch RejectedExecutionException`, nested `try { call KeyLock.unLock } catch Exception` | 69:13, 143-157 | 365-388 | `spawn` is runAsync plus the exhale of the task precondition (374) |
+| `inline handleLockForCacheCreation -> out_50_20`: `lockType__85`, `onlyUpdateCache__86`, `token__89`, the recheck `try` with `return cachedData__95` and the `finally` unLock | 50:20, 80-104 | 396-437 | the return inside the try leaves the inlined helper; target encodes it with `ret_96` |
+| `inline createReqShieldData -> out_107_13`: `inline executeCallable -> arg_122_17`, `inline buildReqShieldData -> reqShieldData__120` with `new ... Data {value := arg_122_17}`, `inline runInBackground` at 125 | 107:13, 113-130 | 438-490 | |
+| `inline handleLockFailure -> out_109_13`: `while attempts__178 < maxAttempt [hole ReqShield.handleLockFailure@181] [measure maxAttempt - attempts__178]`, `inline sleepBetweenPolls`, the poll `try` with `return cachedData__186`, `catch Exception` with `break` | 109:13, 173-198 | 492-542 | target encodes return and break with `found_187` and `break_192` |
+| fallback `inline executeCallable -> arg_197_35` with null lock type and token, `inline buildReqShieldData -> out_197_16` | 197 | 543-561 | |
+| `task task_69`: `param k, lockType__62, token__66`, `requires lockType__62 == LockType.UPDATE`, `requires (mode == Mode.ONLY_CREATE_CACHE) \|\| (token__66 != null)`, `holds (token__66 != null) ==> Lease(k, lockType__62, token__66)` | 69:51 | 216-278 (`TASK69_PRE` 216-219) | DESIGN-E 3.4 parts 1-3 |
+| `task task_125`: `param k, lockType__85, token__89, reqShieldData__120`, `requires lockType__85 == LockType.CREATE`, `requires (mode == Mode.ONLY_UPDATE_CACHE) \|\| (token__89 != null)`, `holds ...` | 125:47 | 281-313 (`TASK125_PRE` 281-284) | |
+| ledger: `no-effect whenComplete callback: logs only` 280-294, `no-effect fun logAsyncFailure` 544-566 | 146:31, 270:5 | none | DESIGN-E 6.4 row 10 |
+
+Differences, each a job of the E3 emitter:
+
+| ID | Difference | Reason |
+|---|---|---|
+| CE1 | No trace record, event rules, guard asserts, `NO_LEASES`, ensures or assumption toggles. | They come from the sidecar (trace, guards, ensures, assume), as an object module's ghost rules do (D1). |
+| CE2 | Exceptions are structured: `call ... throws K`, `try` / `catch T: kinds` / `finally`, `throw`. target.vpr uses `exc` flags, `e_` locals and `IS_EXCEPTION`. | KVIR keeps the Kotlin structure (DESIGN-E 6.3); E3 writes the flag form of DESIGN-E 3.5. |
+| CE3 | A `return` inside an `inline` block or a `try`, and a `break`, are statements; target.vpr uses `ret_96`, `found_187` and `break_192`. | As CE2. |
+| CE4 | Temps are `r_`, `out_`, `arg_` and `new_` with `<line>_<col>`; a helper inlined at several call sites adds `_at<line>` to its locals (DESIGN-E 5.1 item 1). target.vpr names results `e_`, `v_`, `u_` and gives `sleepBetweenPolls` (one call site) `_at183`. | E3's `vpr_normalize.py` maps these names (DESIGN-E 6.10 E3). |
+| CE5 | A task precondition has no mode range and no `phase`; target.vpr's `TASK69_PRE` has `(mode == CAU \|\| mode == OCC \|\| mode == OUC)` and `phase == UPDATE`. | The range follows from the enum type and `phase` from the trace (`PHASE`); both are E3's. |
+| CE6 | The fallback's `executeCallable(callable, key, null, null)` keeps its dead branch `if (null != null) && (null != null) { call KeyLock.unLock(k, null, null) }`; target.vpr (553-554) leaves it out. | The lowering does not fold constants; Viper prunes the branch. |
+| CE7 | Thrown kinds are `ClientException(GET_CACHE_ERROR)` and so on; target.vpr names them `CE_GET`, `CE_SET`, `CE_SUP`. | The kind is the class and its error code (DESIGN-E 3.5); E3 picks the Viper names. |
