@@ -122,6 +122,27 @@ data class Operation(
      * operation is `run action; return e` (DESIGN-v0.md 2.4, 8.3).
      */
     val body: List<Stmt>,
+    /** The reserve step before [action] (DESIGN-D.md 2.1, 6.2); null for an operation of one atomic action. */
+    val reserve: Reserve? = null,
+)
+
+/**
+ * The reserve step of an operation (DESIGN-D.md 2.1, 6.2): one atomic step outside the action and before it,
+ * `counter := counter + 1; local := counter`. [local] is the reserved val: a token from a template ([template] is the
+ * template's position) or a raw Long (an Int). The action reads it as the free value of origin [Reservation].
+ */
+data class Reserve(
+    val local: Local,
+    val counter: CounterVar,
+    /** The `incrementAndGet` call. */
+    val pos: Pos,
+    val template: Pos?,
+    /** The ASSUMPTION diagnostic of the unbounded increment (W13). */
+    val assumption: String?,
+    /** Ids of the FIR nodes the step translated: the val and, for a helper call, the helper (W14). */
+    val translated: Set<Int>,
+    /** The Kotlin source of the increment, for reports, e.g. `tokenSequence.incrementAndGet()`. */
+    val kotlin: String,
 )
 
 /** The value an operation of the shape `run action; return e` returns; null for another shape or no value. */
@@ -233,6 +254,14 @@ data class NondetCall(
 
 /** Module state read outside every action. */
 data class RacyRead(
+    override val pos: Pos,
+) : Origin
+
+/**
+ * The reserved val of the operation's reserve step (DESIGN-D.md 6.2); [pos] is the increment. The action method takes
+ * it as a parameter, named or not: its precondition reads it.
+ */
+data class Reservation(
     override val pos: Pos,
 ) : Origin
 
@@ -485,6 +514,15 @@ data class Elvis(
 ) : Expr {
     override val type get() = b.type
 }
+
+/** `if (cond) a else b` as a value (DESIGN-D.md 6.2, 7): an operation result. [type] is the type of both values. */
+data class Ite(
+    val cond: Expr,
+    val a: Expr,
+    val b: Expr,
+    override val type: KType,
+    override val pos: Pos,
+) : Expr
 
 /** The entry of [key] carries [token] in its witness field. Commit vocabulary only. */
 data class Carried(

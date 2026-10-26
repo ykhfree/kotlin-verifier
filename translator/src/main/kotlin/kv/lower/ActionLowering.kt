@@ -51,6 +51,9 @@ import kv.kvir.ObjClass
 import kv.kvir.Or
 import kv.kvir.Pos
 import kv.kvir.RacyRead
+import kv.kvir.Reservation
+import kv.kvir.Reserve
+import kv.kvir.Ite
 import kv.kvir.StateTarget
 import kv.kvir.Status
 import kv.kvir.Stmt
@@ -144,6 +147,8 @@ internal class Lowered(
     val helpers: Set<FirNamedFunction>,
     /** The action's inputs, each with the FIR element its value comes from ([checkInputs]). */
     val inputs: List<Pair<String, FirElement>>,
+    /** The operation's reserve step (DESIGN-D.md 6.2); null without one. */
+    val reserve: Reserve? = null,
 )
 
 /** A Kotlin position for a report: `File.kt:line:col`. */
@@ -166,6 +171,7 @@ private val OPERATOR_SYMBOLS = mapOf("times" to "*", "div" to "/", "rem" to "%",
  * operation that selects it; null for a stray action. Every construct the model does not cover becomes an
  * Unsupported statement with its Kotlin position, and lowering goes on to collect all of them (1.5). An unsupported
  * action is never emitted (W12), so its body keeps only the Unsupported statements, in the order lowering found them.
+ * [reserveSite] is the operation's reserve step (DESIGN-D.md 6.3), whose val the action reads as an exact value.
  */
 internal class ActionLowering(
     private val ctx: ModuleContext,
@@ -173,6 +179,7 @@ internal class ActionLowering(
     private val op: OperationDecl?,
     private val id: String,
     private val map: MapVar,
+    private val reserveSite: ReserveSite? = null,
 ) {
     private val call = found.call
     private val lambda = found.lambda
@@ -362,6 +369,8 @@ internal class ActionLowering(
             opBody = listOf(RunAction(at), Return(r?.second, r?.second?.pos ?: at))
         }
         namedFreeValues()
+        // DESIGN-D.md 6.2: the reserved val is a parameter of the action method even if nothing reads it.
+        val reserved = reserveSite?.let { reservedValue(it, it.decl, inAction = false) }
         if (problems.isNotEmpty()) {
             markAll(lambda)
             // The lambda's conversion nodes, if the lowering never reached the action.
@@ -391,7 +400,42 @@ internal class ActionLowering(
             )
         // After an unsupported construct the section is not emitted (W12): it keeps the plain shape.
         val section = if (ok) normalize(opBody) else listOf(RunAction(at), Return(null, at))
-        return Lowered(action, cells.values.toList(), result.takeIf { ok }, section, freeSources, cells.keys, helpers, inputs())
+        val reserve = reserveSite?.let { site -> reserved?.let { reserve(site, it) } }
+        return Lowered(action, cells.values.toList(), result.takeIf { ok }, section, freeSources, cells.keys, helpers, inputs(), reserve)
+    }
+
+    /**
+     * The reserve step of [site] (DESIGN-D.md 6.2) with its reserved val [local]. It translates the val's declaration
+     * and, for a helper call, the helper (W14); its increment gets an ASSUMPTION (W13).
+     */
+    private fun reserve(
+        site: ReserveSite,
+        local: Local,
+    ): Reserve {
+        val nodes = ctx.index.subtree(site.decl) + site.helper?.let { ctx.index.subtree(it) }.orEmpty()
+        val pos = ctx.posOf(site.increment)
+        return Reserve(local, site.counter, pos, site.template?.let(ctx::posOf), ctx.assumption(site.increment), nodes.toSet(), sourceText(site.increment))
+    }
+
+    /**
+     * The free value of the reserved val of [site] (DESIGN-D.md 6.2), made on first read [e]: `<name>__<line>`, of the
+     * type the step gives it. A template token must have that type wherever the code uses it (DESIGN-v0.md 2.13).
+     * Null after a report.
+     */
+    private fun reservedValue(
+        site: ReserveSite,
+        e: FirElement,
+        inAction: Boolean,
+    ): Local? {
+        val sym = site.decl.symbol
+        free[sym]?.let { return it.local }
+        if (site.templateType != null && abstraction(sym, false, e, inAction) == null) return null
+        val pos = ctx.posOf(site.decl)
+        val name = site.decl.name.asString()
+        val local = Local(fresh("${name}__${pos.line}"), site.type, pos)
+        free[sym] = FreeValue(local, Reservation(ctx.posOf(site.increment)), null, name)
+        freeSources += sym
+        return local
     }
 
     /**
@@ -1078,11 +1122,15 @@ internal class ActionLowering(
         return sym.isVal && bound.classKind == ClassKind.CLASS && bound != ctx.moduleClass.symbol
     }
 
-    /** A local or parameter declared outside the lambda: a free value (a cell is read only through set and get). */
+    /**
+     * A local or parameter declared outside the lambda: a free value (a cell is read only through set and get). The
+     * reserved val of the reserve step is its exact value (DESIGN-D.md 6.2).
+     */
     private fun captured(
         sym: FirBasedSymbol<*>,
         e: FirPropertyAccessExpression,
     ): Expr? {
+        reserveSite?.takeIf { it.decl.symbol == sym }?.let { site -> return reservedValue(site, e, inAction = true)?.let { Var(it, ctx.posOf(e)) } }
         return freeValue(sym, e) { local ->
             val decl = ctx.declarationOf(sym)
             val init = (decl as? FirProperty)?.initializer?.let { unwrap(it) } as? FirQualifiedAccessExpression
@@ -1839,8 +1887,9 @@ internal class ActionLowering(
     }
 
     /**
-     * The operation result (W10): the one final `return` of a cell `get` or a constant in [scope], which is the
-     * operation function or its Mono.fromCallable lambda (whose last expression is a return; DESIGN-v0.md 8.3).
+     * The operation result (W10): the one final `return` in [scope], which is the operation function or its
+     * Mono.fromCallable lambda (whose last expression is a return; DESIGN-v0.md 8.3). Its value reads cells, constants
+     * and the reserved val ([resultValue]).
      */
     private fun operationResult(scope: FirFunction?): Pair<Local, Expr>? {
         val item = op?.result ?: return null
@@ -1868,18 +1917,63 @@ internal class ActionLowering(
         val r = returns.singleOrNull() ?: return fail("v0 reads the result from exactly one return; $name has ${returns.size}", scope)
         if (scope.body?.statements?.lastOrNull() !== r) return fail("the return is not the last statement of $name", r)
         val e = unwrap(r.result)!!
-        val pos = ctx.posOf(e)
-        val v: Expr =
-            when {
-                e is FirFunctionCall && ctx.entriesOf(e).any { it.model == TrustedModels.CELL && it.name == "get" } -> {
-                    val read = unwrap(e.dispatchReceiver) as? FirPropertyAccessExpression ?: return fail("not a cell", e)
-                    val sym = ctx.calleeOf(read) ?: return fail("not a cell", e)
-                    Var((cells[sym] ?: cell(sym, read, inAction = false) ?: return null).local, pos)
-                }
-                e is FirLiteralExpression -> ctx.literal(e, ktype(e.resolvedType, null, e, inAction = false) ?: return null, pos) ?: return fail("constant ${e.value}", e)
-                else -> return fail("the result reads only cells and constants (W10); ${sourceText(e)} is neither", e)
+        val v = resultValue(e) ?: return null
+        return Local(item.name.text, v.type, ctx.posOf(e)) to v
+    }
+
+    /**
+     * A part of the operation result (W10, DESIGN-D.md 6.5 and 7): a cell `get`, a constant, the reserved val, or an
+     * if-else, `&&`, `||` or `!` of such parts. Every part is thread-local or fixed after the action, so the value
+     * at the commit point is the value the function returns. Its nodes stay in the ledger. Null after a report.
+     */
+    private fun resultValue(e: FirExpression): Expr? {
+        fun fail(
+            reason: String,
+            at: FirElement,
+        ): Nothing? = unsupported("operation result", reason, at, inAction = false)
+        val x = unwrap(e)!!
+        val pos = ctx.posOf(x)
+        val callee = (x as? FirFunctionCall)?.let { ctx.calleeOf(it) }?.callableId
+        return when {
+            x is FirFunctionCall && ctx.entriesOf(x).any { it.model == TrustedModels.CELL && it.name == "get" } -> {
+                val read = unwrap(x.dispatchReceiver) as? FirPropertyAccessExpression ?: return fail("not a cell", x)
+                val sym = ctx.calleeOf(read) ?: return fail("not a cell", x)
+                Var((cells[sym] ?: cell(sym, read, inAction = false) ?: return null).local, pos)
             }
-        return Local(item.name.text, v.type, pos) to v
+            x is FirLiteralExpression -> ctx.literal(x, ktype(x.resolvedType, null, x, inAction = false) ?: return null, pos) ?: fail("constant ${x.value}", x)
+            x is FirPropertyAccessExpression && reserveSite != null && ctx.calleeOf(x) == reserveSite.decl.symbol ->
+                reservedValue(reserveSite, x, inAction = false)?.let { Var(it, pos) }
+            x is FirFunctionCall && callee?.classId?.asString() == "kotlin/Boolean" && callee.callableName.asString() == "not" ->
+                resultValue(x.dispatchReceiver ?: x.explicitReceiver!!)?.let { a -> if (a.type == KType.BoolT) Not(a, pos) else fail("! of a ${a.type}", x) }
+            x is FirBooleanOperatorExpression -> {
+                val a = resultValue(x.leftOperand)
+                val b = resultValue(x.rightOperand)
+                if (a == null || b == null) return null
+                if (a.type != KType.BoolT || b.type != KType.BoolT) return fail("${x.kind} of ${a.type} and ${b.type}", x)
+                if (x.kind == LogicOperationKind.AND) And(a, b, pos) else Or(a, b, pos)
+            }
+            x is FirWhenExpression -> resultIf(x)
+            else -> fail("the result reads only cells, constants and the reserved val, also inside an if-else, &&, || or ! (W10, DESIGN-D.md 7); ${sourceText(x)} is none of them", x)
+        }
+    }
+
+    /** `if (c) a else b` as a result part ([resultValue]): a branch that is the null literal takes the other one's type. */
+    private fun resultIf(w: FirWhenExpression): Expr? {
+        fun fail(reason: String): Nothing? = unsupported("operation result", reason, w, inAction = false)
+        val values = w.branches.map { it.result.statements.singleOrNull() as? FirExpression }
+        if (w.subjectVariable != null || w.branches.size != 2 || w.branches[1].condition !is FirElseIfTrueCondition || values.any { it == null }) {
+            return fail("an if or when as the result is translated only as `if (c) a else b` with one value per branch (W10, DESIGN-D.md 7)")
+        }
+        val c = resultValue(w.branches[0].condition) ?: return null
+        if (c.type != KType.BoolT) return fail("the condition is a ${c.type}")
+        val lowered = values.map { v -> if (isNullLiteral(v!!)) null else resultValue(v) ?: return null }
+        val known = lowered.filterNotNull()
+        val t = known.firstOrNull()?.type ?: return fail("both branches are null")
+        val canBeNull = lowered.any { it == null } || known.any { k -> canBeNull(k) }
+        val type = if (canBeNull) nullable(t) ?: return fail("null where a $t is expected") else t
+        if (known.any { (nullable(it.type) ?: it.type) != (nullable(type) ?: type) }) return fail("the branches have the types ${known.map { it.type }}")
+        val (a, b) = lowered.zip(values).map { (l, v) -> l ?: NullLit(type, ctx.posOf(v!!)) }
+        return Ite(c, a, b, type, ctx.posOf(w))
     }
 
     /**

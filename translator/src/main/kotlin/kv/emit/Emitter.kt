@@ -8,6 +8,8 @@ import kv.kvir.InstanceVal
 import kv.kvir.NondetCall
 import kv.kvir.Origin
 import kv.kvir.RacyRead
+import kv.kvir.Reservation
+import kv.kvir.Ite
 import kv.kvir.StateVar
 import kv.kvir.And
 import kv.kvir.Arith
@@ -151,6 +153,7 @@ internal fun Origin.kind(): String =
         is NondetCall -> "trusted call $model"
         is RacyRead -> "racy read"
         is Computed -> "computed outside the action"
+        is Reservation -> "reserved by the step before the action"
     }
 
 private fun fail(
@@ -1467,7 +1470,7 @@ private class Emitter(
 
     private fun prec(e: Expr): Int =
         when (e) {
-            is Elvis -> 0
+            is Elvis, is Ite -> 0
             is Or -> 1
             is And -> PREC_AND
             is Cmp -> if (e.op == CmpOp.EQ || e.op == CmpOp.NE) PREC_EQ else PREC_CMP
@@ -1495,6 +1498,8 @@ private class Emitter(
             is Carried -> "carried(S, ${expr(e.key)}, ${expr(e.token)})"
             // `a ?: b` of the operation section (DESIGN-B.md 2.6), as mutants.py writes it: `a != null ? a : b`.
             is Elvis -> "${operand(e.a, PREC_EQ + 1)} != null ? ${operand(e.a, 1)} : ${operand(e.b, 0)}"
+            // An operation result (DESIGN-D.md 7): Viper's conditional, right-associative and weakest.
+            is Ite -> "${operand(e.cond, 1)} ? ${operand(e.a, 1)} : ${operand(e.b, 0)}"
         }
 
     private fun operand(

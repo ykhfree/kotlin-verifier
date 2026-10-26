@@ -175,7 +175,8 @@ class FromCallableTest {
     fun `the lambda's last expression reads only cells and constants`() {
         val f = LockFixture("", run = fromCallable(lambda(last = "key.trim()")), operations = OPERATION)
         val u = assertUnsupported(f.lower(dir), "operation result", f.at("key.trim()"))
-        assertTrue("(W10); key.trim() is neither" in u.reason, u.reason)
+        // DESIGN-D.md 6.5: the W10 change names what a result may read.
+        assertTrue("(W10, DESIGN-D.md 7); key.trim() is none of them" in u.reason, u.reason)
     }
 
     @Test
