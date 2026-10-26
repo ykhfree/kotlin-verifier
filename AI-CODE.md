@@ -373,3 +373,35 @@ action 단위의 정답 (10.1절):
 | S2 | object 모듈의 stray `boxMap.putIfAbsent(key, Box(counter.incrementAndGet()))`에서 `actionValueOutside`가 `markAll(arg)`로 값 전체를 번역한 것으로 표시한다 | action 밖의 counter 쓰기가 ledger에 없어 모듈이 INCOMPLETE가 아니다. DESIGN-v0.md 2.12 rule 2와 맞지 않는다. 원인은 audit이다: put의 값 인자가 action 호출 안에 있어 audit이 action 영역으로 보고 건너뛴다. 같은 원인으로 stray putIfAbsent의 값 `Shield(prefix)`(fresh 함수 밖 생성자, DESIGN-B.md 3.3 rule 4)도 ledger에 없었다. 그러면 `P_once`가 그 생성을 세지 못한다 | 고침: audit은 put의 값 인자를 action 밖(action 전에 계산됨)으로 본다. lowering은 계산된 값을 번역한 것으로 표시하지 않는다 |
 
 S1, S2 수정의 확인 (메인 세션): 새 테스트 5개 중 결함 테스트 3개는 수정 전 코드에서 실패하고 수정 뒤 통과한다. 대조 테스트 2개는 두 경우 모두 통과한다. `cleanTest test` 452개 통과, gate 4개 exit 0, mutantsReqShield 33회와 mutantsAspect 30회 불일치 0. gate가 보는 실제 모듈 4개의 생성 모델은 그대로다. AI 구현 12개는 다시 돌리지 않았다. 근거: 12개는 object 모듈이라 section(S1)이 없고, put과 putIfAbsent(S2)를 쓰지 않는다 (grep).
+
+## 14. 3차: 지원 범위 넓히기와 일반화 측정 (2026-10-26, 결과 전)
+
+사용자 결정 (2026-10-26): AI 코드 지원 범위를 넓힌다. 2b에서 판정하지 못한 action은 14개다 (`aicode/round2b/logs`를 메인 세션이 다시 셈).
+
+### 14.1 지원할 구문 (2b의 증거)
+
+| ID | 구문 | 막힌 action (2b) | 조건 |
+|---|---|---|---|
+| A1 | 새 entry에 넘기기 전에 만든 Semaphore: `Semaphore(1).apply { tryAcquire() }`, `Semaphore(1).also { it.tryAcquire() }`, 지역 `val s = Semaphore(1); s.tryAcquire(); LockInfo(s, ...)` (jdk와 kotlinx) | T-haiku-1 tryLock·unLock, T-haiku-3 tryLock·unLock, T-haiku-4 tryLock, T-opus-1 tryLock·unLock, T-sonnet-3 tryLock·unLock | "action 안의 새 평탄화 객체": 이 action에서 모델 생성자로 만들고, 모델 연산으로만 쓰고, 새 entry의 생성자에 정확히 한 번 넘기고, 넘긴 뒤에는 읽지 않는다. `tryAcquire()`의 결과를 버려도 permit은 1에서 0이 된다. 조건을 어기는 경우(두 생성자에 넘김, 기존 entry의 필드에 저장, 넘긴 뒤 사용, `existing.semaphore`의 별칭)는 UNSUPPORTED로 남는다 |
+| A2 | 값으로 쓴 if/when | T-opus-2 tryLock, T-opus-4 tryLock | |
+| A3 | entry의 지역 별칭 (`val e = existing`, `val e = if (...) X else existing`) | T-opus-4 tryLock | 별칭은 entry나 이 action이 만든 객체만 가리킨다 |
+| A4 | action 안의 `?.` | T-haiku-3 sweep | |
+| A5 | entry 클래스의 멤버 helper (`existing.isExpired(now)`) | T-haiku-1 tryLock·sweep | 순수한 멤버 함수, `this` = entry |
+
+빼는 것 (Part B, 설계 필요): compute 밖에서 counter로 만든 토큰 (T-haiku-1, T-haiku-2, T-haiku-4의 tryLock). 연산 하나에 atomic 단계가 둘 생기므로 L1 모델의 변경과 건전성 논증이 필요하다 (deep-reasoner). T-haiku-4의 "operation result (W10)"도 같은 원인이다 (`return if (granted.get()) token else null`의 token이 compute 밖에서 만든 값).
+
+### 14.2 2차 구현 12개에 대한 예측
+
+정답은 11절의 action 표다 (tryLock, sweep은 12개 모두 결함; unLock은 T-haiku-3, T-sonnet-3만 결함).
+1. 새로 판정되는 action은 정확히 11개다: T-haiku-1 unLock·sweep, T-haiku-3 tryLock·unLock·sweep, T-opus-1 tryLock·unLock, T-opus-2 tryLock, T-opus-4 tryLock, T-sonnet-3 tryLock·unLock. T-haiku-1 tryLock과 T-haiku-4 tryLock, T-haiku-2 tryLock은 Part B로 남는다.
+2. **판별 예측:** T-haiku-3 unLock과 T-sonnet-3 unLock은 FAILED다 (정답의 unLock 결함). PROVEN이면 A1의 lowering이 만든 놓침이다.
+3. 새로 판정되는 tryLock과 sweep은 모두 FAILED다 (경계 `>=`). 새로 판정되는 unLock 중 T-haiku-1, T-opus-1은 PROVEN이다.
+4. 놓침 0, 오경보 0이 유지된다. 그러면 36개 중 판정 33개 (2b의 22 + 11), 판정 안 함 3개 (Part B의 tryLock 3개)다.
+5. 이 구문들은 AI 코드에만 있으므로 gate 4개와 손으로 고른 변이 63회는 바뀌지 않는다. 바뀌면 변경이 req-shield lowering에 샌 것이다.
+
+### 14.3 일반화 측정 (과적합 검사)
+
+1. 구현 커밋 뒤에 새 구현 12개를 만든다. 1차와 같은 과제(TASK.md, HELPERS.md, RULES.md), 같은 모델 3종 × 4. 메인 세션은 새 코드를 구현 전에 보지 않는다.
+2. 같은 새 12개에 수정 전 도구(`git worktree`, 이 절을 커밋한 HEAD)와 수정 뒤 도구를 모두 돌린다.
+3. **결정 기준 (결과 전):** 수정 뒤 도구의 판정 action 비율이 새 12개에서 75% 이상이면 A1-A5가 일반화한다고 본다. 75% 미만이면 2차 12개에 맞춘 것으로 본다. 참고값: 2b의 비율은 22/36 = 61%다.
+4. 놓침과 오경보를 말하려면 새 12개의 정답이 필요하다. 1차와 같은 블라인드 판정자 3명이 필요하다. 이 비용은 사용자가 정한다. 판정자가 없으면 일반화 결과는 판정 비율만 보고한다.
