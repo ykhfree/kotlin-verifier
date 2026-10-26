@@ -1,0 +1,9 @@
+{"format": "kv-groups/1",
+ "from": "the grouping of the real run of 2026-10-26 (specdraft/e2e-2026-10-26/groups.json, by hand), with group D9 for the cell that rule 6 adds when the reference is the current signed sidecar (specs/reqshield/keylocallock.coroutine.kv)",
+ "groups": [
+ {"id": "D1", "title": "Expiry boundary", "question": "At exactly the lease end (clock = lease), is a lock that nobody released still held, for tryLock and for the cleanup monitor?", "cells": ["H2r", "H2s", "H5r", "H5s", "H8r", "H8s", "H13s"]},
+ {"id": "D4", "title": "Takeover of an expired lock", "question": "After the lease end, does tryLock take over an expired lock before the cleanup monitor drops it?", "cells": ["H3r", "H3s", "H6r", "H6s", "H9r", "H9s"]},
+ {"id": "D7", "title": "Lease start after a takeover", "question": "After tryLock takes over an expired lock, does the new holder's lease start at its own acquisition?", "cells": ["O4s"]},
+ {"id": "D5", "title": "unLock of an unbacked permit", "question": "Does unLock of a permit that no map entry backs (the cap path) return false?", "cells": ["U2r"]},
+ {"id": "D9", "title": "Monitor duty after the lease end", "question": "Must one cleanup monitor step after the lease end drop the entry of a lock that nobody released?", "cells": ["H14s"]}
+]}

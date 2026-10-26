@@ -22,10 +22,11 @@ Commands, in the order of DESIGN-C.md 2.2 (RUN is a run directory):
       SOURCES.md, LANGUAGE.md, SCENARIOS.md (the cells as a table, after the text of NOTES), ANSWERS.json (the form)
       and check.sh. The files of the phase-1 box become read-only: phase 2 does not edit the draft. The size of the
       phase-2 box goes to RUN/cells/cost.json.
-  questions --run RUN [--groups FILE] [--mode a|b]
+  questions --run RUN [--groups FILE] [--mode a|b] [--decisions-ref FILE...]
       Step 7: the question rules on this run's checks and answers (RUN/questions.json). With groups (FILE, or the
       RUN/groups.json of an earlier call), the review bundle RUN/bundle.md, with the results per option that
-      `outcomes` measured. The C4 form, with --check and --answers instead of --run, is below.
+      `outcomes` measured. Rule 6 also takes the run config's earlier decisions. The C4 form, with --check and
+      --answers instead of --run, is below.
   outcomes --run RUN --group G --option L=DRAFT.kv... [--mutants FILE] [--impl NAME=DIR...] [--jobs N]
       DESIGN-C.md 3.6 and 4.2 step 4. Each DRAFT.kv is a draft fixed to option L of group G (a box DRAFT.kv: source
       comments, hole `true`). The tool checks that it decides the group's cells as option L (mode b), then runs
@@ -36,10 +37,17 @@ Commands, in the order of DESIGN-C.md 2.2 (RUN is a run directory):
   align --run RUN --check
       Step 8. The first form builds the alignment box RUN/align/box from the person's decisions (kv-decisions/1):
       TASK.md, DRAFT.kv (the chosen draft; default: the first that passed collection), DECISIONS.md, SOURCES.md,
-      LANGUAGE.md, SKELETON.kv and check.sh. The second form checks the box's DRAFT.kv: the grammar check, then
-      `kv spec check --cells` (with the code if the run has it): every decided cell must be DETERMINED as decided in
-      every mode. It also lists the other cells whose verdict changed, the failing clauses on the code, the module
-      verdict of `kv verify --draft` on the reference implementation and the missing decision probes.
+      LANGUAGE.md, SKELETON.kv and check.sh. It also writes RUN/align/decisions.json: the decisions with the outcome
+      of every cell (kv-decisions/1, the file that later runs take as earlier decisions). The second form checks the
+      box's DRAFT.kv: the grammar check, then `kv spec check --cells` (with the code if the run has it): every decided
+      cell must be DETERMINED as decided, and every cell decided "open" must be OPEN, in every mode; with the code,
+      `kv verify --draft` on the reference implementation must be PROVEN. It also lists the other cells whose verdict
+      changed, the failing clauses and the rows of init, the lemmas and the probes that `kv spec check` reports on the
+      code, and the missing decision probes. If a cell or the verification fails, the loop-back (DESIGN-C.md 10.6 finding 5) writes
+      the box file FEEDBACK-<n>.md and prints the prompt for the alignment agent, at most 2 rounds. FEEDBACK holds
+      only these lines: each failing decided cell as its scenario and the decided outcome, or as "must stay
+      undecided", and the error lines of `kv verify --draft` with their positions in DRAFT.kv. It holds no verdict,
+      no clause isolation table and no cell table.
   check-box --run RUN --kind draft|answers --file FILE --work DIR
       What a box's check.sh runs: the grammar check of a draft, or the form check of an answers file. It prints error
       lines only, never a verification result.
@@ -62,6 +70,8 @@ Run config (kv-spec-run/1; paths relative to the config file):
    "variant": FILE,         the variant sidecar: module, source lines and `include` of the drafted file
    "hole": FILE,            optional: a sidecar whose `hole MI_INV` the runs on code use
    "reference": FILE,       optional: a signed variant sidecar (rule 4 proxy, the bundle's reference option)
+   "decisions": [FILE],     optional: decisions of earlier runs (kv-decisions/1); rule 6 asks again about each cell
+                            they leave "open" that a new draft decides
    "code": true}            optional: run on the env's reqShield checkout (reference implementation)
 
 Answers (kv-answers/1), one file per author:
@@ -79,9 +89,13 @@ Groups (kv-groups/1), written by an LLM:
 
 Decisions (kv-decisions/1), one file or one file per group, written from the person's answers:
   {"format": "kv-decisions/1",
-   "decisions": [{"group": "D1", "option": "A", "note": "strict: ...", "cells": {"C04": "null"}}]}
+   "decisions": [{"group": "D1", "option": "A", "note": "strict: ...", "cells": {"C04": "null"}},
+                 {"group": "D9", "option": "open", "note": "no monitor duty"}]}
   `option` takes the outcomes of an option of the bundle; `cells` gives or overrides the outcome of a cell. Every
-  cell of every group needs an outcome name of its cell.
+  cell of every group needs an outcome name of its cell, or "open": the person leaves the cell undecided on purpose,
+  so no clause may decide it. The option "open" leaves every cell of the group open. As an earlier decision of a
+  later run (--decisions-ref, the run config's "decisions"), a file names its open cells in "cells"; the
+  RUN/align/decisions.json that `align` writes names every cell.
 
 Decision mutants (kv-decision-mutants/1): {"format": "kv-decision-mutants/1", "mutants": [{"name": "D1-both",
   "decision": "...", "edits": [["OLD", "NEW"], ...]}]}; each OLD occurs once in the implementation file that
@@ -89,8 +103,8 @@ Decision mutants (kv-decision-mutants/1): {"format": "kv-decision-mutants/1", "m
 
 C4 form of questions (DESIGN-C.md 3.3, 3.6; user decision JC1 in 10):
   python3 -I spec.py questions --check NAME=CHECK.json --answers NAME=ANSWERS.json [--check ... --answers ...]
-                               [--reference CHECK.json] [--mode a|b] [--groups GROUPS.json]
-                               [--bundle OUT.md] [--json OUT.json]
+                               [--reference CHECK.json] [--decisions-ref DECISIONS.json...] [--mode a|b]
+                               [--groups GROUPS.json] [--bundle OUT.md] [--json OUT.json]
   CHECK.json is the check.json of `kv spec check --cells` on draft NAME; ANSWERS.json is its author's scenario
   answers. Each NAME needs both. The rules pick the question cells:
     1. one draft: its author answered open or assumed. Several drafts: one author answered open, or two or more
@@ -103,7 +117,11 @@ C4 form of questions (DESIGN-C.md 3.3, 3.6; user decision JC1 in 10):
        verdict nor OPEN. DESIGN-C.md 3.3 rule 4 asks for the failing clause that decides the cell; the pilot used
        this proxy.
     5. the cell is a boundary cell (`boundary` in the cell file: a clock reading equals a lease).
-  Mode a (with the hole) is used if every check.json has it, else mode b; --mode picks one.
+    6. (with --reference or earlier decisions) a draft decides a cell that is left undecided on purpose: the reference
+       sidecar has the cell OPEN, or an earlier decision (--decisions-ref FILE) leaves it "open", and a draft has it
+       DETERMINED (DESIGN-C.md 10.6 finding 3: rule 4 skips the cells the reference leaves OPEN). A cell that an
+       earlier decision leaves open must be a scenario of these drafts.
+  Mode a (with the hole) is used if every check.json has it, else mode b; --mode picks one. Each rule reads that mode.
   With --groups, every question cell must be in exactly one group, and a group may list question cells only.
   --bundle writes the review bundle: one question per group in the shape of DESIGN-C.md 3.6.
 """
@@ -131,6 +149,7 @@ ROUNDS = 2             # correction rounds (DESIGN-C.md 4.2 step 1)
 SPEC_TIMEOUT = 3600    # seconds per kv spec check (with code it runs one Silicon run per clause index)
 VERIFY_TIMEOUT = 900   # seconds per kv verify (kv's own Silicon budget is 300 s per run)
 NAME = re.compile(r"[A-Za-z0-9_-]+")
+LEFT_OPEN = "open"     # the decided outcome of a cell that the person leaves undecided on purpose
 
 
 class InputError(Exception):
@@ -328,6 +347,13 @@ def init_run(run_dir, config_path, env_path):
     includes = re.findall(r'(?m)^include\s+"([^"]+)"', read(variant))
     if len(includes) != 1 or "/" in includes[0]:
         raise InputError("the variant %s must include exactly one file of its own directory, found %s" % (variant, includes))
+    decisions = cfg.get("decisions") or []
+    if not isinstance(decisions, list):
+        raise InputError("%s: decisions is a list of kv-decisions/1 files" % config_path)
+    refs = [os.path.normpath(os.path.join(base, f)) for f in decisions]
+    missing = [f for f in refs if not os.path.exists(f)]
+    if missing:
+        raise InputError("%s: decisions %s does not exist" % (config_path, ", ".join(missing)))
     hole_file = path("hole", optional=True)
     hole = None
     if hole_file:
@@ -352,7 +378,7 @@ def init_run(run_dir, config_path, env_path):
     dump(os.path.join(run_dir, "run.json"), {
         "format": "kv-spec-run/1", "config": os.path.abspath(config_path), "subject": cfg["subject"].strip(),
         "coverage": cfg["coverage"].strip(), "variant": os.path.basename(variant), "common": includes[0], "hole": bool(hole),
-        "reference": path("reference", optional=True), "root": env["reqShield"] if code else None,
+        "reference": path("reference", optional=True), "decisions": refs, "root": env["reqShield"] if code else None,
         "classpath": env["classpath"] if code else None, "kotlinc": env["kotlinc"] if code else None})
 
 
@@ -452,10 +478,11 @@ def intent_lines(lines):
 def convert_sources(text, blocks):
     """TEXT with each `// source:` comment above a clause written as a source line after the clause (DESIGN-C.md 5.2),
     with the anchor block's fingerprint from BLOCKS. Source comments may be separated from their clause by blank lines
-    and other comments. Returns the text and its notes: clauses without a source comment, and comments without a clause."""
+    and other comments. Returns the text, its notes (clauses without a source comment, and comments without a clause)
+    and its line map: for each line of the text, the line of TEXT it comes from (a source line: its comment's line)."""
     lines = text.split("\n")
     starts = set(intent_lines(lines))
-    out, pending, notes = [], [], []
+    out, origin, pending, notes = [], [], [], []
     i = 0
     while i < len(lines):
         line = lines[i]
@@ -469,20 +496,23 @@ def convert_sources(text, blocks):
                 notes.append("lines %s: source comments above no clause" % ", ".join(str(n) for n, _ in pending))
                 pending = []
             out.append(line)
+            origin.append(i + 1)
             i += 1
             continue
         indent = len(m.group(1))
         j = clause_end(lines, i, indent, m.group(2) == "probe")
         out.extend(lines[i:j])
+        origin.extend(range(i + 1, j + 1))
         if not pending:
             notes.append("line %d: %s has no source comment" % (i + 1, " ".join(line.split()[:2]).rstrip(":")))
-        for _, comment in pending:
+        for n, comment in pending:
             out.append(" " * (indent + 2) + source_line(comment, blocks))
+            origin.append(n)
         pending = []
         i = j
     if pending:
         notes.append("lines %s: source comments above no clause" % ", ".join(str(n) for n, _ in pending))
-    return "\n".join(out), notes
+    return "\n".join(out), notes, origin
 
 
 def source_line(comment, blocks):
@@ -504,14 +534,29 @@ def write_sidecar(run, text, out_dir):
 
 def assemble(run, draft_text, out_dir):
     """The checkable sidecar of a box DRAFT.kv in OUT_DIR: the draft with source lines, and the run's hole if it has
-    one. Returns the variant's path and the notes of the source conversion."""
-    text, notes = convert_sources(draft_text, run.blocks())
+    one. Returns the variant's path, the notes of the source conversion and the line map: for each line of the
+    drafted file, the line of DRAFT.kv it comes from (the run's hole: the line where the draft's hole starts)."""
+    text, notes, origin = convert_sources(draft_text, run.blocks())
     if run.cfg.get("hole"):
+        holes = list(HOLE.finditer(text))
+        if len(holes) != 1:
+            raise InputError("the draft has %d holes MI_INV (must be 1)" % len(holes))
+        h = holes[0]
         block = read(run.path("tool", "hole.kv"))
-        text, n = HOLE.subn(lambda _: block, text)
-        if n != 1:
-            raise InputError("the draft has %d holes MI_INV (must be 1)" % n)
-    return write_sidecar(run, text, out_dir), notes
+        first = text.count("\n", 0, h.start())
+        origin = origin[:first] + [origin[first]] * (block.count("\n") + 1) + origin[first + h.group(0).count("\n") + 1:]
+        text = text[:h.start()] + block + text[h.end():]
+    return write_sidecar(run, text, out_dir), notes, origin
+
+
+def draft_positions(run, line, origin):
+    """LINE with each position in the drafted file (the variant's include) written as the position in DRAFT.kv that
+    the line map ORIGIN of `assemble` gives."""
+    def sub(p):
+        if p.group("file") != run.common:
+            return p.group(0)
+        return "DRAFT.kv:%d:%s" % (origin[int(p.group("line")) - 1], p.group("col"))
+    return POSITION.sub(sub, line)
 
 
 # ---- kv ----
@@ -588,9 +633,35 @@ def verify_draft(run, sidecar_dir, root, bindings, work):
         rec["pass2"] = {a: [s, sorted(ids)] for a, (s, ids) in checks.items()}
     except mutants.ScriptError as e:
         rec["parse_error"] = str(e)
+    rec["errors"] = report_errors(out)
     if code is None or code == 4:
         rec["error"] = (err or out).strip()[-600:]
     return rec
+
+
+def report_errors(report):
+    """The error lines of a `kv verify` report (DESIGN-v0.md 5.8), one line each: a pass-1 or property-check finding of
+    an action after the action's name, a finding of init, a lemma or a probe (the report names it), and the Silicon
+    errors outside every method. Rows, verdicts and the other parts of the report are left out."""
+    mutants = load_module("mutants")
+    out, row, outside = [], None, False
+    for line in report.splitlines():
+        m = mutants.ROW.match(line)
+        if m:
+            row, outside = m.group(1) or m.group(2), False
+        elif mutants.OTHERS.match(line):
+            row, outside = None, False
+        elif line == "Silicon errors:":
+            row, outside = None, True
+        elif outside and line.startswith("  ") and not line.startswith("   "):
+            out.append(line.strip())
+        elif line.startswith("      ") and not line.startswith("       "):
+            out.append(("%s: " % row if row else "") + line.strip())
+        elif row and line.startswith(mutants.PASS2):
+            out.append("%s: %s" % (row, line[len(mutants.PASS2):]))
+        elif not line.startswith(" "):
+            row, outside = None, False
+    return out
 
 
 def run_summary(rec):
@@ -706,10 +777,12 @@ text leaves open. `DECISIONS.md` lists each decision: the scenarios it settles, 
 each scenario.
 
 Edit `DRAFT.kv` so that its clauses give each scenario of `DECISIONS.md` the chosen outcome:
-1. Change the clauses that decide these scenarios, or add clauses where none decides them. Keep every other clause as
-   it is.
-2. For each decision, add a probe named `decision_ID` (ID as in DECISIONS.md, for example `decision_D1`). The probe
-   runs one of the decision's scenarios from the empty module and asserts the chosen outcome.
+1. Change the clauses that decide these scenarios, or add clauses where none decides them. If DECISIONS.md leaves a
+   scenario open, no clause may decide its outcome: change or remove the clauses that decide it. Keep every other
+   clause as it is.
+2. For each decision that chooses an outcome, add a probe named `decision_ID` (ID as in DECISIONS.md, for example
+   `decision_D1`). The probe runs one of the decision's scenarios that has a chosen outcome, from the empty module,
+   and asserts that outcome.
 3. Before each clause and probe that you add or change, write its source comments as the draft does:
    `// source: [ANCHOR] "EXACT QUOTE"` (a part of that block, copied character for character, no double quote
    character), or `// source: none (REASON)`, for example `// source: none (decision D1 of the team)`.
@@ -946,7 +1019,7 @@ def collect_phase1(run, name):
         shutil.copy(os.path.join(box, f), d)
     text = read(os.path.join(d, "DRAFT.kv"))
     write(os.path.join(d, "draft.sha256"), sha256(text) + "\n")
-    _, notes = assemble(run, text, os.path.join(d, "sidecar"))
+    _, notes, _ = assemble(run, text, os.path.join(d, "sidecar"))
     st = run.state()
     st["passed"].append(name)
     run.save_state(st)
@@ -992,7 +1065,8 @@ def check_summary(check):
             mode, sum(v.startswith("DETERMINED") for v in vs), vs.count("OPEN"), vs.count("INFEASIBLE")))
     iso = check.get("isolation")
     if iso:
-        parts.append("%d failing clause(s) on the code" % sum(c["verdict"] == "FAILED" for c in iso["clauses"]))
+        parts.append("%d failing clause(s), %d failing init, lemma or probe on the code" % (
+            sum(c["verdict"] == "FAILED" for c in iso["clauses"]), sum(m["verdict"] == "FAILED" for m in iso.get("methods") or [])))
     if check.get("errors"):
         parts.append("errors: %s" % "; ".join(check["errors"]))
     return "; ".join(parts) or "no cells"
@@ -1134,8 +1208,9 @@ class Draft:
             raise InputError("%s: %s: %s" % (name, answers_path, errors[0]))
 
 
-def rules_of(row, drafts, reference, boundary):
-    """The rules of DESIGN-C.md 3.3 (with JC1) that make scenario row `row` a question."""
+def rules_of(row, drafts, reference, boundary, left_open):
+    """The rules of DESIGN-C.md 3.3 (with JC1, and rule 6 of 10.6 finding 3) that make scenario row `row` a question.
+    LEFT_OPEN holds the rows that earlier decisions leave open."""
     formal = drafts[0].answers[row]["formal_cell"]
     st = [d.answers[row]["status"] for d in drafts]
     vs = [verdict(d.cells[formal]) for d in drafts]
@@ -1161,6 +1236,9 @@ def rules_of(row, drafts, reference, boundary):
                 hit.append(4)
     if boundary.get(formal):
         hit.append(5)
+    if (reference is not None and reference.get(formal) == "OPEN") or row in left_open:
+        if any(kind == "DETERMINED" for kind, _ in vs):
+            hit.append(6)
     return hit
 
 
@@ -1327,15 +1405,22 @@ def questions_cmd(args, quiet=False):
         reference = ref[mode]["cells"]
     boundary = {c: bool(info.get("boundary")) for c, info in cell_list.items()}
     rows = list(drafts[0].answers)
+    refs = ((run.cfg.get("decisions") or []) if run else []) + (args.decisions_ref or [])
+    left = left_open(refs)
+    unknown = [r for r in left if r not in drafts[0].answers]
+    if unknown:
+        raise InputError("the earlier decisions leave %s open, which is no scenario of these drafts (decisions of another cell file?)" % ", ".join(unknown))
     questions = {}
     for row in rows:
-        hit = rules_of(row, drafts, reference, boundary)
+        hit = rules_of(row, drafts, reference, boundary, left)
         if hit:
             questions[row] = hit
     rule1 = "the author answered open or assumed" if len(drafts) == 1 else "one author answered open, or two or more assumed"
-    say("kv spec questions: %d draft(s) (%s), mode %s; rule 1: %s; rule 2 %s; rule 4 %s" % (
+    rule6 = (["the reference's OPEN cells"] if reference is not None else []) + (["%d cell(s) that earlier decisions leave open" % len(left)] if refs else [])
+    say("kv spec questions: %d draft(s) (%s), mode %s; rule 1: %s; rule 2 %s; rule 4 %s; rule 6 %s" % (
         len(drafts), ", ".join(d.name for d in drafts), mode, rule1,
-        "on" if len(drafts) > 1 else "off (one draft)", "on (proxy: --reference)" if reference is not None else "off (no --reference)"))
+        "on" if len(drafts) > 1 else "off (one draft)", "on (proxy: --reference)" if reference is not None else "off (no --reference)",
+        "on (%s)" % ", ".join(rule6) if rule6 else "off (no --reference, no earlier decisions)"))
     for row, hit in questions.items():
         f = drafts[0].answers[row]["formal_cell"]
         say("  %s%s rules %s | answers %s | drafts %s%s" % (
@@ -1344,7 +1429,7 @@ def questions_cmd(args, quiet=False):
             " ".join("%s=%s" % (d.name, short(d.cells[f])) for d in drafts),
             "" if reference is None else " | reference %s" % short(reference.get(f))))
     say("question cells: %d %s" % (len(questions), " ".join(questions)))
-    result = {"mode": mode, "drafts": [d.name for d in drafts], "rule1": rule1,
+    result = {"mode": mode, "drafts": [d.name for d in drafts], "rule1": rule1, "left_open": left,
               "questions": [{"cell": r, "formal_cell": drafts[0].answers[r]["formal_cell"], "rules": h} for r, h in questions.items()]}
     code = 0
     groups_path = args.groups
@@ -1380,9 +1465,10 @@ def questions_cmd(args, quiet=False):
 # ---- decisions and checks of decided cells ----
 
 def decided_errors(check, expected, exact):
-    """The cells of EXPECTED (formal cell -> outcome) that CHECK does not decide that way, in each mode it ran. EXACT:
-    the verdict as the bundle shows it must equal the expected text (an option); else the cell must be DETERMINED with
-    the expected outcome among its outcomes (a person's decision)."""
+    """The cells of EXPECTED (formal cell -> outcome) that CHECK does not decide that way, in each mode it ran, as
+    "CELL mode M: GOT, not WANT". EXACT: the verdict as the bundle shows it must equal the expected text (an option);
+    else the cell must be DETERMINED with the expected outcome among its outcomes (a person's decision), or OPEN if
+    the decision leaves it open."""
     modes = check.get("cells") or {}
     if not modes:
         return ["the check ran no cells: %s" % ("; ".join(check.get("errors") or []) or "no error given")]
@@ -1394,7 +1480,7 @@ def decided_errors(check, expected, exact):
         for cell, want in expected.items():
             got = m["cells"].get(cell)
             kind, outs = verdict(got)
-            if not (short(got) == want if exact else kind == "DETERMINED" and want in outs):
+            if not (short(got) == want if exact or want == LEFT_OPEN else kind == "DETERMINED" and want in outs):
                 errors.append("%s mode %s: %s, not %s" % (cell, mode, short(got), want))
     return errors
 
@@ -1405,6 +1491,22 @@ def run_questions(run):
     if not q.get("groups"):
         raise Precondition("%s has no groups: run questions --run %s --groups FILE first" % (p, run.dir))
     return q
+
+
+def left_open(paths):
+    """The scenario rows that the decision files PATHS (kv-decisions/1) leave open, in order: the cells whose outcome
+    is "open". A group decided "open" must name its cells here; RUN/align/decisions.json names every cell."""
+    rows = []
+    for path in paths:
+        data = load(path)
+        if not isinstance(data, dict) or data.get("format") != "kv-decisions/1":
+            raise InputError("%s is not kv-decisions/1" % path)
+        for d in data.get("decisions") or []:
+            cells = d.get("cells") or {}
+            if d.get("option") == LEFT_OPEN and not cells:
+                raise InputError('%s: group %s is decided "open" and names no cell; give its cells in "cells" (the run\'s align/decisions.json names them)' % (path, d.get("group")))
+            rows += [c for c, o in cells.items() if o == LEFT_OPEN and c not in rows]
+    return rows
 
 
 def resolve_decisions(q, files, cells):
@@ -1423,7 +1525,9 @@ def resolve_decisions(q, files, cells):
                 raise InputError("%s: group %s is decided twice" % (path, gid))
             g = groups[gid]
             values = {}
-            if d.get("option") is not None:
+            if d.get("option") == LEFT_OPEN:
+                values.update({c: LEFT_OPEN for c in g["cells"]})
+            elif d.get("option") is not None:
                 option = next((o for o in g["options"] if o["letter"] == d["option"]), None)
                 if option is None:
                     raise InputError("%s: group %s has no option %r" % (path, gid, d["option"]))
@@ -1435,7 +1539,7 @@ def resolve_decisions(q, files, cells):
                 raise InputError("%s: group %s decides %s; its cells are %s" % (path, gid, ", ".join(sorted(values)), ", ".join(g["cells"])))
             for c, o in values.items():
                 outs = [x["name"] for x in cells[formal[c]]["outcomes"]]
-                if o not in outs:
+                if o not in outs and o != LEFT_OPEN:
                     raise InputError('%s: group %s gives %s the outcome %r, which is no outcome of cell %s (%s); give it in "cells"' % (
                         path, gid, c, o, formal[c], ", ".join(outs)))
             got[gid] = {"group": gid, "option": d.get("option"), "note": d.get("note", ""), "cells": values}
@@ -1445,12 +1549,20 @@ def resolve_decisions(q, files, cells):
     return [got[g] for g in groups]
 
 
+def scenario_title(cells, formal, row):
+    """The steps of scenario ROW (formal cell FORMAL) as DECISIONS.md and FEEDBACK show them."""
+    return (cells[formal].get("title") or "") + ("" if formal == row else " (the steps of %s)" % formal)
+
+
 def decisions_md(q, decisions, cells, notes):
     groups = {g["id"]: g for g in q["groups"]}
     formal = {x["cell"]: x["formal_cell"] for x in q["questions"]}
     out = ["# Decisions", "", "A person on the team decided these points. Each decision lists the scenarios it settles and the outcome",
            "chosen for each. A scenario starts from the empty module, as a probe does; the outcomes are written in the",
            "notation of LANGUAGE.md: `r` (or `b`) is the result of the last step, `t1`, `t2` are tokens of earlier steps.", ""]
+    if any(o == LEFT_OPEN for d in decisions for o in d["cells"].values()):
+        out += ["A scenario whose chosen outcome is \"left open\" must stay undecided: the person requires none of its outcomes,",
+                "so no clause may decide it.", ""]
     if notes.strip():
         out += [notes.strip(), ""]
     for d in decisions:
@@ -1462,10 +1574,12 @@ def decisions_md(q, decisions, cells, notes):
             out += ["Note of the person: %s" % d["note"], ""]
         out += ["| Scenario | Steps | Chosen outcome |", "|---|---|---|"]
         for c, o in d["cells"].items():
-            info = cells[formal[c]]
-            title = (info.get("title") or "") + ("" if formal[c] == c else " (the steps of %s)" % formal[c])
-            expr = next(x["expr"] for x in info["outcomes"] if x["name"] == o)
-            out.append("| %s | %s | `%s`: `%s` |" % (c, title.replace("|", "\\|"), o, " ".join(expr.split()).replace("|", "\\|")))
+            title = scenario_title(cells, formal[c], c).replace("|", "\\|")
+            if o == LEFT_OPEN:
+                out.append("| %s | %s | left open: no clause may decide it |" % (c, title))
+                continue
+            expr = next(x["expr"] for x in cells[formal[c]]["outcomes"] if x["name"] == o)
+            out.append("| %s | %s | `%s`: `%s` |" % (c, title, o, " ".join(expr.split()).replace("|", "\\|")))
         out.append("")
     return "\n".join(out)
 
@@ -1491,7 +1605,7 @@ def cmd_align(args):
     cells = run.cell_list()
     decisions = resolve_decisions(q, [(f, load(f)) for f in args.decisions], cells)
     remove_tree(run.path("align"))
-    dump(run.path("align", "decisions.json"), {"draft": name, "decisions": decisions})
+    dump(run.path("align", "decisions.json"), {"format": "kv-decisions/1", "draft": name, "decisions": decisions})
     h = run.path("harness", "_align")
     remove_tree(h)
     os.makedirs(h)
@@ -1528,10 +1642,12 @@ def align_check(run):
             print("    " + e)
         dump(run.path("align", "result.json"), result)
         return 1
-    side, notes = assemble(run, text, run.path("align", "sidecar"))
+    side, notes, origin = assemble(run, text, run.path("align", "sidecar"))
     check = spec_check(run, side, run.path("align", "check"), cells=run.path("cells", "scenario.cells"), code=run.code)
     formal = {x["cell"]: x["formal_cell"] for x in q["questions"]}
-    expected = {formal[c]: o for d in dec["decisions"] for c, o in d["cells"].items()}
+    rows = [(c, o) for d in dec["decisions"] for c, o in d["cells"].items()]
+    expected = {formal[c]: o for c, o in rows if o != LEFT_OPEN}
+    left = {formal[c]: o for c, o in rows if o == LEFT_OPEN}
     result["undecided"] = decided_errors(check, expected, exact=False)
     modes = ", ".join(sorted(check.get("cells") or {})) or "none"
     if result["undecided"]:
@@ -1540,11 +1656,18 @@ def align_check(run):
             print("    " + e)
     else:
         print("  decided cells: all %d DETERMINED as decided in mode(s) %s" % (len(expected), modes))
+    result["open_decided"] = decided_errors(check, left, exact=False) if left else []
+    if result["open_decided"]:
+        print("  cells decided open: %d of %d NOT OPEN (modes %s):" % (len({e.split()[0] for e in result["open_decided"]}), len(left), modes))
+        for e in result["open_decided"]:
+            print("    " + e)
+    elif left:
+        print("  cells decided open: all %d OPEN in mode(s) %s" % (len(left), modes))
     before = (load(os.path.join(run.drafts(dec["draft"]), "check", "check.json")).get("cells") or {})
     result["changed"] = ["%s mode %s: %s -> %s" % (c, mode, short(before[mode]["cells"].get(c)), short(v))
                          for mode, m in sorted((check.get("cells") or {}).items())
                          if mode in before and not m.get("error") and not before[mode].get("error")
-                         for c, v in m["cells"].items() if c not in expected and before[mode]["cells"].get(c) != v]
+                         for c, v in m["cells"].items() if c not in expected and c not in left and before[mode]["cells"].get(c) != v]
     print("  other cells whose verdict changed from draft %s: %s" % (dec["draft"], "none" if not result["changed"] else ""))
     for c in result["changed"]:
         print("    " + c)
@@ -1552,17 +1675,78 @@ def align_check(run):
     if iso:
         result["failing_clauses"] = ["%s %s" % (c["action"], c["clause"]) for c in iso["clauses"] if c["verdict"] == "FAILED"]
         print("  clause isolation on the code: %d failing clause(s)%s" % (len(result["failing_clauses"]), "".join("\n    " + c for c in result["failing_clauses"])))
+        methods = iso.get("methods") or []
+        result["methods_not_proven"] = ["%s %s: %s" % (m["label"], m["verdict"], m["detail"]) for m in methods if m["verdict"] != "PROVEN"]
+        print("  init, lemmas and probes on the code: %d of %d not PROVEN%s" % (
+            len(result["methods_not_proven"]), len(methods), "".join("\n    " + m for m in result["methods_not_proven"])))
+    rec = None
     if run.code:
         rec = verify_draft(run, run.path("align", "sidecar"), run.cfg["root"], [], os.path.join(work, "verify"))
         result["reference"] = rec
         print("  kv verify --draft on the reference implementation: %s" % run_summary(rec))
     probes = set(re.findall(r"(?m)^\s*probe\s+decision_(\w+)", text))
-    result["missing_probes"] = ["decision_" + d["group"] for d in dec["decisions"] if d["group"] not in probes]
+    chosen = [d["group"] for d in dec["decisions"] if any(o != LEFT_OPEN for o in d["cells"].values())]
+    result["missing_probes"] = ["decision_" + g for g in chosen if g not in probes]
     print("  decision probes (DESIGN-C.md 10 UC5): %s" % ("all present" if not result["missing_probes"] else "missing " + ", ".join(result["missing_probes"])))
     result["source_notes"] = notes
+    failed = bool(result["undecided"] or result["open_decided"] or (rec and rec["verdict"] != "PROVEN"))
+    if failed:
+        bad = {m.group(1) for e in result["undecided"] + result["open_decided"] for m in [CELL_ERROR.match(e)] if m}
+        result["feedback"] = loop_back(run, feedback_lines(run, rows, formal, bad, rec, origin))
     dump(run.path("align", "result.json"), result)
     print("  aligned sidecar: %s" % run.path("align", "sidecar"))
-    return 1 if result["undecided"] else 0
+    return 1 if failed else 0
+
+
+# A cell error of decided_errors: "CELL mode M: GOT, not WANT".
+CELL_ERROR = re.compile(r"^(\S+) mode \w+: ")
+
+
+def feedback_lines(run, rows, formal, bad, rec, origin):
+    """The lines of FEEDBACK-<n>.md: each decided scenario of ROWS ((row, outcome) in DECISIONS.md order) whose formal
+    cell is in BAD, as its steps and the decided outcome; then the error lines of the `kv verify` record REC if it is
+    not PROVEN, with their positions in DRAFT.kv (ORIGIN). No verdict and no table (DESIGN-C.md 10.6 finding 5)."""
+    cells = run.cell_list()
+    out = []
+    for c, o in rows:
+        if formal[c] not in bad:
+            continue
+        title = scenario_title(cells, formal[c], c)
+        if o == LEFT_OPEN:
+            out.append("Scenario %s (%s): no clause may decide its outcome; it must stay undecided." % (c, title))
+        else:
+            expr = next(x["expr"] for x in cells[formal[c]]["outcomes"] if x["name"] == o)
+            out.append("Scenario %s (%s): the clauses must give the outcome `%s`: `%s`." % (c, title, o, " ".join(expr.split())))
+    if rec and rec["verdict"] != "PROVEN":
+        out += [draft_positions(run, e, origin) for e in rec.get("errors") or []]
+    return list(dict.fromkeys(out))
+
+
+def loop_back(run, lines):
+    """The loop-back of `align --check` (DESIGN-C.md 10.6 finding 5): writes LINES into the box file FEEDBACK-<n>.md,
+    as collect writes CORRECTION-<n>.md, at most ROUNDS rounds, and prints the prompt for the alignment agent. The
+    round number, or None if there is no line or no round left."""
+    if not lines:
+        print("  loop-back: none: the failure has no error line for the alignment agent")
+        return None
+    h = run.path("harness", "_align")
+    state = os.path.join(h, "feedback.json")
+    n = load(state)["rounds"] if os.path.exists(state) else 0
+    if n >= ROUNDS:
+        print("  loop-back: none left: the %d feedback rounds are used" % ROUNDS)
+        return None
+    n += 1
+    dump(state, {"rounds": n})
+    box = run.path("align", "box")
+    f = os.path.join(box, "FEEDBACK-%d.md" % n)
+    write(f, "# Feedback, round %d of %d\n\nThe team's tool found these problems in DRAFT.kv. Fix them in DRAFT.kv. Change only what the fixes "
+             "need, and keep following TASK.md and DECISIONS.md.\n\n%s\n" % (n, ROUNDS, "\n".join("- " + l for l in lines)))
+    text = "In the directory %s, FEEDBACK-%d.md lists problems of DRAFT.kv. Fix them as it says. Work only inside %s.\n" % (box, n, box)
+    write(os.path.join(h, "prompt-feedback-%d.txt" % n), text)
+    print("  loop-back: %d line(s), round %d of %d: %s" % (len(lines), n, ROUNDS, f))
+    print("prompt for the alignment agent:")
+    print(text, end="")
+    return n
 
 
 # ---- outcomes ----
@@ -1634,7 +1818,7 @@ def cmd_outcomes(args):
     data = {"group": args.group, "cells": group["cells"], "options": {}, "roots": []}
     ready = []
     for letter, path in sorted(drafts.items()):
-        side, _ = assemble(run, read(path), os.path.join(base, letter, "sidecar"))
+        side, _, _ = assemble(run, read(path), os.path.join(base, letter, "sidecar"))
         check = spec_check(run, side, os.path.join(base, letter, "check"), cells=run.path("cells", "scenario.cells"))
         expected = {formal[c]: options[letter]["cells"][c] for c in group["cells"]}
         undecided = decided_errors(check, expected, exact=True)
@@ -1662,7 +1846,7 @@ def cmd_outcomes(args):
     for line in outcome_rows(data)[1:]:
         print(line)
     if os.path.exists(run.path("groups.json")):
-        questions_cmd(argparse.Namespace(run=run.dir, check=None, answers=None, reference=None, mode=q["mode"], groups=None, bundle=None, json=None), quiet=True)
+        questions_cmd(argparse.Namespace(run=run.dir, check=None, answers=None, reference=None, decisions_ref=None, mode=q["mode"], groups=None, bundle=None, json=None), quiet=True)
         print("review bundle: %s" % run.path("bundle.md"))
     return 1 if len(ready) < len(drafts) else 0
 
@@ -1690,6 +1874,7 @@ def main(argv):
     q.add_argument("--check", action="append", help="NAME=CHECK.json of kv spec check --cells")
     q.add_argument("--answers", action="append", help="NAME=ANSWERS.json (kv-answers/1)")
     q.add_argument("--reference", help="CHECK.json of a sidecar whose clauses hold on the reference implementation (rule 4 proxy)")
+    q.add_argument("--decisions-ref", action="append", help="DECISIONS.json (kv-decisions/1) of an earlier run: rule 6 asks again about the cells it leaves open")
     q.add_argument("--mode", choices=("a", "b"))
     q.add_argument("--groups", help="GROUPS.json (kv-groups/1)")
     q.add_argument("--bundle", help="write the review bundle (Markdown) here")

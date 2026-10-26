@@ -1,0 +1,1551 @@
+{
+ "sidecar": "specs/reqshield/keylocallock.coroutine.kv",
+ "module": "com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion",
+ "draft": false,
+ "errors": [],
+ "unsigned": [],
+ "stale": [],
+ "field_fixing": [],
+ "model": {
+  "from_code": true,
+  "assumptions": [],
+  "assumed_facts": []
+ },
+ "cell_list": [
+  {
+   "id": "E1r",
+   "title": "Empty module. tryLock(k, now = 0, timeout = 10, rej = false, limit = 0): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "E1s",
+   "title": "Empty module. tryLock(k, now = 0, timeout = 10, rej = false, limit = 0): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !(r != NULL && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "E2r",
+   "title": "Empty module. tryLock(k, now = 0, timeout = 10, rej = false, limit = 5): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "E2s",
+   "title": "Empty module. tryLock(k, now = 0, timeout = 10, rej = false, limit = 5): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !(r != NULL && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "E3r",
+   "title": "Empty module. tryLock(k, now = 0, timeout = 10, rej = true, limit = 5): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "E3s",
+   "title": "Empty module. tryLock(k, now = 0, timeout = 10, rej = true, limit = 5): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !(r != NULL && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "E4r",
+   "title": "Empty module. unLock(k, t = x) with x, a token never issued: the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "E4s",
+   "title": "Empty module. unLock(k, t = x) with x, a token never issued: k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "E5s",
+   "title": "Empty module. sweep(k, now = 0): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "H1r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 5, timeout = 10, rej = false, limit = 0) (before the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H1s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 5, timeout = 10, rej = false, limit = 0) (before the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H2r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 10, timeout = 10, rej = false, limit = 0) (at the lease): the result",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H2s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 10, timeout = 10, rej = false, limit = 0) (at the lease): k's entry",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H3r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) (after the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H3s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H4r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 5, timeout = 10, rej = false, limit = 5) (before the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H4s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 5, timeout = 10, rej = false, limit = 5) (before the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H5r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 10, timeout = 10, rej = false, limit = 5) (at the lease): the result",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H5s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 10, timeout = 10, rej = false, limit = 5) (at the lease): k's entry",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H6r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 11, timeout = 10, rej = false, limit = 5) (after the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H6s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 11, timeout = 10, rej = false, limit = 5) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H7r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 5, timeout = 10, rej = true, limit = 5) (before the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H7s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 5, timeout = 10, rej = true, limit = 5) (before the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H8r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 10, timeout = 10, rej = true, limit = 5) (at the lease): the result",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H8s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 10, timeout = 10, rej = true, limit = 5) (at the lease): k's entry",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H9r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 11, timeout = 10, rej = true, limit = 5) (after the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "H9s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). tryLock(k, now = 11, timeout = 10, rej = true, limit = 5) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "H10r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). unLock(k, t = t1): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "H10s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). unLock(k, t = t1): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "H11r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). unLock(k, t = x) with x, a token never issued: the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "H11s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). unLock(k, t = x) with x, a token never issued: k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "H12s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). sweep(k, now = 5) (before the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "H13s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). sweep(k, now = 10) (at the lease): k's entry",
+   "boundary": true,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "H14s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10). sweep(k, now = 11) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "K1r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); k2 is another key. tryLock(k2, now = 5, timeout = 10, rej = false, limit = 0) (before the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "K1s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); k2 is another key. tryLock(k2, now = 5, timeout = 10, rej = false, limit = 0) (before the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "K2r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); k2 is another key. unLock(k2, t = t1): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "K2s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); k2 is another key. unLock(k2, t = t1): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "K3r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); k2 is another key. unLock(k2, t = x) with x, a token never issued: the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "K3s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); k2 is another key. unLock(k2, t = x) with x, a token never issued: k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "K4s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); k2 is another key. sweep(k2, now = 5) (before the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "O1r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) returned t2 and k's entry no longer holds t1. tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) (after the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "O1s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) returned t2 and k's entry no longer holds t1. tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_t2",
+     "expr": "carried(S, k, t2)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && r != t2 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !carried(S, k, t2) && !(r != NULL && r != t1 && r != t2 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "O2r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) returned t2 and k's entry no longer holds t1. unLock(k, t = t1): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "O2s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) returned t2 and k's entry no longer holds t1. unLock(k, t = t1): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_t2",
+     "expr": "carried(S, k, t2)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !carried(S, k, t2)"
+    }
+   ]
+  },
+  {
+   "id": "O3r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) returned t2 and k's entry no longer holds t1. unLock(k, t = t2): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "O3s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) returned t2 and k's entry no longer holds t1. unLock(k, t = t2): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_t2",
+     "expr": "carried(S, k, t2)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !carried(S, k, t2)"
+    }
+   ]
+  },
+  {
+   "id": "O4s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) returned t2 and k's entry no longer holds t1. sweep(k, now = 11) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_t2",
+     "expr": "carried(S, k, t2)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !carried(S, k, t2)"
+    }
+   ]
+  },
+  {
+   "id": "O5r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then unLock(k, t = t1) and k's entry no longer holds t1. tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) (after the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "O5s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then unLock(k, t = t1) and k's entry no longer holds t1. tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "O6r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then unLock(k, t = t1) and k's entry no longer holds t1. unLock(k, t = t1): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "O6s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then unLock(k, t = t1) and k's entry no longer holds t1. unLock(k, t = t1): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "O7s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then unLock(k, t = t1) and k's entry no longer holds t1. sweep(k, now = 11) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "O8r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then sweep(k, now = 11) and k's entry no longer holds t1. tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) (after the lease): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "O8s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then sweep(k, now = 11) and k's entry no longer holds t1. tryLock(k, now = 11, timeout = 10, rej = false, limit = 0) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && r != t1 && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1) && !(r != NULL && r != t1 && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "O9r",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then sweep(k, now = 11) and k's entry no longer holds t1. unLock(k, t = t1): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "O9s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then sweep(k, now = 11) and k's entry no longer holds t1. unLock(k, t = t1): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "O10s",
+   "title": "Set-up: t1 := tryLock(k, now = 0, timeout = 10, rej = false, limit = 0) returned a token k's entry backs (lease 10); then sweep(k, now = 11) and k's entry no longer holds t1. sweep(k, now = 11) (after the lease): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_t1",
+     "expr": "carried(S, k, t1)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !carried(S, k, t1)"
+    }
+   ]
+  },
+  {
+   "id": "U1r",
+   "title": "u := tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0) returned a token no entry backs (for some rej0, limit0). tryLock(k, now = 0, timeout = 10, rej = false, limit = 0): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "U1s",
+   "title": "u := tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0) returned a token no entry backs (for some rej0, limit0). tryLock(k, now = 0, timeout = 10, rej = false, limit = 0): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !(r != NULL && carried(S, k, r))"
+    }
+   ]
+  },
+  {
+   "id": "U2r",
+   "title": "u := tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0) returned a token no entry backs (for some rej0, limit0). unLock(k, t = u): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "true",
+     "expr": "r"
+    },
+    {
+     "name": "false",
+     "expr": "!r"
+    }
+   ]
+  },
+  {
+   "id": "U2s",
+   "title": "u := tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0) returned a token no entry backs (for some rej0, limit0). unLock(k, t = u): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "U3s",
+   "title": "u := tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0) returned a token no entry backs (for some rej0, limit0). sweep(k, now = 0): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k)"
+    }
+   ]
+  },
+  {
+   "id": "U4r",
+   "title": "u := tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0) returned a token no entry backs (for some rej0, limit0). tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0): the result",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "null",
+     "expr": "r == NULL"
+    },
+    {
+     "name": "backed",
+     "expr": "r != NULL && tok(r).gBacked"
+    },
+    {
+     "name": "unbacked",
+     "expr": "r != NULL && !tok(r).gBacked"
+    }
+   ]
+  },
+  {
+   "id": "U4s",
+   "title": "u := tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0) returned a token no entry backs (for some rej0, limit0). tryLock(k, now = 0, timeout = 10, rej = rej0, limit = limit0): k's entry",
+   "boundary": false,
+   "outcomes": [
+    {
+     "name": "no_entry",
+     "expr": "!has(S, k)"
+    },
+    {
+     "name": "holds_r",
+     "expr": "r != NULL && carried(S, k, r)"
+    },
+    {
+     "name": "other",
+     "expr": "has(S, k) && !(r != NULL && carried(S, k, r))"
+    }
+   ]
+  }
+ ],
+ "cells": {
+  "a": {
+   "error": null,
+   "findings": [],
+   "millis": 103688,
+   "cells": {
+    "E1r": "DETERMINED(backed)",
+    "E1s": "DETERMINED(holds_r)",
+    "E2r": "DETERMINED(backed)",
+    "E2s": "DETERMINED(holds_r)",
+    "E3r": "DETERMINED(unbacked)",
+    "E3s": "DETERMINED(no_entry)",
+    "E4r": "DETERMINED(false)",
+    "E4s": "DETERMINED(no_entry)",
+    "E5s": "DETERMINED(no_entry)",
+    "H1r": "DETERMINED(null)",
+    "H1s": "DETERMINED(holds_t1)",
+    "H2r": "DETERMINED(null)",
+    "H2s": "DETERMINED(holds_t1)",
+    "H3r": "DETERMINED(backed)",
+    "H3s": "DETERMINED(holds_r)",
+    "H4r": "DETERMINED(null)",
+    "H4s": "DETERMINED(holds_t1)",
+    "H5r": "DETERMINED(null)",
+    "H5s": "DETERMINED(holds_t1)",
+    "H6r": "DETERMINED(backed)",
+    "H6s": "DETERMINED(holds_r)",
+    "H7r": "DETERMINED(null)",
+    "H7s": "DETERMINED(holds_t1)",
+    "H8r": "DETERMINED(null)",
+    "H8s": "DETERMINED(holds_t1)",
+    "H9r": "DETERMINED(backed)",
+    "H9s": "DETERMINED(holds_r)",
+    "H10r": "DETERMINED(true)",
+    "H10s": "DETERMINED(no_entry)",
+    "H11r": "DETERMINED(false)",
+    "H11s": "DETERMINED(holds_t1)",
+    "H12s": "DETERMINED(holds_t1)",
+    "H13s": "DETERMINED(holds_t1)",
+    "H14s": "OPEN",
+    "K1r": "DETERMINED(backed)",
+    "K1s": "DETERMINED(holds_t1)",
+    "K2r": "DETERMINED(false)",
+    "K2s": "DETERMINED(holds_t1)",
+    "K3r": "DETERMINED(false)",
+    "K3s": "DETERMINED(holds_t1)",
+    "K4s": "DETERMINED(holds_t1)",
+    "O1r": "DETERMINED(null)",
+    "O1s": "DETERMINED(holds_t2)",
+    "O2r": "DETERMINED(false)",
+    "O2s": "DETERMINED(holds_t2)",
+    "O3r": "DETERMINED(true)",
+    "O3s": "DETERMINED(no_entry)",
+    "O4s": "DETERMINED(holds_t2)",
+    "O5r": "DETERMINED(backed)",
+    "O5s": "DETERMINED(holds_r)",
+    "O6r": "DETERMINED(false)",
+    "O6s": "DETERMINED(no_entry)",
+    "O7s": "DETERMINED(no_entry)",
+    "O8r": "DETERMINED(backed)",
+    "O8s": "DETERMINED(holds_r)",
+    "O9r": "DETERMINED(false)",
+    "O9s": "DETERMINED(no_entry)",
+    "O10s": "DETERMINED(no_entry)",
+    "U1r": "DETERMINED(backed)",
+    "U1s": "DETERMINED(holds_r)",
+    "U2r": "DETERMINED(false)",
+    "U2s": "DETERMINED(no_entry)",
+    "U3s": "DETERMINED(no_entry)",
+    "U4r": "DETERMINED(unbacked)",
+    "U4s": "DETERMINED(no_entry)"
+   }
+  },
+  "b": {
+   "error": null,
+   "findings": [],
+   "millis": 92110,
+   "cells": {
+    "E1r": "DETERMINED(backed)",
+    "E1s": "DETERMINED(holds_r)",
+    "E2r": "DETERMINED(backed)",
+    "E2s": "DETERMINED(holds_r)",
+    "E3r": "DETERMINED(unbacked)",
+    "E3s": "DETERMINED(no_entry)",
+    "E4r": "DETERMINED(false)",
+    "E4s": "DETERMINED(no_entry)",
+    "E5s": "DETERMINED(no_entry)",
+    "H1r": "DETERMINED(null)",
+    "H1s": "DETERMINED(holds_t1)",
+    "H2r": "DETERMINED(null)",
+    "H2s": "DETERMINED(holds_t1)",
+    "H3r": "DETERMINED(backed)",
+    "H3s": "DETERMINED(holds_r)",
+    "H4r": "DETERMINED(null)",
+    "H4s": "DETERMINED(holds_t1)",
+    "H5r": "DETERMINED(null)",
+    "H5s": "DETERMINED(holds_t1)",
+    "H6r": "DETERMINED(backed)",
+    "H6s": "DETERMINED(holds_r)",
+    "H7r": "DETERMINED(null)",
+    "H7s": "DETERMINED(holds_t1)",
+    "H8r": "DETERMINED(null)",
+    "H8s": "DETERMINED(holds_t1)",
+    "H9r": "DETERMINED(backed)",
+    "H9s": "DETERMINED(holds_r)",
+    "H10r": "DETERMINED(true)",
+    "H10s": "DETERMINED(no_entry)",
+    "H11r": "DETERMINED(false)",
+    "H11s": "DETERMINED(holds_t1)",
+    "H12s": "DETERMINED(holds_t1)",
+    "H13s": "DETERMINED(holds_t1)",
+    "H14s": "OPEN",
+    "K1r": "DETERMINED(backed)",
+    "K1s": "DETERMINED(holds_t1)",
+    "K2r": "DETERMINED(false)",
+    "K2s": "DETERMINED(holds_t1)",
+    "K3r": "DETERMINED(false)",
+    "K3s": "DETERMINED(holds_t1)",
+    "K4s": "DETERMINED(holds_t1)",
+    "O1r": "DETERMINED(null)",
+    "O1s": "DETERMINED(holds_t2)",
+    "O2r": "DETERMINED(false)",
+    "O2s": "DETERMINED(holds_t2)",
+    "O3r": "DETERMINED(true)",
+    "O3s": "DETERMINED(no_entry)",
+    "O4s": "DETERMINED(holds_t2)",
+    "O5r": "DETERMINED(backed)",
+    "O5s": "DETERMINED(holds_r)",
+    "O6r": "DETERMINED(false)",
+    "O6s": "DETERMINED(no_entry)",
+    "O7s": "DETERMINED(no_entry)",
+    "O8r": "OPEN",
+    "O8s": "OPEN",
+    "O9r": "DETERMINED(false)",
+    "O9s": "OPEN",
+    "O10s": "OPEN",
+    "U1r": "DETERMINED(backed)",
+    "U1s": "DETERMINED(holds_r)",
+    "U2r": "DETERMINED(false)",
+    "U2s": "DETERMINED(no_entry)",
+    "U3s": "DETERMINED(no_entry)",
+    "U4r": "DETERMINED(unbacked)",
+    "U4s": "DETERMINED(no_entry)"
+   }
+  }
+ },
+ "isolation": {
+  "runs": 9,
+  "clauses": [
+   {
+    "action": "tryLock",
+    "index": 0,
+    "clause": "ends_only_if P3a",
+    "pos": "specs/reqshield/keylocallock.common.kv:65:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 1,
+    "clause": "unbacked_only_if P3b",
+    "pos": "specs/reqshield/keylocallock.common.kv:67:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 2,
+    "clause": "ensures P1a",
+    "pos": "specs/reqshield/keylocallock.common.kv:62:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 3,
+    "clause": "ensures P1a_entry",
+    "pos": "specs/reqshield/keylocallock.common.kv:64:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 4,
+    "clause": "ensures progress_free",
+    "pos": "specs/reqshield/keylocallock.common.kv:69:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 5,
+    "clause": "ensures progress_live",
+    "pos": "specs/reqshield/keylocallock.common.kv:70:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 6,
+    "clause": "ensures cap_unbacked",
+    "pos": "specs/reqshield/keylocallock.common.kv:71:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 7,
+    "clause": "ensures expired_takeover",
+    "pos": "specs/reqshield/keylocallock.common.kv:72:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "tryLock",
+    "index": 8,
+    "clause": "ensures refusal_keeps_entry",
+    "pos": "specs/reqshield/keylocallock.common.kv:74:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 0,
+    "clause": "ends_only_if P3a",
+    "pos": "specs/reqshield/keylocallock.common.kv:85:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 1,
+    "clause": "ensures P1",
+    "pos": "specs/reqshield/keylocallock.common.kv:83:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 2,
+    "clause": "ensures progress_owner",
+    "pos": "specs/reqshield/keylocallock.common.kv:87:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "unLock",
+    "index": 3,
+    "clause": "ensures no_entry_created",
+    "pos": "specs/reqshield/keylocallock.common.kv:89:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "sweep",
+    "index": 0,
+    "clause": "ends_only_if P3a",
+    "pos": "specs/reqshield/keylocallock.common.kv:96:3",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "action": "sweep",
+    "index": 1,
+    "clause": "ensures no_entry_created",
+    "pos": "specs/reqshield/keylocallock.common.kv:99:3",
+    "verdict": "PROVEN",
+    "detail": null
+   }
+  ],
+  "other": [],
+  "hole": [],
+  "errors": [],
+  "methods": [
+   {
+    "label": "init",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "label": "lemma P3c",
+    "verdict": "PROVEN",
+    "detail": null
+   },
+   {
+    "label": "probe",
+    "verdict": "PROVEN",
+    "detail": null
+   }
+  ]
+ },
+ "spec_to_review": "ends_only_if tryLock P3a, unLock P3a, sweep P3a; unbacked_only_if tryLock P3b; issue tryLock"
+}

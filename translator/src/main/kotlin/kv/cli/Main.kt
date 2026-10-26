@@ -88,7 +88,8 @@ private const val USAGE = """usage:
       value); the contract-only model (no method bodies), which Silicon type-checks; with --cells, the determinacy of
       each scenario cell on it: DETERMINED(outcome), OPEN or INFEASIBLE, in mode a (with the hole) and mode b (the
       hole is true). Without --root only mode b runs: no code proves the hole. With --root, clause isolation: one
-      Silicon run per clause index, each action keeping one sidecar clause, so that every failing clause shows. The
+      Silicon run per clause index, each action keeping one sidecar clause, so that every failing clause shows, and
+      one run of the whole program for the rows of init, the lemmas and the probes. The
       Viper files and check.json go to --out (default: a temp directory). --assume-fact field-frame|frame-domain|init-unissued
       adds a fact to the contract-only model for a measurement (DESIGN-C.md 10.2 O2, 10.3); it is assumed, not proven. Exit 0 if no
       error (OPEN cells and failing clauses are findings), 2 usage error, 4 error (sidecar, cell file, stale-source,

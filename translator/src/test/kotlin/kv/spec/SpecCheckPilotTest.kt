@@ -74,6 +74,7 @@ class SpecCheckPilotTest {
         assertEquals(listOf("C05", "C16", "C19"), r.cells(Mode.B).filterValues { it == "OPEN" }.keys.toList())
         assertEquals(12 to emptyList(), r.isolation!!.clauses.size to r.isolation.clauses.filter { it.verdict != "PROVEN" }, text)
         assertEquals(emptyList(), r.isolation.hole)
+        assertEquals(listOf("init PROVEN", "lemma P3c PROVEN", "probe PROVEN"), r.isolation.methods.map { "${it.label} ${it.verdict}" }, text)
         assertEquals(listOf("ensures progress_live of tryLock", "ensures expired_takeover of tryLock"), r.fieldWarnings.map { it.clause })
         assertTrue(File(r.options.out, "check.json").isFile && File(r.options.out, "contract-a.vpr").isFile && File(r.options.out, "isolate-7.vpr").isFile)
 
@@ -100,7 +101,7 @@ class SpecCheckPilotTest {
             r.failing(),
             text,
         )
-        assertTrue(text.trimEnd().lines().last().endsWith("; 4 failing clause(s)"), text)
+        assertTrue(text.trimEnd().lines().last().endsWith("; 4 failing clause(s), 0 failing init, lemma or probe"), text)
     }
 
     /** DESIGN-C.md appendix B.3: haiku 3 and opus 2 failing clauses (sonnet's 4 are above): 9 in all. */
@@ -119,6 +120,32 @@ class SpecCheckPilotTest {
         for (name in listOf("haiku", "opus")) {
             assertEquals(pilot(name, "b"), check(pilotSidecar("checks/final-$name"), root = false).cells(Mode.B), name)
         }
+    }
+
+    /**
+     * DESIGN-C.md 10.6 finding 2: the real run's aligned draft, with the run's hole, has no failing clause on the code,
+     * and its init fails: its invariant over tok(x) has no gIssued premise. The isolation runs report the init error
+     * among the errors outside the kept clauses only; the init row names it as kv verify does (align-verify.report).
+     */
+    @Test
+    fun `the real run's aligned draft - no failing clause, and the init row FAILED with kv verify's error line`() {
+        val d = File(dir, "e2e").apply { mkdirs() }
+        val hole = Regex("hole MI_INV \"\"\".*?\"\"\"", RegexOption.DOT_MATCHES_ALL)
+        val runHole = hole.find(File(pilotDir, "specs-signed/keylocallock.common.kv").readText())!!.value
+        val draft = File(pilotDir.parentFile, "specdraft/e2e-2026-10-26/DRAFT-aligned.kv").readText()
+        File(d, "keylocallock.common.kv").writeText(draft.replace(hole, Regex.escapeReplacement(runHole)))
+        File(specDir, "keylocallock.coroutine.kv").copyTo(File(d, "keylocallock.coroutine.kv"))
+        val r = check(File(d, "keylocallock.coroutine.kv"), root = true, cells = false, draft = true, name = "e2e-aligned")
+        val text = r.render()
+        assertEquals(emptyList(), r.failing(), text)
+        assertEquals("init" to "FAILED", r.isolation!!.methods.first().let { it.label to it.verdict }, text)
+        assertEquals("Postcondition of init might not hold: generated MI (incomplete quantifiers)", r.isolation.methods.first().detail, text)
+        val probes = listOf("contend", "release_reacquire", "stale_holder", "cap_new_key", "cap_existing_key", "unbacked_unlock").map { "probe pr_$it" } + listOf("D1", "D4", "D7", "D5").map { "probe decision_$it" }
+        assertEquals(listOf("lemma lem_mutual_exclusion_backed") + probes, r.isolation.methods.drop(1).map { it.label }, text)
+        assertTrue(r.isolation.methods.drop(1).all { it.verdict == "PROVEN" }, text)
+        assertTrue("  FAILED init\n      Postcondition of init might not hold: generated MI (incomplete quantifiers)\n" in text, text)
+        assertTrue(text.trimEnd().lines().last().endsWith("; 0 failing clause(s), 1 failing init, lemma or probe"), text)
+        assertTrue(File(r.options.out, "program.vpr").isFile)
     }
 
     @Test
