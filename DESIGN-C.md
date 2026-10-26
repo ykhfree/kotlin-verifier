@@ -745,3 +745,7 @@ LLM 비용 합계는 약 21만 토큰, 9분이다 (파일럿 1단계 하나가 2
 2. **빠진 검사:** 절 분리와 `align --check`의 칸 검사는 action만 본다. init과 lemma의 실패는 마지막 `kv verify --draft`에서만 드러났다. 그리고 그 실패를 교정 agent에게 돌려보내는 단계가 없다. 이번에는 메인 세션이 손으로 고쳤다.
 3. **묻지 않은 결정:** 초안은 monitor 의무(D9)를 스스로 정했다 (`progress_sw_drops_expired`). 사용자는 UC1에서 이 의무를 더하지 않기로 했다. 참조 sidecar가 그 칸을 OPEN으로 두었으므로 규칙 4(대리 지표)가 걸리지 않았다. 참조가 OPEN이고 초안이 정한 칸도 질문 후보로 올려야 한다.
 4. 교정 agent가 상자 규칙을 한 번 어겼다 (check.sh 말고 cat, grep, sed, python3를 썼다). 결과에는 영향이 없다.
+5. **되돌림 시험 (advisor 권고):** 메인 세션의 손 수정은 블라인드 원칙을 어긴다. 그래서 교정 agent에게 오류 줄 하나(`init: Postcondition of init might not hold: generated MI`)만 보냈다. agent는 같은 수정(invariant와 lemma의 `gIssued` 조건)을 스스로 찾았고 (약 4천 토큰, 37초), `align --check`가 원본 PROVEN을 보고했다. 그래서 "검증 실패의 오류 줄을 교정 agent에게 돌려준다"를 흐름의 단계로 넣을 근거가 있다 (n = 1).
+6. **상자 설명의 빈틈:** LANGUAGE.md는 "발급되지 않은 ghost 기록의 필드는 정해지지 않는다, 그래서 tok(x)에 대한 invariant와 lemma에는 gIssued 조건이 필요하다"를 말하지 않는다. 파일럿 opus 초안은 조건을 썼고 이번 초안은 쓰지 않았다. 한 문장을 더하면 된다.
+7. **참조 sidecar:** 이번 실행의 규칙 4 대리 지표는 `pilot-c/specs-signed`(파일럿 날의 서명 sidecar)였다. 질문 칸 15개는 모두 규칙 1과 5에서 나왔으므로, 지금 sidecar를 참조로 써도 질문은 같을 것으로 본다 (추정). 발견 3은 어느 참조에서나 성립한다 (H14s는 둘 다 OPEN).
+8. D7(넘겨받은 뒤 lease의 시작)은 사용자에게 따로 묻지 않았다. 서명된 발급 규칙(`gLease = now + timeout`)에 포함된 결정이다.

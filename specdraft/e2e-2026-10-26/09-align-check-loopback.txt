@@ -1,0 +1,7 @@
+align check: draft d1, 4 decision(s)
+  decided cells: all 15 DETERMINED as decided in mode(s) a, b
+  other cells whose verdict changed from draft d1: none
+  clause isolation on the code: 0 failing clause(s)
+  kv verify --draft on the reference implementation: PROVEN
+  decision probes (DESIGN-C.md 10 UC5): all present
+  aligned sidecar: run/align/sidecar
