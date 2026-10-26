@@ -209,6 +209,13 @@ val discoverClient by tasks.registering(JavaExec::class) {
     kv("discover", "--client", "$reqShieldDir/core/src/main/kotlin")
 }
 
+// `./gradlew resolveClient`: DESIGN-E 6.10 E1. `kv resolve --draft` on the draft core sidecar
+// ../specs/reqshield/reqshield.core.kv (no clause is signed yet, DESIGN-E 2.5).
+val resolveClient by tasks.registering(JavaExec::class) {
+    description = "Binds the names of the draft ReqShield core sidecar to FIR symbols (DESIGN-E)."
+    kv("resolve", "--root", reqShieldDir, "--draft", layout.projectDirectory.file("../specs/reqshield/reqshield.core.kv").asFile.path)
+}
+
 // `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of the three
 // KeyLocalLock variants, runs the installed `kv verify` on each, and checks the verdicts and failing obligations
 // against scripts/mutants-expected.txt. Needs python3 and Silicon. It takes about a minute, so `test` does not run it.

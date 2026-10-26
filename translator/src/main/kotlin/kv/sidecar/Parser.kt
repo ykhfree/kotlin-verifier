@@ -43,6 +43,9 @@ fun parseCells(
     text: String,
 ): List<CellDecl> = SidecarParser(file, text).cells()
 
+/** The clause keywords of a `trusted` declaration (DESIGN-v0.md 4.2, DESIGN-B.md 5.1, DESIGN-E 6.2). */
+private val TRUSTED_CLAUSES = setOf("returns", "ghost", "ensures", "effects", "reviewed", "throws", "creates", "consumes")
+
 /** A source line in a place where none may be. */
 private const val MISPLACED_SOURCE = "a source line must follow an issue rule, an ensures, an allowance clause, an invariant, a lemma or a probe (DESIGN-C.md 5.2)"
 
@@ -269,7 +272,14 @@ private class SidecarParser(
         val pos = posAt(start)
         val indent = indentOf(start)
         return when (val kw = name("a declaration").text) {
-            "module" -> ModuleDecl(dotted("a module FQN"), pos)
+            "module" -> {
+                val fqn = dotted("a module FQN")
+                // DESIGN-E 6.2: `module FQN client` on one line.
+                skipInlineWs()
+                val client = at("client") && (i + "client".length >= text.length || !isNamePart(text[i + "client".length]))
+                if (client) name()
+                ModuleDecl(fqn, pos, client)
+            }
             "source" -> {
                 // The module's `source "File.kt"`; a source line here follows no intent clause.
                 if (peekWord() == "none") fail(start, MISPLACED_SOURCE)
@@ -335,6 +345,31 @@ private class SidecarParser(
                 ClassDecl(n, kname, fields, pos)
             }
             "use" -> UseDecl(dotted("a trusted model name"), pos)
+            "enum" -> {
+                val n = name("an enum name")
+                expect("=")
+                EnumDecl(n, dotted("a Kotlin enum class name"), pos)
+            }
+            "obligation" -> {
+                val n = name("an obligation name")
+                expect("(")
+                val types = mutableListOf<Name>()
+                do {
+                    types += name("a type")
+                } while (accept(","))
+                expect(")")
+                ObligationDecl(n, types, pos)
+            }
+            "trace" -> trace(pos)
+            "assume" -> {
+                val id = name("an assumption ID")
+                expect(":")
+                val n = hyphenated("an assumption name")
+                val unit = text.substring(start, i)
+                val sources = topSources()
+                val (note, sha, at) = topReview()
+                AssumeDecl(id, n, pos, note, sha, at, unit, sources)
+            }
             "trusted" -> trusted(pos)
             "ghost" -> {
                 keyword("record")
@@ -370,9 +405,22 @@ private class SidecarParser(
             }
             "hole" -> {
                 val n = name("MI_INV")
-                if (n.text != "MI_INV") fail(i - n.text.length, "the only hole in v0 is MI_INV")
+                // DESIGN-E 6.2: `hole loop KNAME@LINE` is the invariant of one loop of a client module.
+                val loop =
+                    if (n.text == "loop") {
+                        val fn = dotted("a Kotlin function name")
+                        if (!at("@")) fail(i, "expected '@LINE' after the function of hole loop")
+                        i++
+                        val digits = text.substring(i).takeWhile { it.isDigit() }
+                        if (digits.isEmpty()) fail(i, "expected a line number after '@'")
+                        i += digits.length
+                        LoopRef(fn, digits.toInt())
+                    } else {
+                        null
+                    }
+                if (n.text != "MI_INV" && loop == null) fail(i - n.text.length, "the only hole in v0 is MI_INV")
                 val (body, bodyPos) = tripleString()
-                HoleDecl(n, body, pos, bodyPos)
+                HoleDecl(n, body, pos, bodyPos, loop)
             }
             "probe" -> probe(start, indent)
             "review" -> {
@@ -399,18 +447,32 @@ private class SidecarParser(
     }
 
     private fun trusted(pos: SPos): TrustedDecl {
-        keyword("fun")
-        val fn = dotted("a Kotlin function name")
-        expect("(")
+        // DESIGN-E 6.2: `trusted value KNAME` is a function-typed property; its parameter list is optional.
+        val kw = name("'fun' or 'value'")
+        if (kw.text != "fun" && kw.text != "value") fail(i - kw.text.length, "expected 'fun', found '${kw.text}'")
+        val value = kw.text == "value"
+        val fn = dotted(if (value) "a Kotlin property name" else "a Kotlin function name")
         val params = mutableListOf<Name>()
-        if (!accept(")")) {
-            do {
-                val t = dotted("a parameter type")
-                params += if (accept("?")) t.copy(text = t.text + "?") else t
-            } while (accept(","))
-            expect(")")
+        val named = mutableListOf<Typed?>()
+        if (!value || accept("(")) {
+            if (!value) expect("(")
+            if (!accept(")")) {
+                do {
+                    // `NAME: TYPE` is a parameter the model passes (DESIGN-E 6.2); a bare Kotlin type is one it drops.
+                    val t = dotted("a parameter type")
+                    if (!t.text.contains('.') && accept(":")) {
+                        val type = nullable(name("a sidecar type"))
+                        params += type
+                        named += Typed(t, type)
+                    } else {
+                        params += if (accept("?")) t.copy(text = t.text + "?") else t
+                        named += null
+                    }
+                } while (accept(","))
+                expect(")")
+            }
         }
-        val clock = accept("=").also { if (it) keyword("clock") }
+        val clock = !value && accept("=").also { if (it) keyword("clock") }
         val returns = mutableListOf<Typed>()
         val ghosts = mutableListOf<Typed>()
         val ensures = mutableListOf<Vexpr>()
@@ -418,11 +480,14 @@ private class SidecarParser(
         var reviewed: String? = null
         var fresh: Name? = null
         var throws = false
+        val throwKinds = mutableListOf<Name>()
+        var creates: ObligationUse? = null
+        var consumes: ObligationUse? = null
         var sha: String? = null
         var reviewPos: SPos? = null
         while (true) {
             val word = peekWord() ?: break
-            if (word !in setOf("returns", "ghost", "ensures", "effects", "reviewed", "throws")) break
+            if (word !in TRUSTED_CLAUSES) break
             val clauseStart = i
             val indent = indentOf(clauseStart)
             name()
@@ -442,9 +507,45 @@ private class SidecarParser(
                         continue
                     }
                     expect(":")
-                    (if (word == "returns") returns else ghosts) += Typed(n, name("a type"))
+                    (if (word == "returns") returns else ghosts) += Typed(n, nullable(name("a type")))
                 }
-                "throws" -> throws = true
+                "throws" -> {
+                    throws = true
+                    // DESIGN-E 6.2: kinds on the same line; B's bare `throws` ends its line.
+                    skipInlineWs()
+                    if (!eof() && isNameStart(text[i]) && peekWord() !in TRUSTED_CLAUSES) {
+                        do {
+                            throwKinds += name("an exception kind")
+                        } while (accept(","))
+                    }
+                }
+                "creates", "consumes" -> {
+                    val at = posAt(clauseStart)
+                    val obligation = name("an obligation name")
+                    expect("(")
+                    val args = mutableListOf<Name>()
+                    do {
+                        args += name("a parameter or result name")
+                    } while (accept(","))
+                    expect(")")
+                    // DESIGN-E 6.2 `if VEXPR`, in the one shape the tool reads: `if RESULT != null`.
+                    var ifNotNull: Name? = null
+                    if (word == "creates" && peekWord() == "if") {
+                        name()
+                        ifNotNull = name("a result name")
+                        expect("!=")
+                        val n = name("null")
+                        if (n.text != "null" && n.text != "NULL") fail(i - n.text.length, "a creation condition is `RESULT != null`")
+                    }
+                    val use = ObligationUse(obligation, args, at, ifNotNull)
+                    if (word == "creates") {
+                        if (creates != null) fail(clauseStart, "a second 'creates'")
+                        creates = use
+                    } else {
+                        if (consumes != null) fail(clauseStart, "a second 'consumes'")
+                        consumes = use
+                    }
+                }
                 "ensures" -> ensures += vexpr(indent)
                 "effects" -> {
                     keyword("none")
@@ -457,7 +558,73 @@ private class SidecarParser(
                 }
             }
         }
-        return TrustedDecl(fn, params, clock, returns, ghosts, ensures, effectsNone, reviewed, pos, fresh, throws, sha, reviewPos)
+        return TrustedDecl(
+            fn, params, clock, returns, ghosts, ensures, effectsNone, reviewed, pos, fresh, throws, sha, reviewPos,
+            named.takeIf { it.any { p -> p != null } } ?: emptyList(), value, creates, consumes, throwKinds,
+        )
+    }
+
+    /** [n] with a `?` that follows it right away (DESIGN-E 6.2: `Token?`, `Data?`). */
+    private fun nullable(n: Name): Name = if (at("?")) n.copy(text = n.text + "?").also { i++ } else n
+
+    /** NAME { "-" NAME }, written without spaces: an assumption name such as `errors-are-fatal`. */
+    private fun hyphenated(what: String): Name {
+        val first = name(what)
+        val sb = StringBuilder(first.text)
+        while (at("-") && i + 1 < text.length && isNameStart(text[i + 1])) {
+            i++
+            sb.append('-').append(name().text)
+        }
+        return Name(sb.toString(), first.pos)
+    }
+
+    /** `trace { NAME = EVENT ... }` after the keyword (DESIGN-E 6.2). */
+    private fun trace(pos: SPos): TraceDecl {
+        expect("{")
+        val events = mutableListOf<TraceEvent>()
+        while (!accept("}")) {
+            skipWs()
+            val indent = indentOf(i)
+            val n = name("a trace field name")
+            expect("=")
+            fun where(): Vexpr? = if (peekWord() == "where") name().let { vexpr(indent) } else null
+            events +=
+                when (peekWord()) {
+                    "first", "count", "last" -> {
+                        val word = name().text
+                        val form = EventForm.entries.first { it.keyword == word }
+                        val call = dotted("a trusted call")
+                        TraceEvent(n, form, call, where())
+                    }
+                    "trailing" -> {
+                        name()
+                        keyword("failures")
+                        keyword("of")
+                        TraceEvent(n, EventForm.TRAILING_FAILURES, null, of = name("a count field"))
+                    }
+                    else -> {
+                        val call = dotted("a trusted call")
+                        keyword("while")
+                        TraceEvent(n, EventForm.WHILE_HOLDS, call, holds = holdsPattern())
+                    }
+                }
+        }
+        return TraceDecl(events, pos)
+    }
+
+    /** `holds(NAME(ARG {, ARG}))`; an argument is a name, a constant or `_`. */
+    private fun holdsPattern(): HoldsPattern {
+        keyword("holds")
+        expect("(")
+        val obligation = name("an obligation name")
+        expect("(")
+        val args = mutableListOf<Name>()
+        do {
+            args += name("a value or '_'")
+        } while (accept(","))
+        expect(")")
+        expect(")")
+        return HoldsPattern(obligation, args)
     }
 
     private fun operation(pos: SPos): OperationDecl {
@@ -495,7 +662,7 @@ private class SidecarParser(
                             "this" -> {
                                 if (!at(".")) fail(i, "expected 'this.PROPERTY'")
                                 i++
-                                FreeSource.This(name("a property name"))
+                                FreeSource.This(dotted("a property name"))
                             }
                             else -> fail(srcStart, "expected 'local', 'param', 'this.' or 'call'")
                         }
@@ -527,6 +694,15 @@ private class SidecarParser(
                     val e = vexpr(indent)
                     items += EnsuresItem(id, e, itemPos, unit = text.substring(start, endOf(e)), sources = sources())
                 }
+                // DESIGN-E 6.2: `guard ID: CALL requires VEXPR`.
+                "guard" -> {
+                    val id = name("a property ID")
+                    expect(":")
+                    val call = dotted("a trusted call")
+                    keyword("requires")
+                    val e = vexpr(indent)
+                    items += GuardItem(id, call, e, itemPos, unit = text.substring(start, endOf(e)), sources = sources())
+                }
                 // U7: `reviewed` marks the clause right before it (issue rule, ensures, allowance clause) as read by a person.
                 "reviewed" -> {
                     val (note, sha, at) = review(start)
@@ -535,7 +711,8 @@ private class SidecarParser(
                             is IssueItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "the issue rule is already reviewed")
                             is AllowanceItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "${last.id.text} is already reviewed")
                             is EnsuresItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "${last.id.text} is already reviewed")
-                            else -> fail(start, "'reviewed' must follow an issue rule, an ensures or an allowance clause")
+                            is GuardItem -> if (last.reviewed == null) last.copy(reviewed = note, sha256 = sha, reviewPos = at) else fail(start, "${last.id.text} is already reviewed")
+                            else -> fail(start, "'reviewed' must follow an issue rule, an ensures, a guard or an allowance clause")
                         }
                     items[items.lastIndex] = reviewed
                 }

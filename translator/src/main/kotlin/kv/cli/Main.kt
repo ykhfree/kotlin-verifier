@@ -50,9 +50,11 @@ private const val USAGE = """usage:
       (DESIGN-E 6.10 E0), it lists the client module candidates instead: each class with a CompletableFuture.runAsync
       call, its public functions (entries) with the private helpers they reach, and its tasks (the lambda literals
       that reach runAsync, with the helpers they pass through).
-  kv resolve --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
+  kv resolve --root DIR [--classpath CP] [--kotlinc "ARGS"] [--draft] SIDECAR.kv
       Checks the sidecar, compiles its source files (relative to DIR) and binds its Kotlin names to FIR symbols.
-  kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
+      With --draft (DESIGN-C.md 7.1), an intent clause without a 'reviewed' note is no error; in a client sidecar
+      (DESIGN-E 2.5) neither is a trusted declaration without one.
+  kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] [--draft] SIDECAR.kv
       As resolve, then prints the module in KVIR and checks W1-W16. Exit 1 if a rule is broken.
   kv emit --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] SIDECAR.kv
       As lower, then writes the Viper program (to stdout without --out). With --out, also writes the position
@@ -121,8 +123,9 @@ fun runCli(
     val command = args.firstOrNull()
     if (command == "hole") return hole(args.drop(1), out, err)
     if (command == "spec") return spec(args.drop(1), out, err)
-    // `kv verify --draft` (DESIGN-C.md 9.2 JC6): the sidecar is checked as not signed yet.
-    val draft = command == "verify" && "--draft" in args
+    // `kv verify --draft` (DESIGN-C.md 9.2 JC6): the sidecar is checked as not signed yet; also resolve and lower,
+    // which read the draft client sidecar of DESIGN-E 6.10 E1.
+    val draft = command in setOf("verify", "resolve", "lower") && "--draft" in args
     // `kv discover --client` (DESIGN-E 6.10 E0): client module candidates instead of map action calls.
     val client = command == "discover" && "--client" in args
     val options =
@@ -135,8 +138,8 @@ fun runCli(
         }
     return when (command) {
         "discover" -> discover(options, out, err, client)
-        "resolve" -> resolve(options, out, err)
-        "lower" -> lower(options, out, err)
+        "resolve" -> resolve(options, out, err, draft)
+        "lower" -> lower(options, out, err, draft)
         "emit" -> emit(options, out, err)
         "verify" -> verify(options, out, err, draft)
         "mutation-sites" -> mutationSites(options, out, err)
@@ -209,8 +212,9 @@ private fun resolve(
     options: Options,
     out: PrintStream,
     err: PrintStream,
+    draft: Boolean,
 ): Int {
-    val (outcome, code) = resolved("resolve", options, err)
+    val (outcome, code) = resolved("resolve", options, err, draft)
     outcome ?: return code
     val resolution = outcome.resolution!!
     resolution.bindings.forEach { b ->
@@ -225,8 +229,13 @@ private fun lower(
     options: Options,
     out: PrintStream,
     err: PrintStream,
+    draft: Boolean,
 ): Int {
-    val (outcome, code) = resolved("lower", options, err)
+    val (outcome, code) = resolved("lower", options, err, draft)
+    if (outcome?.sidecar?.client == true && outcome.module == null) {
+        err.println("kv: ${options.files.single().path} is a client module; its lowering comes with DESIGN-E E2")
+        return 1
+    }
     val module = outcome?.module ?: return code
     out.print(printModule(module))
     val violations = checkWellFormed(module)

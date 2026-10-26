@@ -2,6 +2,7 @@ package kv.sidecar
 
 import kv.kvir.GhostKind
 import kv.kvir.Reserved
+import kv.model.ClientModels
 import kv.model.TrustedModels
 
 /**
@@ -36,6 +37,9 @@ private val VIPER_TYPES = setOf("Int", "Bool", "Ref")
 /** Kotlin field types a sidecar `class` may name, besides its own types (DESIGN-v0.md 4.2, FTYPE). */
 private val FIELD_TYPES = setOf("Semaphore", "AtomicBoolean", "Long")
 
+/** Value types of a client sidecar besides its types, enums and classes (DESIGN-E 6.2). */
+private val CLIENT_VALUE_TYPES = setOf("Int", "Bool")
+
 private class SidecarChecker(
     private val s: Sidecar,
     private val draft: Boolean,
@@ -62,21 +66,26 @@ private class SidecarChecker(
         singletons()
         globalNames()
         typeReferences()
-        s.uses.filter { it.model.text !in TrustedModels.builtIn }.forEach {
-            err(it.model.pos, "unknown-model", "unknown trusted model '${it.model.text}'; built-in models: ${TrustedModels.builtIn.sorted().joinToString()}")
+        // DESIGN-E 6.5: a client sidecar may also use the client models.
+        val models = if (s.client) TrustedModels.builtIn + ClientModels.builtIn else TrustedModels.builtIn
+        s.uses.filter { it.model.text !in models }.forEach {
+            err(it.model.pos, "unknown-model", "unknown trusted model '${it.model.text}'; built-in models: ${models.sorted().joinToString()}")
         }
         witness()
         setOnce()
         keyClasses()
         s.trusted.forEach(::fresh)
         // Decision 2 (2026-10-23): a trusted function contract counts only after a person reads the function body.
-        s.trusted.filter { it.reviewed == null }.forEach {
-            err(it.pos, "unreviewed", "trusted fun ${it.fn.text} needs a 'reviewed' note: its contract counts only after a person reads the body")
+        // DESIGN-E 2.5: the trusted declarations of a client module are signed with its intent clauses, so a client
+        // draft may leave them without a note.
+        s.trusted.filter { it.reviewed == null && !(draft && s.client) }.forEach {
+            err(it.pos, "unreviewed", "trusted ${if (it.value) "value" else "fun"} ${it.fn.text} needs a 'reviewed' note: its contract counts only after a person reads the body")
         }
         s.operations.forEach(::operation)
         s.probes.forEach(::probe)
         probeNames()
-        s.intentClauses().filter { (_, c) -> c is PropertyDecl || c is ProbeDecl }.forEach { (what, c) -> fingerprint(what, c) }
+        s.intentClauses().filter { (_, c) -> c is PropertyDecl || c is ProbeDecl || c is AssumeDecl }.forEach { (what, c) -> fingerprint(what, c) }
+        if (s.client) ClientChecks(s, ::err).run() else l1Only()
         if (s.reviewIntent) reviewIntent()
         return errors
     }
@@ -113,13 +122,15 @@ private class SidecarChecker(
     private fun singletons() {
         if (s.modules.isEmpty()) err(anchor, "missing-module", "the sidecar declares no module")
         if (s.sources.isEmpty()) err(anchor, "missing-source", "the sidecar names no source file")
-        if (s.holes.isEmpty()) err(anchor, "missing-hole", "the sidecar has no 'hole MI_INV'; the inductive invariant goes there (DESIGN-v0.md 4.2)")
+        // DESIGN-E 6.1: a client module has no state, so no module invariant.
+        val invariantHoles = s.holes.filter { it.loop == null }
+        if (invariantHoles.isEmpty() && !s.client) err(anchor, "missing-hole", "the sidecar has no 'hole MI_INV'; the inductive invariant goes there (DESIGN-v0.md 4.2)")
         fun once(
             decls: List<Decl>,
             what: String,
         ) = decls.drop(1).forEach { err(it.pos, "duplicate-decl", "a second $what; the first is at ${decls[0].pos}") }
         once(s.modules, "module")
-        once(s.holes, "hole MI_INV")
+        once(invariantHoles, "hole MI_INV")
         once(s.ghosts, "ghost record")
         once(s.witnesses, "witness")
     }
@@ -147,6 +158,9 @@ private class SidecarChecker(
             g.fields.forEach { global(it.name, "ghost field") }
         }
         s.operations.forEach { global(it.name, "operation") }
+        s.enums.forEach { global(it.name, "enum") }
+        s.obligations.forEach { global(it.name, "obligation") }
+        s.traces.flatMap { it.events }.forEach { global(it.name, "trace field") }
         // DESIGN-D.md 6.6: the method of a reserve step is reserve_<operation>.
         s.operations.filter { it.name.text.startsWith(Reserved.RESERVE_PREFIX) }.forEach {
             err(it.name.pos, "name-clash", "operation '${it.name.text}' starts with '${Reserved.RESERVE_PREFIX}', the prefix of the tool's reserve step methods")
@@ -160,7 +174,23 @@ private class SidecarChecker(
         allowed: Set<String>,
         what: String,
     ) {
-        if (n.text !in allowed && n.text !in types) err(n.pos, "unknown-name", "$what '${n.text}' is neither a sidecar type nor one of ${allowed.sorted()}")
+        // DESIGN-E 6.2: in a client sidecar a value type may also be an enum or a class, and nullable.
+        val base = if (s.client) n.text.removeSuffix("?") else n.text
+        val known = base in allowed || base in types || s.client && (s.enums.any { it.name.text == base } || base in classes)
+        if (!known) err(n.pos, "unknown-name", "$what '${n.text}' is neither a sidecar type nor one of ${allowed.sorted()}")
+    }
+
+    /**
+     * DESIGN-E 6.2: the declarations of a client module may not appear in an object or instance module sidecar. The
+     * check reads only declarations those sidecars never had, so an existing sidecar meets no new error.
+     */
+    private fun l1Only() {
+        val clientOnly =
+            s.enums.map { it.pos to "enum" } + s.obligations.map { it.pos to "obligation" } + s.traces.map { it.pos to "trace" } +
+                s.assumes.map { it.pos to "assume" } + s.holes.filter { it.loop != null }.map { it.pos to "hole loop" } +
+                s.trusted.filter { it.value || it.named.isNotEmpty() || it.creates != null || it.consumes != null || it.throwKinds.isNotEmpty() }.map { it.pos to "trusted ${if (it.value) "value" else "fun with named parameters, an obligation or exception kinds"}" } +
+                s.operations.flatMap { op -> op.items.filterIsInstance<GuardItem>().map { it.pos to "guard" } }
+        clientOnly.forEach { (pos, what) -> err(pos, "client-only", "$what is a declaration of a client module (DESIGN-E 6.2); add 'client' to the module line") }
     }
 
     private fun typeReferences() {
@@ -171,12 +201,14 @@ private class SidecarChecker(
                 if (kind.value.text !in classes) err(kind.value.pos, "unknown-name", "map value class '${kind.value.text}' is not a sidecar class")
             }
         }
-        s.classes.forEach { c -> c.fields.forEach { type(it.type, FIELD_TYPES, "field type") } }
+        s.classes.forEach { c -> c.fields.forEach { type(it.type, if (s.client) CLIENT_VALUE_TYPES else FIELD_TYPES, "field type") } }
         s.ghosts.forEach { g ->
             type(g.index, emptySet(), "ghost index type")
             g.fields.forEach { type(it.type, VIPER_TYPES, "ghost field type") }
         }
         s.trusted.forEach { t -> (t.returns + t.ghosts).forEach { type(it.type, VIPER_TYPES, "result type") } }
+        s.trusted.forEach { t -> t.named.filterNotNull().forEach { type(it.type, CLIENT_VALUE_TYPES, "parameter type") } }
+        s.obligations.forEach { o -> o.types.forEach { type(it, CLIENT_VALUE_TYPES, "obligation argument type") } }
         s.probes.forEach { p -> p.params.forEach { type(it.type, VIPER_TYPES, "parameter type") } }
     }
 
@@ -259,6 +291,7 @@ private class SidecarChecker(
                 when (item) {
                     is EnsuresItem -> item.id
                     is AllowanceItem -> item.id
+                    is GuardItem -> item.id
                     else -> null
                 } ?: return@forEach
             ids.put(id.text, id.pos)?.let { err(id.pos, "duplicate-decl", "property ID ${id.text} is used twice in operation ${op.name.text}; the first is at $it") }

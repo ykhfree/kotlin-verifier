@@ -117,6 +117,8 @@ class FrontendSession(
         resolution = res
         errors += errs
         if (errs.isNotEmpty()) return
+        // DESIGN-E 6.10: a client module is resolved here; its lowering is E2.
+        if (sidecar.client) return
         try {
             kvir = lowerModule(sidecar, resolver, res, file, seen.map { it.first }, found, moduleClass)
         } catch (e: SidecarException) {

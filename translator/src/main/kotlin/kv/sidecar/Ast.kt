@@ -55,9 +55,11 @@ sealed interface Decl {
     val pos: SPos
 }
 
+/** `module FQN [client]`; [client] marks a client module (DESIGN-E 6.1): no state, its public functions run thread-modularly. */
 data class ModuleDecl(
     val fqn: Name,
     override val pos: SPos,
+    val client: Boolean = false,
 ) : Decl
 
 data class SourceDecl(
@@ -124,6 +126,32 @@ data class UseDecl(
     override val pos: SPos,
 ) : Decl
 
+/** `enum NAME = KCLASS` (DESIGN-E 6.2): a Kotlin enum class whose entries are Int constants in declaration order. */
+data class EnumDecl(
+    val name: Name,
+    val kclass: Name,
+    override val pos: SPos,
+) : Decl
+
+/** `obligation NAME(TYPE, ...)` (DESIGN-E 3.1, 6.2): a linear obligation, an abstract Viper predicate. */
+data class ObligationDecl(
+    val name: Name,
+    val types: List<Name>,
+    override val pos: SPos,
+) : Decl
+
+/**
+ * `creates NAME(ARGS) [if RESULT != null]` or `consumes NAME(ARGS)` of a trusted declaration (DESIGN-E 6.2): the
+ * call creates or consumes one obligation. [args] name its parameters and results; [ifNotNull] is the result whose
+ * non-null value is the condition of a creation (the `if` form of DESIGN-E 6.2, restricted to this shape).
+ */
+data class ObligationUse(
+    val obligation: Name,
+    val args: List<Name>,
+    val pos: SPos,
+    val ifNotNull: Name? = null,
+)
+
 /**
  * `trusted fun KSIG`: [fn] is the Kotlin name, [params] the parameter types as written. [fresh] is the class of
  * `returns fresh NAME` and [throws] the `throws` clause (DESIGN-B.md 3.2). [sha256] is the fingerprint the `reviewed`
@@ -143,6 +171,17 @@ data class TrustedDecl(
     val throws: Boolean = false,
     val sha256: String? = null,
     val reviewPos: SPos? = null,
+    /**
+     * DESIGN-E 6.2: per parameter, its model name and sidecar type when written `NAME: TYPE` (the model passes it),
+     * or null when written as a bare Kotlin type (the model drops it). Empty if every parameter is bare.
+     */
+    val named: List<Typed?> = emptyList(),
+    /** `trusted value KNAME`: a function-typed property the code invokes (DESIGN-E 6.2); false for `trusted fun`. */
+    val value: Boolean = false,
+    val creates: ObligationUse? = null,
+    val consumes: ObligationUse? = null,
+    /** `throws KIND {, KIND}` (DESIGN-E 3.5): the exception kinds; empty for B's bare `throws` or no clause. */
+    val throwKinds: List<Name> = emptyList(),
 ) : Decl {
     val shortName: String get() = fn.text.substringAfterLast('.')
 
@@ -194,7 +233,7 @@ sealed interface FreeSource {
         override val name: Name,
     ) : FreeSource
 
-    /** `this.KNAME`; [name] holds KNAME only. */
+    /** `this.KNAME`; [name] holds KNAME only, a dotted path of properties in a client module (DESIGN-E 3.6). */
     data class This(
         override val name: Name,
     ) : FreeSource
@@ -315,6 +354,19 @@ data class EnsuresItem(
     override val sources: List<SourceLine> = emptyList(),
 ) : ReviewedItem
 
+/** `guard ID: CALL requires VEXPR` (DESIGN-E 6.2): [expr] must hold before each call of the trusted [call]. */
+data class GuardItem(
+    val id: Name,
+    val call: Name,
+    val expr: Vexpr,
+    override val pos: SPos,
+    override val reviewed: String? = null,
+    override val sha256: String? = null,
+    override val reviewPos: SPos? = null,
+    override val unit: String = "",
+    override val sources: List<SourceLine> = emptyList(),
+) : ReviewedItem
+
 data class OperationDecl(
     val name: Name,
     val selector: Selector,
@@ -340,13 +392,69 @@ data class PropertyDecl(
 ) : Decl,
     IntentClause
 
-/** [text] is the hole body between the triple quotes; [textPos] is the position of its first character. */
+/** `KNAME@LINE` of `hole loop` (DESIGN-E 6.2): the loop at Kotlin line [line] of function [fn]. */
+data class LoopRef(
+    val fn: Name,
+    val line: Int,
+)
+
+/**
+ * [text] is the hole body between the triple quotes; [textPos] is the position of its first character. [loop] is
+ * set for `hole loop KNAME@LINE` (DESIGN-E 6.8): the invariant of that loop; [name] is then `loop`.
+ */
 data class HoleDecl(
     val name: Name,
     val text: String,
     override val pos: SPos,
     val textPos: SPos,
+    val loop: LoopRef? = null,
 ) : Decl
+
+/** The form of a trace event (DESIGN-E 3.2, 6.2). */
+enum class EventForm(
+    val keyword: String,
+) { FIRST("first"), WHILE_HOLDS("while holds"), COUNT("count"), LAST("last"), TRAILING_FAILURES("trailing failures of") }
+
+/** `holds(NAME(PATTERN))`: an obligation with argument patterns; `_` matches any value. */
+data class HoldsPattern(
+    val obligation: Name,
+    val args: List<Name>,
+)
+
+/**
+ * One field of the trace record (DESIGN-E 3.2): `NAME = first CALL`, `CALL while holds(...)`, `count CALL`, `last
+ * CALL` (each but `while holds` with an optional `where VEXPR`), or `trailing failures of NAME`.
+ */
+data class TraceEvent(
+    val name: Name,
+    val form: EventForm,
+    val call: Name?,
+    val where: Vexpr? = null,
+    val holds: HoldsPattern? = null,
+    val of: Name? = null,
+)
+
+/** `trace { NAME = event ... }` (DESIGN-E 3.2, 6.2): the event record of one thread run. */
+data class TraceDecl(
+    val events: List<TraceEvent>,
+    override val pos: SPos,
+) : Decl
+
+/**
+ * `assume ID: NAME` (DESIGN-E 4, 6.2): turns on a named assumption of a built-in model. It is signed like an intent
+ * clause (DESIGN-E 2.5): source lines, then a `reviewed` note.
+ */
+data class AssumeDecl(
+    val id: Name,
+    val name: Name,
+    override val pos: SPos,
+    override val reviewed: String? = null,
+    override val sha256: String? = null,
+    override val reviewPos: SPos? = null,
+    override val unit: String = "",
+    override val sources: List<SourceLine> = emptyList(),
+) : Decl,
+    IntentClause
 
 /** A probe call argument: positional when [name] is null. */
 data class ProbeArg(
@@ -458,6 +566,13 @@ data class Sidecar(
     val properties get() = decls.filterIsInstance<PropertyDecl>()
     val holes get() = decls.filterIsInstance<HoleDecl>()
     val probes get() = decls.filterIsInstance<ProbeDecl>()
+    val enums get() = decls.filterIsInstance<EnumDecl>()
+    val obligations get() = decls.filterIsInstance<ObligationDecl>()
+    val traces get() = decls.filterIsInstance<TraceDecl>()
+    val assumes get() = decls.filterIsInstance<AssumeDecl>()
+
+    /** True for a client module (DESIGN-E 6.1). */
+    val client get() = modules.firstOrNull()?.client == true
 
     /** True if the sidecar has the line `review intent` (DESIGN-C.md 10 UC4). */
     val reviewIntent get() = decls.any { it is ReviewIntentDecl }
@@ -473,6 +588,7 @@ fun Sidecar.intentClauses(): List<Pair<String, IntentClause>> =
             is OperationDecl -> d.items.filterIsInstance<ReviewedItem>().map { describe(it, d) to it }
             is PropertyDecl -> listOf("${d.kind.name.lowercase()} ${d.id.text}" to d)
             is ProbeDecl -> listOf((if (d.name == null) "the probe" else d.label) to d)
+            is AssumeDecl -> listOf("assume ${d.id.text}" to d)
             else -> emptyList()
         }
     }
@@ -486,4 +602,5 @@ fun describe(
         is IssueItem -> "the issue rule of ${op.name.text}"
         is AllowanceItem -> "${item.kind.keyword} ${item.id.text} of ${op.name.text}"
         is EnsuresItem -> "ensures ${item.id.text} of ${op.name.text}"
+        is GuardItem -> "guard ${item.id.text} of ${op.name.text}"
     }
