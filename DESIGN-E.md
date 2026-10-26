@@ -15,39 +15,45 @@
 |---|---|---|
 | 프로토콜 | 같은 key의 요청이 몰리면 lock을 잡은 요청만 supplier를 부르고 캐시를 쓴다. 나머지는 캐시를 polling한다. 갱신(refresh)은 따로 lock을 잡고 background에서 한다 | 1절 |
 | 성질 | 호출 하나의 **lock 사용 규율** 7개(LD_noleak, LD_own, LD_transfer, LD_write, LD_supplier, LD_wait, MODE)와 기다림 2개(POLL_bound, TERM), supplier 횟수 1개(SUP_once), 호출자가 받는 결과 6개(RET_*). 자연어 문서가 대부분을 정한다 | 2절 |
-| 열린 결정 | 사용자에게 물을 것 6개 (UE1-UE6). 셋은 측정한 결과가 있다: 가정을 끄면 원본이 FAILED가 된다 (A1-A3) | 2.3절, 4절 |
+| 결정 | 사용자가 넷을 정했다 (2026-10-26): UE1 호출 하나의 규율, UE2 Error는 치명적(A1), UE3 "호출자는 이미 얻은 결과를 잃지 않는다", UE4 받은 과제는 실행됨(A3). 남은 것: UE5(서명 차례), UE6(E5 전) | 2.3절 |
 | 어휘 | 새 층 L3: 선형 의무 `Lease(k, lt, t)`(Viper 추상 predicate), `forperm` 누수 검사, 사건 기록(trace), 과제(task)와 의무 넘기기, 예외 종류. 지금의 L1 "연산당 atomic action 하나" 모델 밖이다 | 3절 |
-| 모델 | `spike/protocol2/target.vpr` (555줄): core 변형. 원본 PROVEN, 결함 변이 12개 모두 FAILED, 동치 대조 3개 PROVEN, 가정 토글 3개 FAILED (측정) | 5절 |
-| 시간 | 원본 Silicon 2.13-2.14 s (3회), 변이마다 2.10-2.26 s (측정). 공개 함수 메서드 0.48 s | 5.3절 |
+| 고침 | 갱신 `tryLock`의 try/catch와 해제 실패를 삼키는 helper `releaseQuietly` (+32줄, -9줄). req-shield 사본에서 기존 테스트 57개 통과 (측정). req-shield에는 적용하지 않았다 | 5.6절 |
+| 서명 | `review intent` 아래 16개: 의도 절 12개와 가정 4개(A1, A3, A4, A5). 그 밖에 신뢰 선언 6개와 어휘 승인 1번 | 2.5절 |
+| 모델 | 기준 모델 `target.vpr`(A1, A3, A4, A5 켬, A2 끔)에서 원본 core는 **FAILED**: RET_hit, RET_recheck, RET_supplier_error 셋뿐이고 LD_*는 모두 PROVEN (측정). 고친 코드(`fixed-core.patch`)의 모델 `fixed.vpr`은 PROVEN (측정). 결함 변이 12개는 두 모델 모두에서 원본에 없는 의무를 깨뜨린다. 동치 대조 3개는 두 모델 모두에서 원본과 같은 결과다 | 5절 |
+| 시간 | 파일마다 Silicon 약 2.2 s (측정: 고친 모델 2.15-2.20 s, 결정 전 원본 2.13-2.14 s). 공개 함수 메서드 약 0.5 s | 5.3절 |
 | 지금 도구 | `ReqShield`의 연산을 하나도 판정하지 못한다: `kv discover`가 `ReqShield.kt`에서 action 0개, `kv lower`가 UNSUPPORTED와 INCOMPLETE를 낸다 (측정) | 8절 |
-| 도구 변화 | 새 모듈 종류(client), 함수 본문 lowering(예외, `runCatching`, private helper 인라인, 람다 → 과제, 반복문), 신뢰 모델 약 10개, 문법 구성 약 11개, KVIR 노드 8개 | 6절 |
+| 도구 변화 | 새 모듈 종류(client), 함수 본문 lowering(예외, `runCatching`, private helper 인라인, 람다 → 과제, 반복문), 신뢰 모델 약 10개, 문법 구성 약 12개, KVIR 노드 8개 | 6절 |
 | 변형 | core 먼저. coroutine은 신뢰 모델 4개와 취소 예외를 더하면 닿는다. reactor는 Reactor 연산자 22종의 신호 의미론이 막는다 (별도 설계 필요) | 6.11절 |
 | 비용 | E0-E4(core) 12.5-19.5 인일, coroutine +3-5, reactor +10-20 (모두 추정). B(aspect)는 B0-B4 7-12 인일이었다 (추정) | 6.10절, 7절 |
 | 예측 | `PROTOCOL2.md`의 예측 3개가 모두 맞았다 (1은 측정, 2는 판단, 3은 질문 6개) | 8절 |
 
-측정한 판정 (`spike/protocol2/run.sh`, `isolate.py`). "처음 보고"는 Silicon 한 번 실행의 오류다. "전체"는 성질 하나씩만 켠 복사본 15개씩의 결과다 (5.2절).
+측정한 판정 (`spike/protocol2/run.sh`, 2026-10-26 사용자 결정 뒤). 두 모델에서 각 21개 파일의 "깨지는 의무 전체"를 쟀다 (`isolate.py`: 성질 하나씩만 켠 복사본, 630회).
+판정 규칙 (`verdicts.py`): 변이와 토글은 그 모델의 원본에 없는 의무를 깨뜨리면 DETECTED다. 대조는 원본과 같은 의무 집합이면 ACCEPTED다.
+표의 R은 기준 모델의 원본이 깨뜨리는 셋이다: RET_hit, RET_recheck, RET_supplier_error.
 
-| 항목 | Kotlin 편집 (요약) | 기대 | 판정 | 깨지는 의무 전체 |
+| 항목 | Kotlin 편집 (요약) | 기준 모델 (A2 끔): 깨지는 의무 | 고친 모델 (`fixed-core.patch`): 깨지는 의무 | 판정 (기준, 고친) |
 |---|---|---|---|---|
-| 원본 | — | PROVEN | PROVEN | 없음 |
-| M1 | supplier 실패 때 해제 안 함 (`executeCallable` 264-266 삭제) | FAILED | FAILED | LD_noleak |
-| M2 | executor 거부 때 해제 안 함 (`runInBackground` 149-156 삭제) | FAILED | FAILED | LD_noleak |
-| M3 | 재확인의 finally가 늘 해제 (100행 조건 삭제): 이중 해제 | FAILED | FAILED | LD_own, LD_supplier, LD_transfer |
-| M4 | fallback 뒤 캐시 쓰기 (`.also { setCacheFunction(...) }`) | FAILED | FAILED | LD_write, RET_supplier |
-| M5 | 낡은 토큰으로 해제 (`lastToken ?: token`) | FAILED | FAILED | LD_own |
-| M6 | 잘못된 lock 종류로 해제 (`LockType.CREATE` 고정) | FAILED | FAILED | LD_own (갱신 경로에서만) |
-| M7 | lock 없이 갱신 (68행 `if (true)`) | FAILED | FAILED | LD_supplier, LD_write |
-| M8 | ONLY_UPDATE_CACHE에서도 생성 lock (89행 모드 검사 삭제) | FAILED | FAILED | MODE_create |
-| M9 | supplier 실패를 삼킴 (해제 뒤 `null` 반환) | FAILED | FAILED | LD_own, LD_transfer, LD_write, RET_supplier_error |
-| M10 | fallback supplier 재시도 | FAILED | FAILED | SUP_once |
-| M11 | 실패한 읽기만 시도로 셈 (182행 `attempts++`를 catch로) | FAILED | FAILED | TERM, HOLE |
-| M12 | 쓰기 전에 해제 (`createReqShieldData`) | FAILED | FAILED | LD_own, LD_transfer |
-| C1 | 쓰기의 finally를 catch + 정상 경로 해제로 | PROVEN | PROVEN | 없음 |
-| C2 | 재확인의 flag 없이 경로마다 해제 | PROVEN | PROVEN | 없음 |
-| C3 | 갱신 과제를 finally 하나로 해제 | PROVEN | PROVEN | 없음 |
-| A1 | 가정 끔: `java.lang.Error`가 치명적이지 않음 | FAILED | FAILED | LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error |
-| A2 | 가정 끔: `tryLock`·`unLock`이 던질 수 있음 | FAILED | FAILED | RET_hit, RET_recheck, RET_supplier_error |
-| A3 | 가정 끔: executor가 받은 과제를 버릴 수 있음 | FAILED | FAILED | LD_noleak |
+| 원본 | — | **R**. LD_*는 모두 PROVEN | 없음 (**PROVEN**) | FAILED, PROVEN (둘 다 기대대로) |
+| M1 | supplier 실패 때 해제 안 함 (`executeCallable` 264-266 삭제) | LD_noleak, RET_hit, RET_recheck | LD_noleak | DETECTED, DETECTED |
+| M2 | executor 거부 때 해제 안 함 (`runInBackground` 149-156 삭제) | LD_noleak + R | LD_noleak | DETECTED, DETECTED |
+| M3 | 재확인의 finally가 늘 해제 (100행 조건 삭제): 이중 해제 | LD_own, LD_supplier, LD_transfer, RET_hit, RET_recheck | LD_own, LD_supplier, LD_transfer | DETECTED, DETECTED |
+| M4 | fallback 뒤 캐시 쓰기 (`.also { setCacheFunction(...) }`) | LD_write, RET_supplier + R | LD_write, RET_supplier | DETECTED, DETECTED |
+| M5 | 낡은 토큰으로 해제 (`lastToken ?: token`) | LD_own + R | LD_own | DETECTED, DETECTED |
+| M6 | 잘못된 lock 종류로 해제 (`LockType.CREATE` 고정) | LD_own + R | LD_own (갱신 경로에서만) | DETECTED, DETECTED |
+| M7 | lock 없이 갱신 (68행 `if (true)`) | LD_supplier, LD_write + R | LD_supplier, LD_write | DETECTED, DETECTED |
+| M8 | ONLY_UPDATE_CACHE에서도 생성 lock (89행 모드 검사 삭제) | MODE_create + R | MODE_create | DETECTED, DETECTED |
+| M9 | supplier 실패를 삼킴 (해제 뒤 `null` 반환) | LD_own, LD_transfer, LD_write + R | LD_own, LD_transfer, LD_write, RET_supplier_error | DETECTED, DETECTED |
+| M10 | fallback supplier 재시도 | SUP_once + R | SUP_once | DETECTED, DETECTED |
+| M11 | 실패한 읽기만 시도로 셈 (182행 `attempts++`를 catch로) | TERM, HOLE + R | TERM, HOLE | DETECTED, DETECTED |
+| M12 | 쓰기 전에 해제 (`createReqShieldData`) | LD_own, LD_transfer + R | LD_own, LD_transfer | DETECTED, DETECTED |
+| C1 | 쓰기의 finally를 catch + 정상 경로 해제로 | R | 없음 | ACCEPTED, ACCEPTED |
+| C2 | 재확인의 flag 없이 경로마다 해제 | R | 없음 | ACCEPTED, ACCEPTED |
+| C3 | 갱신 과제를 finally 하나로 해제 | R | 없음 | ACCEPTED, ACCEPTED |
+| A1 끔 | `java.lang.Error`가 치명적이지 않음 | LD_noleak, RET_supplier + R | LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error | DETECTED, DETECTED |
+| A2 켬 | lock 호출은 던지지 않음 (결정 전의 기준 모델) | 없음 (PROVEN) | 없음 (PROVEN) | PROVEN, PROVEN |
+| A3 끔 | executor가 받은 과제를 버릴 수 있음 | LD_noleak + R | LD_noleak | DETECTED, DETECTED |
+| A4 끔 | 던진 `unLock` 뒤에도 의무가 남음 | LD_noleak + R | LD_noleak | DETECTED, DETECTED |
+| A5 끔 | 던진 `tryLock`도 lock을 잡았을 수 있음 | LD_noleak + R | LD_noleak | DETECTED, DETECTED |
 
 ## 1. 프로토콜
 
@@ -122,27 +128,60 @@
 ### 2.2 문서와 코드가 어긋나는 곳 (관찰)
 
 1. `ClientException.kt:22`는 "Wraps failures raised by client-provided functions (supplier, cache getter/setter, lock functions)."라고 쓴다. core는 lock 함수의 실패를 감싸지 않는다. `tryLock`(66행, 89행)과 `unLock`(101행, 265행)의 예외가 그대로 호출자에게 간다 (판단: 코드를 읽음; `ErrorCode`에 lock 오류 코드가 없다).
-2. `ReqShield.kt:150`은 "A failed release must not cost the caller its data"라고 쓴다. 이 보호는 executor 거부 경로에만 있다. 재확인의 finally(101행)와 supplier 실패(265행)의 `unLock`이 던지면, 그 예외가 호출자의 data나 `SUPPLIER_ERROR`를 대신한다. 측정: A2 토글에서 RET_recheck와 RET_supplier_error가 깨진다.
-3. 갱신 경로의 `tryLock`(66행)이 던지면 호출자는 이미 읽은 hit을 잃는다. 측정: A2 토글에서 RET_hit이 깨진다.
+2. `ReqShield.kt:150`은 "A failed release must not cost the caller its data"라고 쓴다. 이 보호는 executor 거부 경로에만 있다. 재확인의 finally(101행)와 supplier 실패(265행)의 `unLock`이 던지면, 그 예외가 호출자의 data나 `SUPPLIER_ERROR`를 대신한다. 측정: 기준 모델(A2 끔)에서 RET_recheck와 RET_supplier_error가 깨진다 (5.2절).
+3. 갱신 경로의 `tryLock`(66행)이 던지면 호출자는 이미 읽은 hit을 잃는다. 측정: 기준 모델(A2 끔)에서 RET_hit이 깨진다 (5.2절).
 
-이 셋은 결함인지 의도인지 문서가 정하지 않는다. 그래서 UE3의 질문이다.
+이 셋은 결함인지 의도인지 문서가 정하지 않았다. 그래서 UE3의 질문이었다. 사용자는 (b)를 골랐다 (2.3절). 그래서 셋은 결함이다. 고침은 5.6절이다.
 
-### 2.3 사용자에게 물을 결정
+### 2.3 사용자 결정 (2026-10-26)
 
-| ID | 질문 | 선택지와 측정 | 권고 |
+| ID | 질문 | 선택지와 측정 (설계 때) | 결정 |
 |---|---|---|---|
-| UE1 | 성질의 범위: 호출 하나의 규율(LD_*, MODE, SUP_once, RET_*)인가, "key마다 한 번에 supplier 하나"(상호 배제)인가? | 상호 배제는 설계상 성립하지 않는다. fallback이 holder와 함께 supplier를 부른다 (`ReqShield.kt:165-167`). 느린 supplier 중에 lease가 끝날 수 있다. local lock은 상한에서 entry 없는 permit을 준다 (`LocalLockLimit.kt:33-37`). 상호 배제는 `KeyLock` 계약과 lease 시간에 기대는 결과로 보고서에 적는다 | 호출 하나의 규율 |
-| UE2 | `java.lang.Error`가 지나가는 경로도 lock을 풀어야 하는가? | (a) Error는 치명적이라고 가정한다 (보고서에 싣는다). (b) 성질에 넣는다. 측정(A1): core는 `runAsync` 자체가 Error를 던질 때만 lock이 남는다 (`runInBackground`는 `RejectedExecutionException`만 잡는다). supplier의 Error는 `runCatching`이 잡아 풀어 준다. coroutine은 supplier의 Error에서 풀지 않는다 (`catch (e: Exception)`, 243행; Phase 0 측정 A_F4) | (a) |
-| UE3 | lock 저장소가 실패할 때(`tryLock`·`unLock`이 던짐) 호출자는 무엇을 받는가? 던진 `unLock`은 해제로 치는가? | (a) lock 호출은 던지지 않는다고 가정한다 (지금 기준선). (b) RET_*를 그대로 요구한다. 측정(A2): 원본이 RET_hit, RET_recheck, RET_supplier_error에서 FAILED다. LD_*는 그대로 PROVEN이다 (던진 `unLock`은 의무를 소비한다: `ReqShield.kt:150` "the lock then expires on its own"). (b)를 고르면 req-shield 코드를 고쳐야 한다 (2.2절) | 사용자가 정한다. (a)이면 global lock을 쓰는 사용자에게 가정이 보이게 한다 |
-| UE4 | executor가 받은 과제는 반드시 실행된다고 가정하는가? | (a) 가정한다. (b) 성질에 넣는다. 측정(A3): 받은 과제를 버릴 수 있으면 원본이 LD_noleak에서 FAILED다. `ThreadPoolExecutor.shutdownNow()`는 "halts the processing of waiting tasks" (JDK `ThreadPoolExecutor.java:1405-1406`). 라이브러리는 사용자의 pool을 끄지 않는다 (`ReqShieldConfiguration.kt:51-52`). core-spring adapter는 자기 pool(`Executors.newScheduledThreadPool`, daemon thread)을 `shutdown()`으로 끈다 (`ReqShieldAspect.kt:263`, 271). `shutdown`은 "previously submitted tasks are executed" (JDK `ScheduledThreadPoolExecutor.java:824-825`). JVM이 끝날 때 daemon thread의 남은 과제는 실행되지 않는다. 그때 local lock은 JVM과 함께 사라지고, global lock은 lease가 끝낸다. 남는 경우의 비용은 lease 하나다 | (a) |
-| UE5 | 모드별 쓰기 규칙을 확인한다. 그리고 "polling 뒤 fallback은 캐시를 쓰지 않는다"를 의도 절로 넣는가? | 모드 규칙은 `CLAUDE.md:103-105`가 정한다. fallback의 "쓰지 않음"은 코드(197행)에만 있다. 넣으면 M4 같은 "fallback 결과도 캐시에 쓰자" 변경이 FAILED가 된다 (측정: M4 → LD_write) | 넣는다 (`source none`, 사용자 서명) |
-| UE6 | coroutine 변형: `scope.launch(start = ATOMIC)`의 dispatcher가 던지면? | kotlinx.coroutines 1.8.1에서 ATOMIC은 `startCoroutine`을 쓴다 (`CoroutineStart.kt:89`). `resumeWith`가 `dispatcher.dispatch`를 바로 부른다 (`DispatchedContinuation.kt:193-196`). 그래서 dispatch가 던지면 `launch`가 던지고 과제는 실행되지 않는다. coroutine 코드에는 core의 거부 처리(147-157행)에 해당하는 것이 없다: lock이 lease까지 남고, 갱신 경로의 호출자는 hit을 잃는다. Executor 기반 dispatcher는 던지지 않는다 (`Executors.kt:129-136`: 거부되면 job을 취소하고 `Dispatchers.IO`로 보낸다). (a) dispatch는 던지지 않는다고 가정 (Phase 0 F6), (b) 성질에 넣음 → coroutine FAILED | E5 전에 정한다 |
+| UE1 | 성질의 범위: 호출 하나의 규율(LD_*, MODE, SUP_once, RET_*)인가, "key마다 한 번에 supplier 하나"(상호 배제)인가? | 상호 배제는 설계상 성립하지 않는다. fallback이 holder와 함께 supplier를 부른다 (`ReqShield.kt:165-167`). 느린 supplier 중에 lease가 끝날 수 있다. local lock은 상한에서 entry 없는 permit을 준다 (`LocalLockLimit.kt:33-37`). 상호 배제는 `KeyLock` 계약과 lease 시간에 기대는 결과로 보고서에 적는다 (권고였던 것: 호출 하나의 규율) | **결정: 호출 하나의 규율.** 상호 배제는 보고서의 설명으로만 둔다 |
+| UE2 | `java.lang.Error`가 지나가는 경로도 lock을 풀어야 하는가? | (a) Error는 치명적이라고 가정한다 (보고서에 싣는다). (b) 성질에 넣는다. 측정(A1): core는 `runAsync` 자체가 Error를 던질 때만 lock이 남는다 (`runInBackground`는 `RejectedExecutionException`만 잡는다). supplier의 Error는 `runCatching`이 잡아 풀어 준다. coroutine은 supplier의 Error에서 풀지 않는다 (`catch (e: Exception)`, 243행; Phase 0 측정 A_F4) (권고였던 것: (a)) | **결정: (a) 가정한다 (A1).** 서명한다 |
+| UE3 | lock 저장소가 실패할 때(`tryLock`·`unLock`이 던짐) 호출자는 무엇을 받는가? 던진 `unLock`은 해제로 치는가? | (a) lock 호출은 던지지 않는다고 가정한다 (설계 때의 기준선). (b) RET_*를 그대로 요구한다. 측정(A2): 원본이 RET_hit, RET_recheck, RET_supplier_error에서 FAILED다. LD_*는 그대로 PROVEN이다 (던진 `unLock`은 의무를 소비한다: `ReqShield.kt:150` "the lock then expires on its own"). (b)를 고르면 req-shield 코드를 고쳐야 한다 (2.2절) (권고였던 것: 사용자가 정한다. (a)이면 global lock을 쓰는 사용자에게 가정이 보이게 한다) | **결정: (b) "호출자는 이미 얻은 결과를 잃지 않는다".** RET_hit, RET_recheck, RET_supplier_error를 그대로 요구한다. 그래서 원본 core는 FAILED다 (측정, 5.2절). 고친 코드는 5.6절. 던진 `unLock`이 의무를 끝낸다는 것은 이름 있는 가정 A4로 서명한다 |
+| UE4 | executor가 받은 과제는 반드시 실행된다고 가정하는가? | (a) 가정한다. (b) 성질에 넣는다. 측정(A3): 받은 과제를 버릴 수 있으면 원본이 LD_noleak에서 FAILED다. `ThreadPoolExecutor.shutdownNow()`는 "halts the processing of waiting tasks" (JDK `ThreadPoolExecutor.java:1405-1406`). 라이브러리는 사용자의 pool을 끄지 않는다 (`ReqShieldConfiguration.kt:51-52`). core-spring adapter는 자기 pool(`Executors.newScheduledThreadPool`, daemon thread)을 `shutdown()`으로 끈다 (`ReqShieldAspect.kt:263`, 271). `shutdown`은 "previously submitted tasks are executed" (JDK `ScheduledThreadPoolExecutor.java:824-825`). JVM이 끝날 때 daemon thread의 남은 과제는 실행되지 않는다. 그때 local lock은 JVM과 함께 사라지고, global lock은 lease가 끝낸다. 남는 경우의 비용은 lease 하나다 (권고였던 것: (a)) | **결정: (a) 가정한다 (A3).** 서명한다 |
+| UE5 | 모드별 쓰기 규칙을 확인한다. 그리고 "polling 뒤 fallback은 캐시를 쓰지 않는다"를 의도 절로 넣는가? | 모드 규칙은 `CLAUDE.md:103-105`가 정한다. fallback의 "쓰지 않음"은 코드(197행)에만 있다. 넣으면 M4 같은 "fallback 결과도 캐시에 쓰자" 변경이 FAILED가 된다 (측정: M4 → LD_write) (권고였던 것: 넣는다 (`source none`, 사용자 서명)) | 미정. 서명 차례에 정한다. 답이 LD_write 절의 모양을 정한다 (2.5절) |
+| UE6 | coroutine 변형: `scope.launch(start = ATOMIC)`의 dispatcher가 던지면? | kotlinx.coroutines 1.8.1에서 ATOMIC은 `startCoroutine`을 쓴다 (`CoroutineStart.kt:89`). `resumeWith`가 `dispatcher.dispatch`를 바로 부른다 (`DispatchedContinuation.kt:193-196`). 그래서 dispatch가 던지면 `launch`가 던지고 과제는 실행되지 않는다. coroutine 코드에는 core의 거부 처리(147-157행)에 해당하는 것이 없다: lock이 lease까지 남고, 갱신 경로의 호출자는 hit을 잃는다. Executor 기반 dispatcher는 던지지 않는다 (`Executors.kt:129-136`: 거부되면 job을 취소하고 `Dispatchers.IO`로 보낸다). (a) dispatch는 던지지 않는다고 가정 (Phase 0 F6), (b) 성질에 넣음 → coroutine FAILED (권고였던 것: E5 전에 정한다) | 미정. E5 전에 정한다 |
+
+1. 결정된 넷(UE1-UE4)으로 모델의 기준(canonical)을 다시 정했다: A1, A3, A4, A5는 켜고, A2(lock 호출은 던지지 않음)는 끈다 (4절).
+2. 설계 때의 기준 모델(A2 켬)은 토글 `A2_on_lock_calls_return`으로 남는다. 그 모델에서 원본은 PROVEN이다 (측정).
 
 ### 2.4 범위 밖 (제안)
 
 1. 상호 배제 (UE1의 다른 선택지). lease 시간과 `KeyLock` 구현에 기대므로 이 모델로는 증명할 수 없다 (판단).
 2. 돌려준 `ReqShieldData`의 공유: 호출자와 쓰기 과제가 같은 객체를 쥔다. `ReqShieldData`는 `var value`, `var status`를 가진다. Phase 0의 L3M3가 이 검사(쓰기 권한)를 보였다 (`spike/reqshield/mutants.report`). 라이브러리 코드는 그 필드를 쓰지 않는다.
 3. L3 의무 `Lease(k, lt, t)`와 L1의 `tok(t).gHeld`의 연결 (`spike/RESULTS.md` "Not modeled"). `KeyLocalLock`의 L1 증명이 `KeyLock` 신뢰 계약의 일부를 내보내는 길이다. 뒤로 미룬다.
+
+### 2.5 서명 수 (`review intent`)
+
+`DESIGN-C.md` 10절 UC4의 정책: 의도 절마다 `reviewed`와 `source`가 있어야 한다. 아래는 core sidecar에서 사용자가 서명할 것이다. 출처 줄은 `source "<anchor>" quote "..."` 또는 `source none "<결정>"`이다.
+
+| # | 서명할 것 | 종류 | 출처 줄 |
+|---|---|---|---|
+| 1 | LD_write (`guard setCacheFunction`) | 의도 절 | `CLAUDE.md:104` (ONLY_CREATE_CACHE), `CLAUDE.md:105` (ONLY_UPDATE_CACHE); fallback 부분은 `source none` UE5 (미정) |
+| 2 | LD_supplier (`guard Callable.call`) | 의도 절 | `ReqShield.kt:165-167`, `CLAUDE.md:7` |
+| 3 | MODE_create | 의도 절 | `ReqShield.kt:88` |
+| 4 | MODE_update | 의도 절 | `ReqShield.kt:65` |
+| 5 | SUP_once (호출과 갱신 과제) | 의도 절 | `ReqShield.kt:165-167`, `README.md:162` |
+| 6 | POLL_bound | 의도 절 | `ReqShield.kt:169-171`, `README.md:159-161` |
+| 7 | RET_hit | 의도 절 | `ReqShield.kt:135`, `ReqShieldConfiguration.kt:52-53`, `source none` UE3 (2026-10-26) |
+| 8 | RET_get_error | 의도 절 | `ClientException.kt:22` |
+| 9 | RET_recheck | 의도 절 | `ReqShield.kt:94`, `source none` UE3 |
+| 10 | RET_poll | 의도 절 | `ReqShield.kt:161`, `README.md:159` |
+| 11 | RET_supplier | 의도 절 | `ReqShield.kt:135`, `ReqShieldConfiguration.kt:52-53` |
+| 12 | RET_supplier_error | 의도 절 | `README.md:162-163`, `source none` UE3 |
+| 13 | A1 Error는 치명적이다 | 가정 | `source none` UE2 (2026-10-26) |
+| 14 | A3 executor가 받은 과제는 실행된다 | 가정 | `ReqShieldConfiguration.kt:50-52`, `source none` UE4 (2026-10-26) |
+| 15 | A4 던진 `unLock`은 의무를 끝낸다 | 가정 | `ReqShield.kt:150` |
+| 16 | A5 던진 `tryLock`은 의무를 남기지 않는다 | 가정 | `ReqShieldConfiguration.kt:37-38` |
+
+1. 합계: `review intent` 아래 16개 (의도 절 12개, 가정 4개).
+2. UE5는 1번 절의 모양을 정한다. "fallback은 캐시를 쓰지 않는다"이면 절은 지금 모양이다. 아니면 CREATE 경로의 조건에 `|| GAVE_UP`이 붙는다. 어느 쪽이든 절은 하나다. 그래서 개수는 그대로 16이다. 1번의 서명만 UE5를 기다린다.
+3. `review intent` 밖에서도 서명할 것이 있다 (`DESIGN-v0.md` 8.3 "reviewed 지문"):
+   - 신뢰 선언 6개: `KeyLock.tryLock`, `KeyLock.unLock`, `decideToUpdateCache`, `getCacheFunction`, `setCacheFunction`, `Callable.call`. 각각 `reviewed`와 지문을 단다.
+   - 어휘 층 승인 1번: `obligation Lease`, 사건 기록 규칙, `PHASE`, `GAVE_UP` (`DESIGN-C.md` 2.1절 층 3).
+4. 도구 사실(LD_noleak, LD_own, LD_transfer, LD_wait, TERM)은 서명하지 않는다. `obligation`과 `consumes`에서 도구가 낸다.
 
 ## 3. 어휘
 
@@ -180,8 +219,8 @@
 
 | 모델 | 계약 | 출처 | 검토 |
 |---|---|---|---|
-| `KeyLock.tryLock(k, lt)` | null, 또는 토큰 `t`와 `Lease(k, lt, t)`. 던지면 의무 없음 (A2) | `KeyLock.kt:28-35` | 사람 (인터페이스, 본문 없음) |
-| `KeyLock.unLock(k, lt, t)` | `Lease(k, lt, t)`를 요구하고 소비한다 (LD_own). 던져도 소비한다 | `KeyLock.kt:37-46`, `ReqShield.kt:150` | 사람 |
+| `KeyLock.tryLock(k, lt)` | null, 또는 토큰 `t`와 `Lease(k, lt, t)`. 던질 수 있다 (UE3). 던지면 호출자에게 의무가 없다 (A5) | `KeyLock.kt:28-35` | 사람 (인터페이스, 본문 없음) |
+| `KeyLock.unLock(k, lt, t)` | `Lease(k, lt, t)`를 요구하고 소비한다 (LD_own). 던질 수 있다 (UE3). 던져도 소비한다 (A4) | `KeyLock.kt:37-46`, `ReqShield.kt:150` | 사람 |
 | `getCacheFunction(key)` | data, null, 또는 던짐 (`Exception`) | `ReqShieldConfiguration.kt:34` | 사용자 함수 |
 | `setCacheFunction(key, data, ttl)` | Boolean, 또는 던짐 | `ReqShieldConfiguration.kt:33` | 사용자 함수 |
 | `Callable.call()` | 값, 또는 던짐 (`Exception`, `InterruptedException` 포함) | JDK `Callable` | 사용자 함수 |
@@ -236,20 +275,30 @@
 
 ## 4. 신뢰 가정과 토글
 
-| ID | 가정 (기준선) | 끄면 (측정) | 연결된 질문 |
-|---|---|---|---|
-| A1 | `java.lang.Error`는 프로세스를 끝낸다. 그래서 어떤 호출도 Error를 던지지 않는다 | FAILED: LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error. 누수는 `runAsync`의 Error 하나뿐이다 (측정: 그 계약에서만 Error를 빼면 LD_noleak이 PROVEN) | UE2 |
-| A2 | `KeyLock.tryLock`·`unLock`은 정상 반환한다 | FAILED: RET_hit, RET_recheck, RET_supplier_error. LD_*는 PROVEN이다 | UE3 |
-| A3 | executor가 받은 과제는 실행된다 | FAILED: LD_noleak | UE4 |
+기준(canonical) 모델의 가정이다. 사용자 결정(2.3절)을 따른다. 각 가정은 `target.vpr`의 토글(`define`) 하나다.
 
-1. 세 가정은 판정을 정한다. 그래서 보고서의 "Assumptions"와 "Spec to review"에 모두 싣는다.
-2. 가정의 값은 사용자가 서명한다 (`DESIGN-v0.md` 8.3 U7, `DESIGN-C.md` 10절 UC4와 같은 정책).
+| ID | 가정 | 기준 모델 | 끄면 (측정, 5.2절) | 근거 |
+|---|---|---|---|---|
+| A1 | `java.lang.Error`는 프로세스를 끝낸다. 그래서 어떤 호출도 Error를 던지지 않는다 | 켬 (UE2, 서명) | 기준: LD_noleak, RET_supplier가 더 깨진다. 고친 모델: LD_noleak과 RET 넷(RET_hit, RET_recheck, RET_supplier, RET_supplier_error) | `source none` UE2 |
+| A2 | `KeyLock.tryLock`·`unLock`은 정상 반환한다 | **끔** (UE3) | 켜면(설계 때의 모델) 원본이 PROVEN이다 | — |
+| A3 | executor가 받은 과제는 실행된다 | 켬 (UE4, 서명) | 두 모델 모두 LD_noleak이 더 깨진다 | `ReqShieldConfiguration.kt:50-52`, UE4 |
+| A4 | 던진 `unLock`은 의무를 끝낸다. 해제를 시도했고, 남은 lock은 lease가 끝낸다 | 켬 (서명 대상) | 두 모델 모두 LD_noleak이 더 깨진다 (공개 함수와 과제 둘) | `ReqShield.kt:150` "the lock then expires on its own" |
+| A5 | 던진 `tryLock`은 호출자에게 의무를 남기지 않는다. 저장소가 그래도 잡은 lock은 lease가 끝낸다 | 켬 (서명 대상) | 두 모델 모두 LD_noleak이 더 깨진다 | `ReqShieldConfiguration.kt:37-38` "must let the lock expire on its own" |
+
+1. A4와 A5는 A2를 끈 결과로 생긴 가정이다. lock 호출이 던질 수 있으면, 던진 호출 뒤의 의무를 정해야 한다.
+2. A4를 끄면 던진 `unLock` 뒤에도 의무가 남는다. 코드는 해제를 다시 시도하지 않는다. 그래서 누수가 된다. 다시 시도해도 저장소가 계속 실패하면 끝나지 않는다. 그래서 lease가 유일한 끝이다 (판단).
+3. A5를 끄면 호출자가 모르는 토큰의 의무가 남는다. 어떤 코드도 그것을 풀 수 없다 (판단). 모델은 `lostToken(k, lt)`라는 ghost 토큰으로 이것을 나타낸다.
+4. 가정은 보고서의 "Assumptions"와 "Spec to review"에 늘 싣는다. 값은 사용자가 서명한다 (2.5절).
 
 ## 5. 모델 (spike)
 
 ### 5.1 구조
 
-`spike/protocol2/target.vpr` (555줄)의 내용:
+모델은 둘이다. 둘 다 `spike/protocol2/`에 있다.
+- 기준(canonical) 모델 `target.vpr` (566줄): req-shield 코드 그대로, 4절의 기준 가정.
+- 고친(fixed) 모델 `fixed.vpr`: `fixed-core.patch`를 적용한 코드 (5.6절). `target.vpr`과 다른 줄은 다섯 줄이다 (머리 주석 1줄, 고친 `if` 조건 4줄). `mutants.py`의 `FIX`가 `target.vpr`에서 이 파일을 만든다. `run.sh`는 둘이 같은지 확인한다.
+
+`target.vpr`의 내용:
 
 1. 공개 함수 하나가 메서드 `getAndSetReqShieldData`다. private helper는 모두 인라인했다. 지역 이름은 `<이름>__<줄>`이다. 여러 곳에 인라인한 helper의 지역 이름은 호출 줄을 접미사로 단다 (`e_262_at122`).
 2. 과제 둘이 메서드다: `task_69`(갱신, 69-76행)와 `task_125`(생성 쓰기, 125-127행).
@@ -263,9 +312,14 @@
 
 ### 5.2 결과 (측정)
 
-0절의 표가 전체 결과다. 파일: `spike/protocol2/expected-verdicts.txt`(판정 줄), `spike/protocol2/isolation.txt`(깨지는 의무 전체).
+0절의 표가 전체 결과다. 파일: `spike/protocol2/expected-verdicts.txt`(판정 줄 44개), `spike/protocol2/isolation.txt`(파일 42개의 깨지는 의무 전체).
 
-처음 보고된 오류 (Silicon 한 번 실행, `--numberOfErrorsToReport 0`):
+기준 모델의 원본 (UE3 결정 뒤):
+1. 깨지는 의무는 정확히 셋이다: RET_hit, RET_recheck, RET_supplier_error.
+2. 셋의 원인은 2.2절의 세 곳이다. 갱신 `tryLock`(66행)이 던지면 hit을 잃는다. 재확인 finally의 `unLock`(101행)이 던지면 재확인 결과를 잃는다. supplier 실패 뒤 `unLock`(265행)이 던지면 `SUPPLIER_ERROR`를 잃는다.
+3. 그 밖의 의무는 모두 PROVEN이다: LD_noleak, LD_own, LD_transfer, LD_write, LD_supplier, LD_wait, MODE_create, MODE_update, SUP_once, POLL_bound, TERM, hole 불변식, RET_get_error, RET_poll, RET_supplier.
+
+처음 보고된 오류 (Silicon 한 번 실행, `--numberOfErrorsToReport 0`, `first-reports.txt`). 고친 모델의 것이다. 기준 모델에서는 여기에 원본의 R 셋이 더해진다 (M1, M3에서는 RET_supplier_error 없이).
 
 | 항목 | 처음 보고 |
 |---|---|
@@ -281,34 +335,39 @@
 | M10 | SUP_once 사후조건 |
 | M11 | hole 불변식(`tr.npoll <= attempts__178`)이 보존되지 않음, 종료 측도 |
 | M12 | 넘기는 곳의 `exhale`, `unLock` 전제 (거부 경로) |
-| A1 | `NO_LEASES`, RET_hit, RET_recheck, RET_supplier, RET_supplier_error |
-| A2 | RET_hit, RET_recheck, RET_supplier_error |
-| A3 | `NO_LEASES` |
+| A1 끔 | `NO_LEASES`와 RET 넷 |
+| A3 끔, A5 끔 | 공개 함수의 `NO_LEASES` |
+| A4 끔 | 공개 함수와 두 과제의 `NO_LEASES` |
 
 관찰:
-1. 과제에 넣은 결함은 과제 메서드에서 보고된다 (M1의 `task_69`, M6, M7). 호출자 쪽 결함은 공개 함수에서 보고된다. 위치가 원인과 맞는다.
-2. M6는 갱신 경로에서만 잘못이다 (생성 경로에서는 `CREATE`가 맞는 값이다). 모델은 `task_69`의 사본만 거부했다.
-3. 항상 켜진 권한 검사(LD_own, LD_transfer)가 실패하면 Silicon은 그 경로를 멈춘다. 그래서 M5에서는 같은 경로의 누수(LD_noleak)가 보고되지 않는다. 보고서는 "처음 실패"를 싣고, 전체 집합은 선택 측정으로 둔다.
-4. 동치 대조 C1-C3은 해제 위치를 옮긴다(finally ↔ catch와 정상 경로). 사건 규칙과 의무가 코드 위치에 묶이지 않으므로 PROVEN이다.
-5. M4는 LD_write 말고 RET_supplier도 깨뜨린다. 더한 쓰기가 던지면 호출자가 data를 잃기 때문이다. 이것은 진짜 결과다.
+1. 변이 12개가 깨뜨리는 자기 의무는 두 모델에서 같다. 결정 전(A2 켬)의 측정과도 같다. 고침은 변이의 판별력을 바꾸지 않는다.
+2. 기준 모델의 M1에는 RET_supplier_error가 없다. 해제 호출을 지웠으니 그 호출이 던져 `SUPPLIER_ERROR`를 가릴 일도 없다. 대신 lock이 남는다 (LD_noleak). 의무 집합이 이 교환을 보여 준다.
+3. 기준 모델의 M3에도 RET_supplier_error가 없다. 이유는 다르다: 항상 켜진 LD_own 검사가 그 경로를 먼저 멈춘다.
+4. 과제에 넣은 결함은 과제 메서드에서 보고된다 (M1의 `task_69`, M6, M7). 호출자 쪽 결함은 공개 함수에서 보고된다.
+5. M6는 갱신 경로에서만 잘못이다. 모델은 `task_69`의 사본만 거부했다.
+6. 항상 켜진 권한 검사(LD_own, LD_transfer)가 실패하면 Silicon은 그 경로를 멈춘다. 그래서 M5에서는 같은 경로의 누수(LD_noleak)가 보고되지 않는다.
+7. 대조 C1-C3은 두 모델에서 모두 원본과 같은 의무 집합이다. 해제 위치를 옮긴 동치 변경은 판정을 바꾸지 않는다.
+8. 고친 모델에서 A1을 끄면 RET 넷이 깨진다. `releaseQuietly`와 갱신 `tryLock`의 catch는 `Exception`만 잡는다. 그래서 Error는 결과를 가린다. A1(서명)이 이 경우를 뺀다.
 
 ### 5.3 시간 (측정)
 
 | 실행 | 시간 |
 |---|---|
-| 원본, 혼자 3회 | Silicon 2.13-2.14 s, 벽시계 2.34-2.37 s |
-| 원본의 메서드별 (`TIMES=1`) | `getAndSetReqShieldData` 0.48 s, `task_69` 0.18 s, `task_125` 0.13 s, 신뢰 모델 0.02-0.07 s |
-| 변이·대조·토글 18개, 하나씩 | Silicon 2.10-2.26 s |
-| 도달성 검사 (`refute false` 21개) | 2.20-2.23 s |
-| 20개 파일 병렬 (`run.sh`) | 벽시계 22.3 s (파일마다 17.7-20.9 s, 12 코어 경합) |
-| 깨지는 의무 전체 (285회, 작업자 8) | 벽시계 4분 14초 |
+| 결정 전 원본 (A2 켬), 혼자 3회 | Silicon 2.13-2.14 s, 벽시계 2.34-2.37 s |
+| 기준 원본 (A2 끔), 오류를 모두 보고 | Silicon 2.25 s |
+| 고친 원본, 혼자 3회 | Silicon 2.15-2.20 s |
+| 고친 원본의 메서드별 (`TIMES=1`) | `getAndSetReqShieldData` 0.51 s, `task_69` 0.20 s, `task_125` 0.13 s, 신뢰 모델 0.02-0.07 s |
+| 결정 전 변이·대조·토글 18개, 하나씩 | Silicon 2.10-2.26 s |
+| `run.sh` 전체: 두 모델의 파일 42개와 도달성 검사 2개를 한 번씩(10개 병렬), 의무 전체 630회(작업자 8) | 벽시계 10분 19초. 한 번씩 돌 때 파일마다 4-10 s (경합) |
+| 결정 전 의무 전체 (285회, 작업자 8) | 벽시계 4분 14초 |
 
 비교: aspect 목표 모델 1.94 s (`DESIGN-B.md` 0절), KeyLocalLock 목표 모델 3.93 s (`DESIGN-v0.md` 8.3).
 
 ### 5.4 공허하지 않다는 확인 (측정)
 
-1. `spike/protocol2/reach.py`가 분기 21곳에 `refute false`를 넣는다. 모두 도달 가능하다 (오류 0개).
-2. 그 분기: 첫 읽기 실패, 갱신 없는 hit, lock을 쥔 갱신 과제, ONLY_CREATE_CACHE의 lock 없는 갱신, 갱신 lock 실패, 갱신 거부 뒤 해제, 재확인 hit, 재확인 실패, supplier 실패 뒤 해제, lock을 쥔 쓰기 과제, ONLY_UPDATE_CACHE의 lock 없는 쓰기 과제, 쓰기 거부 뒤 해제, polling hit, 연속 실패로 멈춤, 기다림 중 interrupt, 시도를 다 쓴 fallback, 연속 실패 뒤 fallback, fallback supplier 실패, 갱신 과제의 supplier 실패 뒤 해제, 갱신 과제의 쓰기 뒤 해제, 쓰기 과제의 쓰기 실패 뒤 해제.
+1. `spike/protocol2/reach.py`가 분기 24곳에 `refute false`를 넣는다. 두 모델에서 모두 도달 가능하다 (측정: "Refute holds" 오류 0개).
+2. 그 분기: 첫 읽기 실패, 갱신 없는 hit, lock을 쥔 갱신 과제, ONLY_CREATE_CACHE의 lock 없는 갱신, 갱신 lock 실패, 갱신 `tryLock`이 던짐, 갱신 거부 뒤 해제, 재확인 hit, 재확인 실패, 재확인 뒤 `unLock`이 던짐, supplier 실패 뒤 해제, supplier 실패 뒤 `unLock`이 던짐, lock을 쥔 쓰기 과제, ONLY_UPDATE_CACHE의 lock 없는 쓰기 과제, 쓰기 거부 뒤 해제, polling hit, 연속 실패로 멈춤, 기다림 중 interrupt, 시도를 다 쓴 fallback, 연속 실패 뒤 fallback, fallback supplier 실패, 갱신 과제의 supplier 실패 뒤 해제, 갱신 과제의 쓰기 뒤 해제, 쓰기 과제의 쓰기 실패 뒤 해제.
+3. "던짐" 분기 셋은 A2를 끈 기준 모델에서 새로 생긴 경로다. RET 실패 셋이 이 경로에서 나온다.
 3. 판정이 공허하지 않다는 증거는 이것과 변이 12개다. `init`에 해당하는 것은 없다 (모듈 상태가 없다).
 
 ### 5.5 처음 쓴 모델에서 고친 것 (측정)
@@ -316,6 +375,102 @@
 1. hole 불변식 `exc == NONE ==> tr.consec == consecutiveFailures__179`가 보존되지 않았다. polling hit은 사건 규칙이 `consec`을 0으로 하지만 코드는 그 counter를 바꾸지 않고 돌아간다. 조건에 `found_187 == null`을 더했다.
 2. RET_poll이 실패했다. 불변식이 "찾았으면 예외가 없다"를 말하지 않았다. `found_187 != null ==> exc == NONE`을 더했다.
 3. 둘 다 hole 몫이다. 반복문 불변식을 쓰는 데 Silicon 실행 3회가 들었다. `DESIGN-v0.md`의 E3(LLM이 MI를 씀)와 같은 종류의 일이다.
+
+### 5.6 고친 core (UE3 결정의 결과)
+
+UE3 결정("호출자는 이미 얻은 결과를 잃지 않는다") 아래에서 원본은 세 곳에서 결과를 잃는다 (2.2절). 가장 작은 고침은 다음이다. req-shield에는 적용하지 않았다. 파일: `spike/protocol2/fixed-core.patch`.
+
+1. 갱신 경로의 `tryLock`(66행)을 `try`/`catch (e: Exception)`로 감싼다. 던지면 로그를 남기고 갱신만 건너뛴다. 호출자는 hit을 그대로 받는다.
+2. 해제 실패를 삼키는 helper `releaseQuietly`를 둔다. 152행이 이미 쓰는 모양(`catch (unlockError: Exception)`과 로그)을 옮긴 것이다. KDoc은 150행의 문장을 옮긴다.
+3. 재확인의 finally(101행)와 supplier 실패(265행)의 `unLock`을 `releaseQuietly`로 바꾼다. 152행도 같은 helper를 쓴다 (같은 코드 셋을 하나로).
+4. 바꾸지 않은 것: 생성 경로의 `tryLock`(89행)과 쓰기 과제의 finally `unLock`(243행). 89행이 던질 때 호출자는 아직 결과가 없다 (miss). 243행은 호출자가 이미 돌아간 뒤의 과제다. 그래서 UE3 규칙과 관계가 없다.
+
+```diff
+--- a/core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt
++++ b/core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt
+@@ -63,7 +63,18 @@
+         val onlyCreateCache = reqShieldConfig.reqShieldWorkMode == ReqShieldWorkMode.ONLY_CREATE_CACHE
+ 
+         // ONLY_CREATE_CACHE collapses requests on cache creation only, so the update runs without a lock
+-        val token = if (onlyCreateCache) null else reqShieldConfig.keyLock.tryLock(key, lockType)
++        val token =
++            if (onlyCreateCache) {
++                null
++            } else {
++                try {
++                    reqShieldConfig.keyLock.tryLock(key, lockType)
++                } catch (e: Exception) {
++                    // The caller already has its data: a failing lock store only skips this refresh
++                    log.warn("Failed to lock key '{}' for a cache refresh, so the refresh is skipped", key, e)
++                    return
++                }
++            }
+ 
+         if (onlyCreateCache || token != null) {
+             runInBackground(key, lockType, token) {
+@@ -98,7 +109,7 @@
+             } finally {
+                 // On a miss, the existing creation path keeps the lock until its asynchronous write finishes.
+                 if (!cacheCreationRequired) {
+-                    reqShieldConfig.keyLock.unLock(key, lockType, token)
++                    releaseQuietly(key, lockType, token, "after the cache recheck")
+                 }
+             }
+         }
+@@ -147,12 +158,7 @@
+         } catch (e: RejectedExecutionException) {
+             log.warn("Executor rejected the background cache task for key '{}', so it is skipped", key, e)
+             if (token != null) {
+-                // A failed release must not cost the caller its data; the lock then expires on its own
+-                try {
+-                    reqShieldConfig.keyLock.unLock(key, lockType, token)
+-                } catch (unlockError: Exception) {
+-                    log.error("Failed to unlock key '{}' after the executor rejected its task", key, unlockError)
+-                }
++                releaseQuietly(key, lockType, token, "after the executor rejected its task")
+             }
+         }
+     }
+@@ -262,11 +268,28 @@
+             callable.call()
+         }.getOrElse {
+             if (token != null && lockType != null) {
+-                reqShieldConfig.keyLock.unLock(key, lockType, token)
++                releaseQuietly(key, lockType, token, "after the supplier failed")
+             }
+             throw ClientException(ErrorCode.SUPPLIER_ERROR, cause = it)
+         }
+ 
++    /**
++     * Releases the lock identified by [token]. A failed release must not cost the caller a result it already has
++     * (its data, or the error it is about to get), so it is only logged; the lock then expires on its own.
++     */
++    private fun releaseQuietly(
++        key: String,
++        lockType: LockType,
++        token: String,
++        situation: String,
++    ) {
++        try {
++            reqShieldConfig.keyLock.unLock(key, lockType, token)
++        } catch (unlockError: Exception) {
++            log.error("Failed to unlock key '{}' {}", key, situation, unlockError)
++        }
++    }
++
+     private fun logAsyncFailure(
+         key: String,
+         throwable: Throwable,
+```
+
+측정:
+1. 고친 `ReqShield.kt`는 K2(2.4.21)로 컴파일된다 (`kv discover`, core 소스 사본, 종료 코드 0).
+2. req-shield 사본(scratchpad)에 패치를 적용하고 `./gradlew :core:test --offline --tests "com.linecorp.cse.reqshield.ReqShieldTest" --tests "com.linecorp.cse.reqshield.KeyLocalLockTest"`를 돌렸다. 57개 테스트가 모두 통과했다 (44 s). 기존 테스트에서 lock 호출이 던지는 것은 거부 경로의 둘뿐이다 (`ReqShieldTest.kt:321`, `335`). 그래서 이 통과는 회귀가 없다는 뜻이고, 고침의 증거는 아니다. 고침의 증거는 3번의 모델이다.
+5. req-shield에 넣을 때 더할 테스트 (판단): (a) 갱신 `tryLock`이 던지면 호출자는 hit을 받고 supplier는 불리지 않는다, (b) 재확인 hit 뒤 `unLock`이 던지면 호출자는 재확인 data를 받는다, (c) supplier와 그 뒤 `unLock`이 모두 던지면 호출자는 `SUPPLIER_ERROR`를 받는다.
+3. 고친 모델 `fixed.vpr`은 PROVEN이다. 기준 모델과 같은 의무 전체(LD_* 7개, MODE 2개, SUP_once, POLL_bound, TERM, RET_* 6개)를 검사한다. Silicon 2.15-2.20 s (3회).
+4. 고친 모델 위의 결과 (0절 표의 "고친 모델" 열): 변이 12개 모두 DETECTED이고, 깨지는 의무는 결정 전 측정과 같다. 대조 3개는 PROVEN이다. A2를 켜도 PROVEN이다. A3, A4, A5를 끄면 LD_noleak이 깨진다. A1을 끄면 LD_noleak과 RET 넷이 깨진다.
+
+남는 문서와 코드의 차이 (2.2절 1): `ClientException.kt:22`는 lock 함수의 실패를 감싼다고 쓴다. 고친 코드도 89행과 243행의 실패를 감싸지 않는다. 이것은 lock 규율과 무관한 문서 문제다. KDoc을 고칠지 코드를 고칠지는 req-shield 쪽에서 정한다.
 
 ## 6. 도구 변화
 
@@ -335,6 +490,7 @@ decl      := ... v0, B, C ...
            | "trusted" "value" KNAME tclause*                     // E: a function-typed property the code invokes
            | "trace" "{" { NAME "=" event } "}"                   // E: the event record
            | "hole" "loop" KNAME "@" LINE TRIPLE_STRING           // E: the invariant of one loop
+           | "assume" ID ":" ANAME                                // E: a named assumption of a built-in model (DESIGN-E 4)
 tclause   := ... v0, B ... | "creates" NAME "(" ARGS ")" [ "if" VEXPR ] | "consumes" NAME "(" ARGS ")"
            | "throws" KIND { "," KIND }                           // E: exception kinds (B's bare `throws` = Exception)
 event     := "first" CALL | CALL "while" "holds" "(" NAME "(" PATTERN ")" ")" | "count" CALL [ "where" VEXPR ]
@@ -343,7 +499,7 @@ opitem    := ... v0, B ... | "guard" ID ":" CALL "requires" VEXPR // E: an asser
 VEXPR     := ... | "holds" "(" NAME "(" PATTERN ")" ")"            // E: HOLDS; `_` matches any value
 ```
 
-core `ReqShield`의 sidecar 스케치 (주석과 `reviewed` 제외 약 45줄, 추정):
+core `ReqShield`의 sidecar 스케치 (주석과 `reviewed` 제외 약 50줄, 추정):
 
 ```text
 module com.linecorp.cse.reqshield.ReqShield client
@@ -354,8 +510,12 @@ enum LockType = com.linecorp.cse.reqshield.LockType
 enum Mode = com.linecorp.cse.reqshield.config.ReqShieldWorkMode
 obligation Lease(Key, LockType, Token)
 
-trusted fun KeyLock.tryLock(key: Key, lockType: LockType) returns t: Token? creates Lease(key, lockType, t) if t != null
-trusted fun KeyLock.unLock(key: Key, lockType: LockType, token: Token) returns released: Bool consumes Lease(key, lockType, token)
+trusted fun KeyLock.tryLock(key: Key, lockType: LockType) returns t: Token? creates Lease(key, lockType, t) if t != null throws Exception
+trusted fun KeyLock.unLock(key: Key, lockType: LockType, token: Token) returns released: Bool consumes Lease(key, lockType, token) throws Exception
+assume A1: errors-are-fatal
+assume A3: accepted-tasks-run
+assume A4: throwing-release-ends-obligation
+assume A5: throwing-acquire-takes-nothing
 trusted value ReqShieldConfiguration.getCacheFunction returns d: Ref throws Exception
 trusted value ReqShieldConfiguration.setCacheFunction returns b: Bool throws Exception
 trusted fun java.util.concurrent.Callable.call() returns v: Int throws Exception
@@ -384,8 +544,9 @@ hole loop ReqShield.handleLockFailure@181 """ ... """
 ```
 
 1. LD_noleak, LD_own, LD_transfer, LD_wait, TERM은 sidecar 절이 아니다. 도구 사실이다: `obligation`과 `consumes`가 있으면 도구가 낸다.
-2. 새 문법 구성은 약 11개다: `client`, `enum`, `obligation`, `creates ... if`, `consumes`, 종류 있는 `throws`, `trusted value`, `trace`(사건 형태 5개), `guard`, `holds`, `hole loop`. B는 7개였다 (`DESIGN-B.md` 5.1).
-3. 사건 형태를 고정된 몇 개로 둔다 (판단). 일반 사건 열(`Seq[Event]`)과 그 위의 식은 더 일반적이지만, 사람이 읽기 어렵고 Viper 시간이 늘 수 있다 (측정하지 않음).
+2. 새 문법 구성은 약 12개다: `client`, `enum`, `obligation`, `creates ... if`, `consumes`, 종류 있는 `throws`, `trusted value`, `trace`(사건 형태 5개), `guard`, `holds`, `hole loop`, `assume`. B는 7개였다 (`DESIGN-B.md` 5.1).
+3. `assume`은 도구가 아는 가정 이름만 받는다 (A1, A3, A4, A5). 가정마다 `reviewed`와 `source`가 있어야 한다 (2.5절). sidecar에 없는 가정은 꺼진 것으로 본다. 그러면 보고서가 그 가정에 기대는 의무의 실패를 낸다.
+4. 사건 형태를 고정된 몇 개로 둔다 (판단). 일반 사건 열(`Seq[Event]`)과 그 위의 식은 더 일반적이지만, 사람이 읽기 어렵고 Viper 시간이 늘 수 있다 (측정하지 않음).
 
 ### 6.3 KVIR
 
@@ -502,10 +663,10 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 | E | 내용 | 수락 테스트 | 추정 (인일) |
 |---|---|---|---|
 | E0 | core 모듈 컴파일 설정, client 모듈 발견 (공개 함수, private helper, `runAsync`에 닿는 람다), 6.4절 구문의 FIR fixture | `kv discover --client`가 entry 1개와 과제 2개(69행, 125행)를 찾는다 | 0.5-1 |
-| E1 | sidecar 문법·resolver (6.2절) | core sidecar의 이름이 FIR symbol에 묶인다. 오류 테스트: 없는 `consumes` 대상, 모르는 예외 종류, 반복문 없는 `hole loop`, `trusted value`의 타입 불일치 | 2-3 |
+| E1 | sidecar 문법·resolver (6.2절) | core sidecar의 이름이 FIR symbol에 묶인다. 오류 테스트: 없는 `consumes` 대상, 모르는 예외 종류, 반복문 없는 `hole loop`, `trusted value`의 타입 불일치, 모르는 `assume` 이름 | 2-3 |
 | E2 | KVIR과 함수 본문 lowering (6.3-6.4절), 과제 전제 유도 (3.4절), ledger | 6.4절 구문마다 정상 1개와 거부 1개. core의 golden KVIR | 5-8 |
-| E3 | emitter와 gate (6.6절) | 생성 모델이 `spike/protocol2/target.vpr`과 정규화 후 같다. `vpr_normalize.py`의 `LOCAL`에 `e_`, `u_`, `_at` 형태를 더한다 | 3-4.5 |
-| E4 | 보고서, Kotlin 변이 스크립트(M1-M12, C1-C3, A1-A3), 회귀 | 18개 판정이 `expected-verdicts.txt`와 같다. 기존 gate·변이 불일치 0 | 2-3 |
+| E3 | emitter와 gate (6.6절) | 생성 모델이 `spike/protocol2/target.vpr`과 정규화 후 같다. 고친 Kotlin(`fixed-core.patch`)의 생성 모델이 `fixed.vpr`과 같다. `vpr_normalize.py`의 `LOCAL`에 `e_`, `u_`, `_at` 형태를 더한다 | 3-4.5 |
+| E4 | 보고서, Kotlin 변이 스크립트(두 모델 위의 M1-M12, C1-C3, 가정 토글 5개), 회귀 | 판정과 깨지는 의무가 `expected-verdicts.txt`와 같다. 기존 gate·변이 불일치 0 | 2-3 |
 | 합계 | E0-E4 (core) | | 12.5-19.5 |
 | E5 | coroutine: 신뢰 모델 4개, `CANCEL` 종류, suspend 함수 값, 변형 sidecar | UE6 결정대로 PROVEN 또는 FAILED. Phase 0 L3 모델의 A_F4, A_F6 결과를 재현 | 3-5 |
 | E6 | reactor: 별도 설계 (6.11절) | — | 10-20 (불확실성 큼) |
@@ -535,13 +696,13 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 |---|---|---|
 | 층 | L1 확장 | 새 층 L3 |
 | 새 어휘 | `set-once`, `fresh`/`throws` 신뢰 호출, `S.created`/`gFor` 장부 | 선형 의무, 사건 기록, 과제와 넘기기, 예외 종류, 반복문 hole |
-| 새 문법 구성 | 7 | 약 11 (추정) |
+| 새 문법 구성 | 7 | 약 12 (추정) |
 | 새 신뢰 모델 | CHM API 5개와 `getOrPut` | core 약 10개 (`KeyLock` 2개는 sidecar), coroutine +4, reactor +22 |
 | KVIR 새 노드 | 5 (`RunAction`, `Fresh`, `RacyGet`, `Return`, `Raise`) | 8 (`Entry`, `Task`, `Call`, `Try`/`Catch`, `Throw`, `Spawn`, `While`, `Break`)와 예외 종류 |
 | lowering 범위 | action 밖 연산 구간의 일부 | 공개 함수 전체, private helper 인라인, 예외, 반복문, 람다 |
-| 목표 모델 | 124줄, 1.94 s, 변이 7 + 대조 2 | 555줄, 2.13-2.14 s, 변이 12 + 대조 3 + 토글 3 |
+| 목표 모델 | 124줄, 1.94 s, 변이 7 + 대조 2 | 566줄 두 벌(기준, 고친 코드), 각 약 2.2 s, 변이 12 + 대조 3 + 토글 5를 두 모델 위에서 |
 | 구현 추정 | 7-12 인일 (B0-B4) | 12.5-19.5 인일 (E0-E4), coroutine +3-5, reactor +10-20 |
-| 사용자 결정 | 6개 (UB1-UB6) | 6개 (UE1-UE6) |
+| 사용자 결정 | 6개 (UB1-UB6) | 6개 (UE1-UE6). 넷은 정했고(2.3절), 결과로 원본 core가 FAILED가 되어 고침(5.6절)이 필요해졌다 |
 | 설계·spike의 agent 비용 | 메인 세션이 기록 | 11절 (이 agent), 메인 세션이 사용량을 더한다 |
 
 판단:
@@ -555,14 +716,14 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 |---|---|---|
 | 1. 지금 도구는 `ReqShield`의 연산을 하나도 판정하지 못한다 | 맞음 (측정) | `kv discover`: core 모듈에서 action 3개, 모두 `KeyLocalLock.kt`, `ReqShield.kt`에 0개. `kv lower`(최소 sidecar `spike/protocol2/current-tool-probe.kv`): "unsupported operation getAndSet ...: fun ReqShield.getAndSetReqShieldData has 0 action calls []; an operation has exactly one (DESIGN-v0.md 8.3 U2)", module INCOMPLETE |
 | 2. 새 ghost 상태(lock 소유, 해제 의무)와 `KeyLock` 신뢰 계약이 필요하고, "연산당 atomic action 하나" 모델 밖이다 | 맞음 (판단, 3절) | 의무 `Lease`, `creates`/`consumes` 계약. 예측에 없던 것도 나왔다: 예외 경로가 중심이다, 의무 넘기기(과제), 반복문 hole, 사건 기록 |
-| 3. 사용자에게 물을 명세 결정이 적어도 하나 나온다 | 맞음 | 6개 (UE1-UE6). 셋(UE2-UE4)은 가정을 끄면 원본이 FAILED가 됨을 측정했다 (A1-A3) |
+| 3. 사용자에게 물을 명세 결정이 적어도 하나 나온다 | 맞음 | 6개 (UE1-UE6). 셋(UE2-UE4)은 가정을 끄면 원본이 FAILED가 됨을 설계 때 측정했다. 사용자는 넷을 정했다 (2.3절). UE3 결정으로 원본 core가 RET 셋에서 FAILED가 되었다 (측정, 5.2절). 예측에 없던 결과다: 명세 결정 하나가 코드 고침(5.6절)을 낳았다 |
 
 ## 9. 위험
 
 | 위험 | 완화 |
 |---|---|
 | E2의 lowering 범위가 넓다. AI가 쓴 변형은 지원하지 않는 모양을 자주 낼 것이다 (판단) | 구문마다 fixture. UNSUPPORTED는 구문 이름과 위치를 낸다. AI 코드 실험(AI-CODE.md)과 같은 방식으로 넓힌다 |
-| 신뢰 가정이 판정을 정한다 (A1-A3, 측정). 잘못 고르면 결함이 숨는다 (예: A2를 켜면 호출자 data 손실이 보이지 않음) | 가정을 sidecar 신뢰 층에 두고 사용자가 서명한다. 보고서가 늘 싣는다 |
+| 신뢰 가정이 판정을 정한다 (A1-A5, 측정). 잘못 고르면 결함이 숨는다 (예: A2를 켜면 호출자 data 손실이 보이지 않는다; 그래서 UE3에서 껐다) | 가정을 sidecar 신뢰 층에 두고 사용자가 서명한다 (2.5절). 보고서가 늘 싣는다 |
 | 메서드 끝의 사후조건 실패는 경로를 말하지 않는다 | 이름 있는 신뢰 호출 결과로 경로를 설명한다 (E7) |
 | 항상 켜진 권한 검사가 같은 경로의 다른 실패를 가린다 (측정: M5) | 보고서는 처음 실패를 싣는다. 전체 집합은 선택 측정이다 (285회, 4분 14초) |
 | 반복문 불변식이 LLM hole이다. 예외 flag가 든 불변식은 새 종류다 (이 spike에서 2번 고침) | `kv hole` 흐름, 도구 몫과 hole 몫의 분리 |
@@ -574,7 +735,9 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 
 ### 10.1 사용자가 정할 것
 
-2.3절의 UE1-UE6.
+1. 정함 (2026-10-26): UE1-UE4 (2.3절).
+2. 남음: UE5 (서명 차례에 정함; LD_write 절의 모양), UE6 (E5 전에 정함).
+3. 서명할 것 16개 (2.5절). 그리고 `fixed-core.patch`를 req-shield에 넣을지 (5.6절).
 
 ### 10.2 메인 세션이 정할 것
 
@@ -596,27 +759,31 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 | 설계 1: 읽기와 분석 (req-shield, DESIGN-v0/B/C/D, sidecar, 신뢰 소스, Viper 기능 실험 4개) | 21:53-22:59 중 rate limit으로 멈춘 시간을 뺀 약 30-40분 (추정: 멈춘 시작 시각을 모른다; 다시 시작한 22:43부터 22:59까지 16분은 측정) | 세션 계수기 약 0.37 M (측정: 15.00 M → 14.63 M) |
 | spike: 목표 모델, 도달성, 변이 18개, 실행, 의무 전체 측정, 시간 측정 | 22:59-23:15, 약 16분 (측정) | 세션 계수기 약 0.07 M (측정: 14.63 M → 14.56 M) |
 | 설계 2: 인용 수집, 예측 1 측정(`kv discover`, `kv lower`), 이 문서, 인용 확인(76개), cross-memory 기록 | 23:15-23:30, 약 15분 (측정) | 세션 계수기 약 0.15 M (측정: 14.56 M → 14.41 M) |
-| 합계 | 약 60-70분 (대기 제외; 첫 구간은 추정) | 세션 계수기 약 0.59 M (측정: 15.00 M → 14.41 M) |
+| 결정 반영 (2026-10-26 사용자 결정 뒤): 기준 모델 바꿈, 가정 A4·A5, 고친 core 패치와 그 테스트, 두 모델의 변이 재측정, 이 문서 갱신 | 23:41-00:01, 약 20분 (측정; 그중 `run.sh` 10분 19초는 기다림) | 세션 계수기 약 0.12 M (측정: 14.39 M → 14.27 M) |
+| 합계 | 약 80-90분 (rate limit 대기 제외; 첫 구간은 추정) | 세션 계수기 약 0.73 M (측정: 15.00 M → 14.27 M) |
 
 1. "세션 계수기"는 이 agent의 남은 토큰 표시의 감소량이다. 그 정확한 뜻(입력·출력·캐시 포함 여부)은 모른다. 메인 세션이 실제 사용량을 더한다.
 2. rate limit 때문에 21:53 시작 뒤 22:43에 다시 시작했다. 그 사이의 대기는 비용에 넣지 않았다.
 
 ## 부록 A. 재현
 
-1. 목표 모델: `spike/silicon.sh spike/protocol2/target.vpr` (`TIMES=1`이면 메서드별 시간).
-2. 전체 판정: `bash spike/protocol2/run.sh <OUT_DIR>`. `<OUT_DIR>`은 저장소 밖에 둔다. 판정 줄은 `spike/protocol2/expected-verdicts.txt`와 같아야 한다 (시간 표시 제외).
-3. 깨지는 의무 전체: `python3 -I spike/protocol2/isolate.py <ISO_DIR> <OUT_DIR>/target.vpr <OUT_DIR>/mutants/*.vpr`. 결과는 `spike/protocol2/isolation.txt`와 같아야 한다.
-4. 예측 1 (req-shield checkout에서):
+1. 두 모델: `spike/silicon.sh --numberOfErrorsToReport 0 spike/protocol2/target.vpr` (기준: RET 셋 FAILED), `spike/silicon.sh spike/protocol2/fixed.vpr` (PROVEN). `TIMES=1`이면 메서드별 시간.
+2. 전체: `bash spike/protocol2/run.sh <OUT_DIR>`. `<OUT_DIR>`은 저장소 밖에 둔다.
+   - 두 모델을 만들고, `fixed.vpr`이 `mutants.py`의 `FIX`로 만든 것과 같은지 확인한다.
+   - 도달성 검사 두 벌, 파일마다 Silicon 한 번(`first-reports.txt`), 의무 전체(`isolation.txt`, `isolate.py`), 판정(`verdicts.py`).
+   - 판정 줄은 `spike/protocol2/expected-verdicts.txt`, 의무 전체는 `spike/protocol2/isolation.txt`와 같아야 한다.
+3. 예측 1 (req-shield checkout에서):
    - `CP` = kotlin-stdlib 2.0.21, slf4j-api 1.7.36, `support/build/libs/support-1.0.0.jar` (`translator/build.gradle.kts`의 `reqShieldClasspath`와 같은 jar)
    - `translator/build/install/kv/bin/kv discover --classpath $CP --kotlinc "-language-version 2.0 -api-version 2.0 -jvm-target 17 -Xjsr305=strict" core/src/main/kotlin`
    - `translator/build/install/kv/bin/kv lower --root <req-shield> --classpath $CP --kotlinc "..." spike/protocol2/current-tool-probe.kv`
-5. 이번 세션의 출력 (session-local scratchpad `/private/tmp/claude-501/-Users-ykhfree-AI/cfc00473-f90e-5b9b-b11d-3741f96c0a2e/scratchpad/`): `p2/run2/`(변이 파일과 Silicon 출력), `p2/iso/`(285개 복사본), `exp/q1-q4.vpr`(Viper 기능 실험), `kxsrc181/`, `jdk21src/`, `kstd2021/`(인용한 소스).
+4. 고친 core의 테스트: req-shield를 `rsync -a --exclude build --exclude .gradle --exclude .git`로 저장소 밖에 복사하고, 사본에서 `patch -p1 < spike/protocol2/fixed-core.patch`, `./gradlew :core:test --offline --tests "com.linecorp.cse.reqshield.ReqShieldTest" --tests "com.linecorp.cse.reqshield.KeyLocalLockTest"`.
+5. 이번 세션의 출력 (session-local scratchpad `/private/tmp/claude-501/-Users-ykhfree-AI/cfc00473-f90e-5b9b-b11d-3741f96c0a2e/scratchpad/`): `p2/run3/`(두 모델의 파일, Silicon 출력, `first-reports.txt`, `isolation.txt`), `p2/run2/`(결정 전 실행), `rsfix/`(패치한 req-shield 사본과 `test.log`), `fix/`(패치 원본), `exp/q1-q4.vpr`(Viper 기능 실험), `kxsrc181/`, `jdk21src/`, `kstd2021/`(인용한 소스).
 
 ## 부록 B. E가 더하는 신뢰 가정 (Silicon이 확인하지 않음)
 
-1. `KeyLock.tryLock`의 null 아닌 결과는 그 key와 종류의 획득이다. 던진 `tryLock`은 호출자에게 의무를 남기지 않는다. 저장소가 그래도 잡은 lock은 lease가 끝낸다.
-2. `KeyLock.unLock`은 던져도 해제를 시도한 것으로 친다. 남은 것은 lease가 끝낸다 (`ReqShield.kt:150`).
-3. A1, A2, A3 (4절).
+1. `KeyLock.tryLock`의 null 아닌 결과는 그 key와 종류의 획득이다.
+2. A1, A3, A4, A5 (4절). A2는 가정하지 않는다 (UE3).
+3. 던진 lock 호출 뒤에 남은 lock은 lease가 끝낸다 (A4, A5의 근거). lease의 길이와 시계는 이 모델 밖이다.
 4. `runAsync`의 executor는 `Executor.execute`의 계약을 지킨다: 받거나 `RejectedExecutionException`을 던진다 (`Executor.java:132-133`).
 5. 사용자 함수(`getCacheFunction`, `setCacheFunction`, supplier)는 이 `ReqShield`의 lock 연산을 부르지 않는다 (재진입 없음).
 6. `runCatching`과 `getOrElse`의 inline 본문은 stdlib 2.0.21의 것이다.
