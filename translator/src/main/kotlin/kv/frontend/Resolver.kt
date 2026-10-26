@@ -3,6 +3,8 @@ package kv.frontend
 import kv.kvir.Pos
 import kv.model.TrustedModels
 import kv.sidecar.ClassDecl
+import kv.sidecar.EnumDecl
+import kv.sidecar.HoleDecl
 import kv.sidecar.FieldDecl
 import kv.sidecar.FreeItem
 import kv.sidecar.FreeSource
@@ -20,23 +22,32 @@ import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.FirSession
 import org.jetbrains.kotlin.fir.declarations.DirectDeclarationsAccess
+import org.jetbrains.kotlin.fir.declarations.FirDeclarationOrigin
 import org.jetbrains.kotlin.fir.declarations.FirFile
+import org.jetbrains.kotlin.fir.declarations.FirNamedFunction
 import org.jetbrains.kotlin.fir.declarations.FirProperty
 import org.jetbrains.kotlin.fir.declarations.FirResolvedImport
 import org.jetbrains.kotlin.fir.declarations.FirRegularClass
 import org.jetbrains.kotlin.fir.expressions.FirBlock
+import org.jetbrains.kotlin.fir.expressions.FirDoWhileLoop
 import org.jetbrains.kotlin.fir.expressions.FirFunctionCall
+import org.jetbrains.kotlin.fir.expressions.FirWhileLoop
 import org.jetbrains.kotlin.fir.references.toResolvedCallableSymbol
+import org.jetbrains.kotlin.fir.resolve.ScopeSession
 import org.jetbrains.kotlin.fir.resolve.providers.firProvider
 import org.jetbrains.kotlin.fir.resolve.providers.symbolProvider
+import org.jetbrains.kotlin.fir.scopes.unsubstitutedScope
 import org.jetbrains.kotlin.fir.symbols.FirBasedSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirCallableSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirClassLikeSymbol
+import org.jetbrains.kotlin.fir.symbols.impl.FirEnumEntrySymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirNamedFunctionSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirPropertySymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirRegularClassSymbol
 import org.jetbrains.kotlin.fir.symbols.impl.FirValueParameterSymbol
+import org.jetbrains.kotlin.fir.types.ConeFlexibleType
 import org.jetbrains.kotlin.fir.types.ConeKotlinType
+import org.jetbrains.kotlin.fir.types.ConeTypeParameterType
 import org.jetbrains.kotlin.fir.types.classId
 import org.jetbrains.kotlin.fir.types.isMarkedNullable
 import org.jetbrains.kotlin.fir.types.lowerBoundIfFlexible
@@ -77,6 +88,8 @@ private val ATOMIC_LONG = ClassId.fromString("java/util/concurrent/atomic/Atomic
 private val STRING = ClassId.fromString("kotlin/String")
 
 private val LONG = ClassId.fromString("kotlin/Long")
+private val INT = ClassId.fromString("kotlin/Int")
+private val BOOLEAN = ClassId.fromString("kotlin/Boolean")
 
 /** The class [fqn] if [file] declares it, at any nesting depth. */
 @OptIn(DirectDeclarationsAccess::class)
@@ -147,12 +160,238 @@ class SidecarResolver(
         if (module.classKind != ClassKind.OBJECT && module.classKind != ClassKind.CLASS) {
             err(decl.fqn.pos, "kotlin-kind", "module ${decl.fqn.text} must be an object, a companion object or a class")
         }
+        if (sidecar.client) {
+            resolveClient()
+            return Resolution(bindings, actions, unsupported) to errors
+        }
         sidecar.classes.forEach(::cls)
         sidecar.states.forEach(::state)
         sidecar.trusted.forEach(::trustedFun)
         val claimed = mutableMapOf<FoundAction, String>()
         sidecar.operations.forEach { operation(it, claimed) }
         return Resolution(bindings, actions, unsupported) to errors
+    }
+
+    // ---- client modules (DESIGN-E 6.1, 6.2, 6.10 E1) ----
+
+    /** Sidecar enum name to its Kotlin enum class and entry names in declaration order. */
+    internal val enums = linkedMapOf<String, Pair<FirRegularClassSymbol, List<String>>>()
+
+    /** Short name of each `trusted value` to its function-typed property. */
+    internal val trustedValues = mutableMapOf<String, FirPropertySymbol>()
+
+    /** Client operation name to its entry function. */
+    internal val entryOf = linkedMapOf<String, FirNamedFunctionSymbol>()
+
+    /** Client operation name to its free values, each with the parameter or the property path it reads. */
+    internal val clientFree = mutableMapOf<String, MutableList<Pair<FreeItem, List<FirCallableSymbol<*>>>>>()
+
+    /** Each `hole loop` with the loop it names (a FirWhileLoop or FirDoWhileLoop). */
+    internal val loopHoles = mutableMapOf<HoleDecl, FirElement>()
+
+    private fun resolveClient() {
+        sidecar.enums.forEach(::enumDecl)
+        sidecar.classes.forEach(::cls)
+        sidecar.trusted.forEach { if (it.value) trustedValue(it) else trustedFun(it) }
+        sidecar.operations.forEach(::entry)
+        sidecar.holes.filter { it.loop != null }.forEach(::loopHole)
+    }
+
+    private fun enumDecl(e: EnumDecl) {
+        val sym = lookupClass(e.kclass.text.split('.')) ?: classSymbol(ClassId.topLevel(FqName(e.kclass.text)))
+        if (sym == null || sym.classKind != ClassKind.ENUM_CLASS) {
+            err(e.kclass.pos, "unresolved", "no enum class '${e.kclass.text}' in the module's package or the imports of ${file.name}")
+            return
+        }
+        enums[e.name.text] = sym to sym.declarationSymbols.filterIsInstance<FirEnumEntrySymbol>().map { it.name.asString() }
+        bind("enum ${e.name.text}", e.pos, sym)
+    }
+
+    /**
+     * True if the sidecar value type [type] (DESIGN-E 6.2, `?` for nullable) stands for Kotlin type [t]: Int for Int,
+     * Long or a type parameter (an arbitrary value of it), Bool for Boolean, a sidecar type for String, an enum for its
+     * Kotlin enum class, a class for its Kotlin class. Nullability must agree, except for a Java (flexible) type and a
+     * type parameter.
+     */
+    private fun stands(
+        type: String,
+        t: ConeKotlinType,
+    ): Boolean {
+        val nullable = type.endsWith("?")
+        val base = type.removeSuffix("?")
+        val low = t.lowerBoundIfFlexible()
+        if (low is ConeTypeParameterType) return base == "Int"
+        if (t !is ConeFlexibleType && low.isMarkedNullable != nullable) return false
+        val id = low.classId ?: return false
+        return when {
+            base == "Int" -> id == INT || id == LONG
+            base == "Bool" -> id == BOOLEAN
+            sidecar.types.any { it.name.text == base } -> id == (sidecar.types.first { it.name.text == base }.kclass?.let { ClassId.topLevel(FqName(it.text)) } ?: STRING)
+            base in enums -> id == enums.getValue(base).first.classId
+            base in classes -> id == classes.getValue(base).classId
+            else -> false
+        }
+    }
+
+    /** A client class field (DESIGN-E 6.2): its sidecar type stands for the Kotlin property type ([stands]). */
+    private fun clientField(
+        c: ClassDecl,
+        f: FieldDecl,
+        prop: FirPropertySymbol,
+    ) {
+        val type = f.type.text + if (f.nullable) "?" else ""
+        if (!stands(type, prop.resolvedReturnType)) {
+            err(f.kname.pos, "kotlin-type", "field ${f.name.text}: $type does not stand for '${f.kname.text}', a Kotlin ${typeText(prop.resolvedReturnType)}")
+        }
+    }
+
+    /** One parameter or result list position: a named one must [stand][stands] for its Kotlin type, a bare one name it. */
+    private fun matches(
+        t: TrustedDecl,
+        index: Int,
+        kotlin: ConeKotlinType,
+    ): Boolean {
+        val named = t.named.getOrNull(index)
+        return if (named != null) stands(named.type.text, kotlin) else t.params[index].text == typeText(kotlin)
+    }
+
+    /** The result type of [t] stands for [kotlin], or [t] has no result. */
+    private fun resultMatches(
+        t: TrustedDecl,
+        kotlin: ConeKotlinType,
+    ): Boolean = t.returns.isEmpty() || t.returns.size == 1 && stands(t.returns[0].type.text, kotlin)
+
+    /**
+     * A `trusted fun` of a client module: a bare parameter names its Kotlin type, as in an object module; a named one
+     * must stand for it ([stands]); the result must stand for the Kotlin result type.
+     */
+    private fun clientTrustedFun(t: TrustedDecl) {
+        val path = t.fn.text.split('.')
+        val candidates = lookupMember(path, FirNamedFunctionSymbol::class).ifEmpty { fqnFunctions(path) }.flatMap(::enhanced)
+        val match =
+            candidates.filter { f ->
+                f.valueParameterSymbols.size == t.params.size &&
+                    f.valueParameterSymbols.withIndex().all { (i, p) -> matches(t, i, p.resolvedReturnType) } && resultMatches(t, f.resolvedReturnType)
+            }
+        when {
+            match.size == 1 -> {
+                trusted[t.shortName] = match.single()
+                bind("trusted ${t.shortName}", t.pos, match.single())
+                reviewed(t, match.single())
+            }
+            candidates.isEmpty() -> err(t.fn.pos, "unresolved", "no function '${t.fn.text}'")
+            else -> err(t.fn.pos, "kotlin-type", "no '${t.fn.text}' takes (${t.params.joinToString { it.text }}) and returns ${t.returns.map { it.type.text }}; candidates take ${candidates.map { "${signature(it)} -> ${typeText(it.resolvedReturnType)}" }}")
+        }
+    }
+
+    /**
+     * A Java method as the use-site scope of its class gives it: with its types enhanced, so that its result type can
+     * be read (the declared Java member computes it lazily, which the checker phase cannot). Any other function as is.
+     */
+    private fun enhanced(f: FirNamedFunctionSymbol): List<FirNamedFunctionSymbol> {
+        if (f.origin !is FirDeclarationOrigin.Java) return listOf(f)
+        val cls = f.callableId.classId?.let(::classSymbol) ?: return listOf(f)
+        val out = mutableListOf<FirNamedFunctionSymbol>()
+        cls.unsubstitutedScope(session, ScopeSession(), false, null).processFunctionsByName(f.name) { out += it }
+        return out.filter { it.valueParameterSymbols.size == f.valueParameterSymbols.size }.ifEmpty { listOf(f) }
+    }
+
+    /**
+     * `trusted value KNAME(PARAMS)` (DESIGN-E 6.2): a property of a Kotlin function type `(P1, ..., Pn) -> R`; each
+     * parameter and the result must match ([matches], [resultMatches]).
+     */
+    private fun trustedValue(t: TrustedDecl) {
+        val prop = lookupMember(t.fn.text.split('.'), FirPropertySymbol::class).firstOrNull() ?: return err(t.fn.pos, "unresolved", "no property '${t.fn.text}'")
+        bind("trusted value ${t.shortName}", t.pos, prop)
+        val type = prop.resolvedReturnType.lowerBoundIfFlexible()
+        val fn = type.classId?.takeIf { it.packageFqName.asString() == "kotlin" && it.shortClassName.asString().startsWith("Function") }
+        val args = type.typeArguments.map { it.type }
+        if (fn == null || args.any { it == null }) return err(t.fn.pos, "kotlin-type", "trusted value ${t.fn.text}: '${t.fn.text}' is a ${typeText(type)}, not a Kotlin function type")
+        val params = args.dropLast(1).map { it!! }
+        val ok = params.size == t.params.size && params.withIndex().all { (i, p) -> matches(t, i, p) } && resultMatches(t, args.last()!!)
+        if (!ok) {
+            val want = "(${t.params.joinToString { it.text }}) -> ${t.returns.singleOrNull()?.type?.text ?: "any"}"
+            return err(t.fn.pos, "kotlin-type", "trusted value ${t.fn.text} is declared $want, but '${t.fn.text}' is a ${typeText(type)}")
+        }
+        trustedValues[t.shortName] = prop
+        // B6 fingerprints cover a function body; a trusted value has none, so no note can be checked yet (E3 decides).
+        if (t.reviewed != null) err(t.reviewPos ?: t.pos, "review-source", "trusted value ${t.shortName}: the tool does not fingerprint trusted values yet (DESIGN-E 2.5); leave the note out of the draft")
+    }
+
+    /** A client operation: a public function of the module class (DESIGN-E 6.1), and its free values (3.6 layer 1). */
+    private fun entry(op: OperationDecl) {
+        val sel = op.selector as? Selector.Fun ?: return err(op.selector.target.pos, "client-item", "a client operation selects a public function: `fun CLASS.NAME` (DESIGN-E 6.1)")
+        val fns = lookupMember(sel.target.text.split('.'), FirNamedFunctionSymbol::class)
+        val fn =
+            when (fns.size) {
+                0 -> return err(sel.target.pos, "unresolved", "no function '${sel.target.text}'")
+                1 -> fns.single()
+                else -> return err(sel.target.pos, "ambiguous", "'${sel.target.text}' names ${fns.size} overloads")
+            }
+        if (fn.callableId.classId != module.symbol.classId || fn.resolvedStatus.visibility != Visibilities.Public) {
+            return err(sel.target.pos, "client-entry", "fun ${sel.target.text} is not a public function of module class ${module.symbol.classId.asSingleFqName()} (DESIGN-E 6.1)")
+        }
+        entryOf[op.name.text] = fn
+        bind("entry ${op.name.text}", op.pos, fn)
+        for (item in op.free) clientFreeValue(op, item, fn)
+    }
+
+    /** A free value of a client entry: a parameter, or a path of `val` properties from `this` (an instance value). */
+    private fun clientFreeValue(
+        op: OperationDecl,
+        item: FreeItem,
+        fn: FirNamedFunctionSymbol,
+    ) {
+        val what = "free ${op.name.text}.${item.names.joinToString(", ") { it.text }}"
+        val src = item.source
+        val path: List<FirCallableSymbol<*>> =
+            when (src) {
+                is FreeSource.Param -> listOf(fn.valueParameterSymbols.find { it.name.asString() == src.name.text } ?: return err(src.name.pos, "unresolved", "fun ${fn.name} has no parameter '${src.name.text}'"))
+                is FreeSource.This -> {
+                    var owner: FirRegularClassSymbol? = module.symbol
+                    src.name.text.split('.').map { seg ->
+                        val prop = owner?.let { members(it, seg, FirPropertySymbol::class).firstOrNull() } ?: return err(src.name.pos, "unresolved", "no property '$seg' in ${owner?.classId?.asSingleFqName() ?: "a value without a class"} (path this.${src.name.text})")
+                        if (!prop.isVal) return err(src.name.pos, "free-var", "$what: '$seg' is a var; an instance value is a path of vals (DESIGN-v0.md 2.12)")
+                        owner = prop.resolvedReturnType.lowerBoundIfFlexible().classId?.let(::classSymbol)
+                        prop
+                    }
+                }
+                else -> return // a sidecar error (ClientChecks)
+            }
+        val t = path.last().resolvedReturnType
+        val id = t.lowerBoundIfFlexible().classId
+        val annotation = item.type
+        val ok =
+            when {
+                id == STRING -> annotation != null && stands(annotation.text, t)
+                annotation != null -> false
+                else -> id == INT || id == LONG || id == BOOLEAN || enums.values.any { it.first.classId == id }
+            }
+        if (!ok) {
+            val fix = if (id == STRING) "a String value names its sidecar type (: Key)" else "a free value is an Int, Long, Boolean or sidecar enum value; only a String takes ': TYPE'"
+            return err(item.names[0].pos, "free-type", "$what: '${src.name.text}' is a Kotlin ${typeText(t)}; $fix")
+        }
+        bind(what, item.pos, path.last(), posOf(path.last()))
+        clientFree.getOrPut(op.name.text) { mutableListOf() } += item to path
+    }
+
+    /** `hole loop KNAME@LINE` (DESIGN-E 6.8): function KNAME of the module class has a loop at line LINE. */
+    private fun loopHole(h: HoleDecl) {
+        val loop = h.loop!!
+        val fn = lookupMember(loop.fn.text.split('.'), FirNamedFunctionSymbol::class).singleOrNull() ?: return err(loop.fn.pos, "unresolved", "no single function '${loop.fn.text}'")
+        var found: FirElement? = null
+        val decl = module.declarations.filterIsInstance<FirNamedFunction>().find { it.symbol == fn } ?: return err(loop.fn.pos, "unresolved", "fun ${loop.fn.text} is not a function of module class ${module.name}")
+        decl.accept(
+            object : FirVisitorVoid() {
+                override fun visitElement(element: FirElement) {
+                    if ((element is FirWhileLoop || element is FirDoWhileLoop) && positions.of(element.source)?.line == loop.line) found = element
+                    if (found == null) element.acceptChildren(this)
+                }
+            },
+        )
+        val at = found ?: return err(h.pos, "no-loop", "hole loop ${loop.fn.text}@${loop.line}: fun ${fn.name} has no loop at line ${loop.line}")
+        loopHoles[h] = at
+        bindings += Binding("hole loop ${loop.fn.text}@${loop.line}", h.pos, "loop of fun ${fn.callableId.asSingleFqName()}", positions.of(at.source))
     }
 
     // ---- symbols ----
@@ -290,7 +529,7 @@ class SidecarResolver(
             } else {
                 bind("field ${c.name.text}.${f.name.text}", f.name.pos, prop)
                 fields[c.name.text to f.name.text] = prop
-                fieldType(c, f, prop)
+                if (sidecar.client) clientField(c, f, prop) else fieldType(c, f, prop)
             }
         }
     }
@@ -353,6 +592,7 @@ class SidecarResolver(
     }
 
     private fun trustedFun(t: TrustedDecl) {
+        if (sidecar.client) return clientTrustedFun(t)
         val path = t.fn.text.split('.')
         val candidates = lookupMember(path, FirNamedFunctionSymbol::class).ifEmpty { fqnFunctions(path) }
         val wanted = t.params.map { it.text }
