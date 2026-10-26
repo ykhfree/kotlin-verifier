@@ -27,3 +27,19 @@ req-shield의 `ReqShield` (요청 합치기, single-flight): `core/.../ReqShield
 1. 지금 도구는 `ReqShield`의 연산을 하나도 그대로 판정하지 못한다 (모듈 상태 map이 없고, 성질이 lock 사용 규율이다).
 2. 어휘 설계는 새 ghost 상태(lock 소유, 해제 의무)와 `KeyLock` 호출의 신뢰 계약을 요구한다. 지금의 "연산당 atomic action 하나" 모델 밖이다.
 3. 설계 단계에서 사용자에게 물을 명세 결정이 적어도 하나 나온다 (예: 캐시 쓰기 실패 뒤의 lock, 모드별 의무).
+
+## 4. 설계 단계 결과 (2026-10-26, `DESIGN-E.md`, `c400308`)
+
+예측 대조 (DESIGN-E 8절, 메인 세션 확인):
+1. 맞음 (측정): 지금 도구는 `ReqShield.kt`에서 action 0개를 찾고, 연산은 UNSUPPORTED, 모듈은 INCOMPLETE다.
+2. 맞음: 새 층(L3)이 필요하다. 선형 의무 `Lease(k, lt, t)`, 사건 기록, 과제와 의무 넘기기, 예외 종류, 반복문 불변식 hole.
+3. 맞음: 사용자 결정 6개 (UE1-UE6).
+
+손 Viper 모델 (core 변형, `spike/protocol2/`, 메인 세션이 다시 돌림): 원본 PROVEN, 결함 변이 12개 모두 FAILED, 동치 대조 3개 PROVEN, 신뢰 가정 토글 3개는 끄면 FAILED, 분기 21곳 도달 가능. 메서드당 약 2.1 s.
+
+비용 (측정):
+- 설계와 spike: agent 1개, 약 59만 토큰, 47분 (rate limit 재개 포함한 실행 시간 합). agent의 자체 기록: 설계 약 46-56분, spike 약 16분.
+- 메인 세션: spike 재실행과 검토.
+- 구현 추정 (DESIGN-E 6.10, 추정): core 12.5-19.5 인일 (E0-E4), coroutine +3-5, reactor +10-20. aspect 캐시(B)는 7-12 인일이었다.
+
+판단: 도입 비용은 새 프로토콜이 기존 모델 층에 맞는지에 크게 달려 있다. aspect 캐시는 L1에 맞았고, ReqShield는 새 층을 요구한다. 손 모델(spike)은 병목이 아니다 (약 16분). 비용은 함수 본문 전체의 lowering(예외, 람다, 반복문)에 있다.
