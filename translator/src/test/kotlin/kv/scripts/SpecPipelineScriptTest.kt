@@ -50,7 +50,9 @@ class SpecPipelineScriptTest {
     /**
      * A kv install whose bin/kv runs this build's CLI. With [fakeVerify], `kv verify` is a fake: it logs its arguments
      * to verify.log and proves exactly when the draft is strict (`now > tok(qt).gLease`) and the implementation file
-     * has no `now >= `, or the other way round.
+     * has no `now >= `, or the other way round. A drafted file with the comment `FAKE: verify fails` fails at init, a
+     * probe assert and the sweep clause sweep_keeps_live_entry, with the report lines of kv verify. With [fakeVerify],
+     * `kv spec check` also runs without the code (mode b, no isolation runs), so that a run with code stays fast.
      */
     private fun kvInstall(fakeVerify: Boolean): File {
         val install = File(dir, "kvinstall")
@@ -63,10 +65,27 @@ class SpecPipelineScriptTest {
             |import json, os, subprocess, sys
             |d = "${dir.path}"
             |args = sys.argv[1:]
-            |if args[0] != "verify" or not ${if (fakeVerify) "True" else "False"}:
+            |fake = ${if (fakeVerify) "True" else "False"}
+            |if args[0] != "verify" or not fake:
+            |    if fake and args[0] == "spec":
+            |        for o in ("--root", "--classpath", "--kotlinc"):
+            |            if o in args:
+            |                del args[args.index(o):args.index(o) + 2]
             |    sys.exit(subprocess.call(["$java", "-cp", open(os.path.join(d, "cp.txt")).read(), "kv.cli.MainKt"] + args))
             |root, sidecar = args[args.index("--root") + 1], args[-1]
             |common = open(os.path.join(os.path.dirname(sidecar), "keylocallock.common.kv")).read()
+            |if "FAKE: verify fails" in common:
+            |    at = lambda s: next(i for i, l in enumerate(common.splitlines(), 1) if s in l)
+            |    print("DRAFT: not signed; the verdict counts for nothing")
+            |    print("m (keylocallock.coroutine.kv)    module: FAILED (Silicon 1.00 s)")
+            |    print("  action tryLock  KeyLocalLock.kt:155:9   PROVEN")
+            |    print("  action sweep    KeyLocalLock.kt:97:37   FAILED (property)")
+            |    print("      Postcondition of sweep might not hold: sidecar sweep_keeps_live_entry keylocallock.common.kv:%d:3" % at("ensures sweep_keeps_live_entry"))
+            |    print("  init FAILED · probe FAILED")
+            |    print("      init: Postcondition of init might not hold: generated MI (incomplete quantifiers)")
+            |    print("      probe: Assert might fail: sidecar probe assert keylocallock.common.kv:%d:3" % at("  assert "))
+            |    print("Spec to review: none")
+            |    sys.exit(1)
             |impl = open(os.path.join(root, "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/KeyLocalLock.kt")).read()
             |strict, ge = "now > tok(qt).gLease" in common, "now >= " in impl
             |with open(os.path.join(d, "verify.log"), "a") as f:
@@ -94,6 +113,7 @@ class SpecPipelineScriptTest {
     private fun newRun(
         fakeVerify: Boolean = false,
         drafter: String = "opus",
+        decisions: File? = null,
     ): String {
         val env =
             File(dir, "env.json").apply {
@@ -108,6 +128,7 @@ class SpecPipelineScriptTest {
             }
         val config = File(dir, "config.json")
         config.writeText(File(protocol, "config.json").readText().replace("\"../../", "\"${repo.path}/").replace("\"SKELETON.kv\"", "\"${protocol.path}/SKELETON.kv\"").replace("\"LANGUAGE.md\"", "\"${protocol.path}/LANGUAGE.md\"").replace("\"code\": true", "\"code\": false"))
+        decisions?.let { config.writeText(config.readText().replace("\"code\": false", "\"decisions\": [\"${it.path}\"],\n \"code\": false")) }
         return ok(spec("task", "--run", run.path, "--drafter", drafter, "--config", config.path, "--env", env.path))
     }
 
@@ -122,9 +143,21 @@ class SpecPipelineScriptTest {
 
     private val opusDraft get() = File(pilotDir, "frozen-phase1/D-opus/DRAFT.kv").readText()
 
+    /** Gives the run the code after its cells ran without it (mode b, no isolation runs): `kv verify` runs from now on. */
+    private fun withCode() {
+        val runJson = File(run, "run.json")
+        runJson.writeText(
+            runJson.readText().replace("\"root\": null", "\"root\": \"${ReqShield.dir.path}\"")
+                .replace("\"classpath\": null", "\"classpath\": \"${ReqShield.classpath.joinToString(File.pathSeparator)}\"").replace("\"kotlinc\": null", "\"kotlinc\": \"-language-version 2.0\""),
+        )
+    }
+
     /** task, collect (phase 1), cells with the pilot cells, the opus answers, collect (phase 2), questions with groups. */
-    private fun pipeline(fakeVerify: Boolean = false) {
-        newRun(fakeVerify)
+    private fun pipeline(
+        fakeVerify: Boolean = false,
+        decisions: File? = null,
+    ) {
+        newRun(fakeVerify, decisions = decisions)
         putDraft(opusDraft)
         ok(spec("collect", "--run", run.path, "--drafter", "opus"))
         ok(spec("cells", "--run", run.path, "--cells", pilotCells.path, "--notes", File(protocol, "pilot-cells-notes.md").path))
@@ -146,6 +179,8 @@ class SpecPipelineScriptTest {
         val task = File(box(1), "TASK.md").readText()
         assertTrue("The\n  specification is about the local lock, `KeyLocalLock`: its `tryLock`, its `unLock` and its cleanup monitor (`sweep`)." in task, task)
         assertTrue("You have at most 10 calls." in task, task)
+        // DESIGN-C.md 10.6 finding 6: the language says that a record never issued has no fixed field values.
+        assertTrue("So a quantified `invariant` or `lemma` over `tok(x)` needs `tok(x).gIssued` in its premise." in File(box(1), "LANGUAGE.md").readText())
         assertTrue("Read TASK.md in the directory ${box(1).path} and do the task" in out, out)
         for (f in box(1).listFiles()!!) {
             assertFalse(repo.path in f.readText(), "${f.name} names the repository")
@@ -294,12 +329,16 @@ class SpecPipelineScriptTest {
     }
 
     @Test
-    fun `questions --run - one draft, rule 1 open or assumed - the 6 opus cells, the bundle and the options of Q-D1`() {
-        pipeline()
+    fun `questions --run - one draft, rule 1 open or assumed - the 6 opus cells and C16 by rule 6, the bundle and the options of Q-D1`() {
+        // The run config names a decision file of an earlier run (DESIGN-C.md 10.6 finding 3): rule 6 takes it too.
+        val earlier = File(dir, "earlier.json").apply { writeText("""{"format": "kv-decisions/1", "decisions": [{"group": "D9", "cells": {"C16": "open"}}]}""") }
+        pipeline(decisions = earlier)
+        assertTrue("\"decisions\": [\n  \"${earlier.path}\"\n ]" in File(run, "run.json").readText(), File(run, "run.json").readText())
         val out = ok(spec("questions", "--run", run.path))
-        assertTrue("kv spec questions: 1 draft(s) (opus), mode b; rule 1: the author answered open or assumed; rule 2 off (one draft); rule 4 on (proxy: --reference)" in out, out)
-        assertEquals("question cells: 6 C04 C05 C09 C12 C15 C19", out.lines().single { it.startsWith("question cells:") })
-        assertTrue("group check: OK, 4 group(s)" in out, out)
+        assertTrue("kv spec questions: 1 draft(s) (opus), mode b; rule 1: the author answered open or assumed; rule 2 off (one draft); rule 4 on (proxy: --reference); rule 6 on (the reference's OPEN cells, 1 cell(s) that earlier decisions leave open)" in out, out)
+        assertEquals("question cells: 7 C04 C05 C09 C12 C15 C16 C19", out.lines().single { it.startsWith("question cells:") })
+        assertTrue("  C16 rules 6 |" in out, out)
+        assertTrue("group check: OK, 5 group(s)" in out, out)
         val bundle = File(run, "bundle.md").readText()
         assertTrue("A. C04 null, C15 stays: reference.\nB. C04 token, C15 dropped: draft opus." in bundle, bundle)
         assertTrue("Results per option on implementations (decision mutants, AI code): not measured." in bundle, bundle)
@@ -308,8 +347,23 @@ class SpecPipelineScriptTest {
         assertEquals(listOf(mapOf("C04" to "null", "C15" to "stays"), mapOf("C04" to "token", "C15" to "dropped")), (d1["options"] as List<*>).map { (it as Map<*, *>)["cells"] })
     }
 
+    /** Words of a verdict or a table: none may reach the alignment agent in FEEDBACK (DESIGN-C.md 10.6 finding 5). */
+    private val verdictWords = Regex("PROVEN|FAILED|INCOMPLETE|DETERMINED|OPEN|INFEASIBLE|verdict|counts for nothing|isolation|Silicon|kv spec|kv verify|reference|module|mode [ab]|(?m)^\\|")
+
+    private fun feedback(n: Int) = File(run, "align/box/FEEDBACK-$n.md").readText()
+
+    private fun feedbackLines(n: Int) = feedback(n).lines().filter { it.startsWith("- ") }
+
+    /** The pilot's aligned opus draft without its monitor-duty clause and that clause's source comments. */
+    private val alignedWithoutMonitorDuty: String get() {
+        val aligned = File(pilotDir, "aligned/opus.kv").readText()
+        return Regex("""(?m)^(  // source:.*\n)*  ensures progress_sweep_drops_expired:.*\n(    .*\n)*\n?""").replace(aligned, "").also { assertTrue("progress_sweep" !in it && it.length < aligned.length - 200) }
+    }
+
+    private val c16 = "- Scenario C16 (Acquired at time 0: a monitor pass at time 11 looks at k): no clause may decide its outcome; it must stay undecided."
+
     @Test
-    fun `align - the box holds the decisions, the check accepts the aligned draft, not an undecided or other cell`() {
+    fun `align - the box holds the decisions, the check accepts the aligned draft, not an undecided or other cell, nor a cell decided open`() {
         pipeline()
         val decisions = File(repo, "specdraft/pilot-replay/decisions-opus.json")
         ok(spec("align", "--run", run.path, "--decisions", decisions.path))
@@ -318,29 +372,61 @@ class SpecPipelineScriptTest {
         val md = File(alignBox, "DECISIONS.md").readText()
         assertTrue("| C04 | Acquired at time 0, not released: tryLock(k) at time 10 (the lease end) | `null`: `r == NULL` |" in md, md)
         assertTrue("| C09 | Acquired at time 0: unLock(k, t1) at time 5 (the steps of C08) | `true`: `b` |" in md, md)
-        // The pilot's aligned opus draft decides the 6 cells as decided.
+        // D9 is decided open (DESIGN-C.md 10.6 finding 3): no outcome, and the box says that no clause may decide it.
+        assertTrue("| C16 | Acquired at time 0: a monitor pass at time 11 looks at k | left open: no clause may decide it |" in md, md)
+        assertTrue("A scenario whose chosen outcome is \"left open\" must stay undecided" in md, md)
+        assertTrue("If DECISIONS.md leaves a\n   scenario open, no clause may decide its outcome" in File(alignBox, "TASK.md").readText())
+        // The run's decisions with every cell, as later runs take them (--decisions-ref).
+        val resolved = parseJson(File(run, "align/decisions.json").readText()) as Map<*, *>
+        assertEquals("kv-decisions/1", resolved["format"])
+        assertEquals(mapOf("C16" to "open"), (resolved["decisions"] as List<*>).map { it as Map<*, *> }.single { it["group"] == "D9" }["cells"])
+        // A later run takes it as earlier decisions: without a reference, rule 6 asks about C16 again.
+        val later = spec("questions", "--check", "opus=${File(run, "drafts/opus/check/check.json")}", "--answers", "opus=${File(run, "drafts/opus/answers.json")}", "--decisions-ref", File(run, "align/decisions.json").path)
+        assertTrue("  C16 rules 6 |" in ok(later), later.second)
+        // The pilot's aligned opus draft decides the 6 cells as decided, and decides C16, which D9 leaves open.
         File(pilotDir, "aligned/opus.kv").copyTo(File(alignBox, "DRAFT.kv"), true)
+        val (c0, monitor) = spec("align", "--run", run.path, "--check")
+        assertEquals(1, c0, monitor)
+        assertTrue("decided cells: all 6 DETERMINED as decided in mode(s) b" in monitor, monitor)
+        assertTrue("cells decided open: 1 of 1 NOT OPEN (modes b):\n    C16 mode b: dropped, not open" in monitor, monitor)
+        assertTrue("decision probes (DESIGN-C.md 10 UC5): missing decision_D1, decision_D4, decision_D2, decision_D5\n" in monitor, monitor)
+        assertEquals(listOf(c16), feedbackLines(1))
+        assertFalse(verdictWords.containsMatchIn(feedback(1)), feedback(1))
+        assertTrue("loop-back: 1 line(s), round 1 of 2" in monitor && "FEEDBACK-1.md lists problems of DRAFT.kv" in monitor, monitor)
+        // Without its monitor-duty clause, the draft leaves C16 open and passes.
+        File(alignBox, "DRAFT.kv").writeText(alignedWithoutMonitorDuty)
         val good = spec("align", "--run", run.path, "--check").let { (c, o) -> assertEquals(0, c, o + File(run, "align/check/report.txt").readText()); o }
         assertTrue("decided cells: all 6 DETERMINED as decided in mode(s) b" in good, good)
-        assertTrue("other cells whose verdict changed from draft opus: none" in good, good)
-        assertTrue("decision probes (DESIGN-C.md 10 UC5): missing decision_D1, decision_D4, decision_D2, decision_D5" in good, good)
-        // The unaligned draft decides C04 and C15 the other way.
+        assertTrue("cells decided open: all 1 OPEN in mode(s) b" in good, good)
+        assertFalse("loop-back" in good, good)
+        // The unaligned draft decides C04 and C15 the other way, and C16: FEEDBACK states each as its scenario and the
+        // decided outcome, in the order of DECISIONS.md.
         File(pilotDir, "frozen-phase1/D-opus/DRAFT.kv").copyTo(File(alignBox, "DRAFT.kv"), true)
         val (c1, other) = spec("align", "--run", run.path, "--check")
         assertEquals(1, c1, other)
         assertTrue("    C04 mode b: token, not null\n    C15 mode b: dropped, not stays" in other, other)
+        assertEquals(
+            listOf(
+                "- Scenario C04 (Acquired at time 0, not released: tryLock(k) at time 10 (the lease end)): the clauses must give the outcome `null`: `r == NULL`.",
+                "- Scenario C15 (Acquired at time 0: a monitor pass at time 10 looks at k): the clauses must give the outcome `stays`: `carried(S, k, t1)`.",
+                c16,
+            ),
+            feedbackLines(2),
+        )
+        assertFalse(verdictWords.containsMatchIn(feedback(2)), feedback(2))
         // Without the two tryLock clauses on a live and an expired entry, C05 and C19 are OPEN, which is no decision.
-        // C04 stays null: the allowance clause alone forbids ending t1 at its lease.
-        val aligned = File(pilotDir, "aligned/opus.kv").readText()
-        val open = Regex("""(?m)^  ensures (tryLock_live_entry_returns_null|progress_tryLock_takeover):.*\n(?:      .*\n)*""").replace(aligned, "")
-        assertTrue(open.length < aligned.length - 200)
+        // C04 stays null: the allowance clause alone forbids ending t1 at its lease. Both rounds are used: no FEEDBACK-3.
+        val open = Regex("""(?m)^  ensures (tryLock_live_entry_returns_null|progress_tryLock_takeover):.*\n(?:      .*\n)*""").replace(alignedWithoutMonitorDuty, "")
+        assertTrue(open.length < alignedWithoutMonitorDuty.length - 200)
         File(alignBox, "DRAFT.kv").writeText(open)
         val (c2, undecided) = spec("align", "--run", run.path, "--check")
         assertEquals(1, c2, undecided)
         assertTrue("decided cells: 2 of 6 NOT as decided (modes b):\n    C05 mode b: open, not token\n    C19 mode b: open, not backed\n" in undecided, undecided)
+        assertTrue("loop-back: none left: the 2 feedback rounds are used" in undecided, undecided)
+        assertFalse(File(alignBox, "FEEDBACK-3.md").exists())
         // Decision files: a group left out, an option the group does not have.
         val text = decisions.readText()
-        val noD5 = File(dir, "noD5.json").apply { writeText(text.replace(Regex(""",\n  \{"group": "D5".*\n"""), "\n")) }
+        val noD5 = File(dir, "noD5.json").apply { writeText(text.replace(Regex(""",\n  \{"group": "D5".*\n"""), ",\n")) }
         val (e1, m1) = spec("align", "--run", run.path, "--decisions", noD5.path, "--force")
         assertEquals(2, e1, m1)
         assertTrue("no decision for group(s) D5" in m1, m1)
@@ -348,15 +434,60 @@ class SpecPipelineScriptTest {
         assertTrue("group D1 has no option 'C'" in spec("align", "--run", run.path, "--decisions", badOption.path, "--force").second)
     }
 
+    /**
+     * DESIGN-C.md 10.6 findings 2 and 5: with the code, `align --check` fails when `kv verify --draft` on the reference
+     * is not PROVEN, although every decided cell is as decided. FEEDBACK holds the error lines of the report and
+     * nothing else, with positions in DRAFT.kv (the assembled file moves source lines and holds the run's hole), at
+     * most 2 rounds. `kv verify` is the fake of [kvInstall].
+     */
+    @Test
+    fun `align --check - a verification failure fails the check and goes to FEEDBACK as error lines in DRAFT_kv positions`() {
+        pipeline(fakeVerify = true)
+        withCode()
+        ok(spec("align", "--run", run.path, "--decisions", File(repo, "specdraft/pilot-replay/decisions-opus.json").path))
+        val draft = alignedWithoutMonitorDuty.replace("// ---- Inductive invariant", "// FAKE: verify fails\n// ---- Inductive invariant")
+        assertTrue("FAKE: verify fails" in draft)
+        File(run, "align/box/DRAFT.kv").writeText(draft)
+        val (code, out) = spec("align", "--run", run.path, "--check")
+        assertEquals(1, code, out)
+        assertTrue("decided cells: all 6 DETERMINED as decided in mode(s) b" in out && "cells decided open: all 1 OPEN in mode(s) b" in out, out)
+        assertTrue("kv verify --draft on the reference implementation: FAILED (sweep sweep_keeps_live_entry; init FAILED; probe FAILED)" in out, out)
+        val lineIn = { text: String, s: String -> text.lines().indexOfFirst { s in it } + 1 }
+        val assembled = File(run, "align/sidecar/keylocallock.common.kv").readText()
+        val (sweep, assert) = lineIn(draft, "ensures sweep_keeps_live_entry") to lineIn(draft, "  assert ")
+        // In the assembled file, the source lines move the clause up, the source lines and the run's hole move the probe.
+        assertTrue(lineIn(assembled, "ensures sweep_keeps_live_entry") < sweep && lineIn(assembled, "  assert ") != assert)
+        val lines =
+            listOf(
+                "- sweep: Postcondition of sweep might not hold: sidecar sweep_keeps_live_entry DRAFT.kv:$sweep:3",
+                "- init: Postcondition of init might not hold: generated MI (incomplete quantifiers)",
+                "- probe: Assert might fail: sidecar probe assert DRAFT.kv:$assert:3",
+            )
+        assertEquals(
+            "# Feedback, round 1 of 2\n\nThe team's tool found these problems in DRAFT.kv. Fix them in DRAFT.kv. Change only what the fixes need, " +
+                "and keep following TASK.md and DECISIONS.md.\n\n" + lines.joinToString("\n") + "\n",
+            feedback(1),
+        )
+        assertFalse(verdictWords.containsMatchIn(feedback(1)), feedback(1))
+        assertTrue("prompt for the alignment agent:\nIn the directory ${File(run, "align/box").path}, FEEDBACK-1.md lists problems of DRAFT.kv." in out, out)
+        assertTrue(" \"feedback\": 1\n" in File(run, "align/result.json").readText())
+        // Not fixed: round 2 with the same lines, then no round left.
+        assertEquals(1, spec("align", "--run", run.path, "--check").first)
+        assertEquals(lines, feedbackLines(2))
+        val (c3, o3) = spec("align", "--run", run.path, "--check")
+        assertEquals(1, c3, o3)
+        assertTrue("loop-back: none left: the 2 feedback rounds are used" in o3, o3)
+        assertFalse(File(run, "align/box/FEEDBACK-3.md").exists())
+        // Fixed: PROVEN, and the check passes.
+        File(run, "align/box/DRAFT.kv").writeText(alignedWithoutMonitorDuty)
+        val fixed = ok(spec("align", "--run", run.path, "--check"))
+        assertTrue("kv verify --draft on the reference implementation: PROVEN" in fixed, fixed)
+    }
+
     @Test
     fun `outcomes - every implementation runs on each option draft with --draft, and the rows go into the bundle`() {
         pipeline(fakeVerify = true)
-        // The run gets the code now, so that cells above ran without it (mode b, no isolation runs).
-        val runJson = File(run, "run.json")
-        runJson.writeText(
-            runJson.readText().replace("\"root\": null", "\"root\": \"${ReqShield.dir.path}\"")
-                .replace("\"classpath\": null", "\"classpath\": \"${ReqShield.classpath.joinToString(File.pathSeparator)}\"").replace("\"kotlinc\": null", "\"kotlinc\": \"-language-version 2.0\""),
-        )
+        withCode()
         val impls = listOf("T-sonnet-1", "T-sonnet-4").flatMap { listOf("--impl", "$it=${File(repo, "aicode/round2/impl/$it")}") }
         val args = listOf("outcomes", "--run", run.path, "--group", "D1", "--mutants", File(protocol, "decision-mutants.json").path) + impls
         val out = ok(spec(*(args + listOf("--option", "A=${File(pilotDir, "aligned/opus.kv")}", "--option", "B=${File(run, "drafts/opus/DRAFT.kv")}")).toTypedArray()))

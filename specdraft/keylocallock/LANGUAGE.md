@@ -46,6 +46,9 @@ Fields: `gIssued` (Bool), `gKey` (Key), `gBacked` (Bool: an entry carried the to
 `gHeld` (Bool), `gLease` (Int). A token with `gBacked == false` is "unbacked": no map entry ever carried it, so rule 2
 never ends it.
 
+A record whose token was never issued (`tok(x).gIssued` is false) has fields with no fixed value, also in the empty
+module. So a quantified `invariant` or `lemma` over `tok(x)` needs `tok(x).gIssued` in its premise.
+
 ## 4. Clauses
 
 All clauses go inside the skeleton (SKELETON.kv) where a line says DRAFT.

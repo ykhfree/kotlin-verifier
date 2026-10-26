@@ -24,6 +24,8 @@ import kv.sidecar.parseCells
 import kv.verify.Silicon
 import kv.verify.SiliconBudget
 import kv.verify.SiliconOutcome
+import kv.verify.Verdict
+import kv.verify.buildReport
 import kv.verify.classify
 import kv.verify.finding
 import kv.verify.specToReview
@@ -125,9 +127,22 @@ data class ClauseResult(
 )
 
 /**
+ * Init, a lemma or a probe of the sidecar on the code (DESIGN-C.md 4.1), as pass 1 of `kv verify` reads it: PROVEN,
+ * FAILED, UNSUPPORTED (a probe that calls an operation the emitter leaves out) or ERROR. [label] is the row name of the
+ * kv verify report (`init`, `lemma ID`, `probe NAME`). [detail] holds the error lines of a FAILED row, joined by "; ",
+ * or the reason of another row that is not PROVEN.
+ */
+data class MethodResult(
+    val label: String,
+    val verdict: String,
+    val detail: String?,
+)
+
+/**
  * Clause isolation (DESIGN-C.md 4.1): [runs] Silicon runs on the code, each with every action's tool ensures and one
  * of its sidecar clauses. [other] are errors outside the kept clauses (tool ensures, invariants, init), each once;
- * [hole] are those at a hole conjunct, so mode a rests on a hole the code does not keep. [errors] are abnormal runs.
+ * [hole] are those at a hole conjunct, so mode a rests on a hole the code does not keep. [methods] are init, each
+ * lemma and each probe, from one more run of the whole program. [errors] are abnormal runs.
  */
 data class Isolation(
     val runs: Int,
@@ -135,6 +150,7 @@ data class Isolation(
     val other: List<String>,
     val hole: List<String>,
     val errors: List<String>,
+    val methods: List<MethodResult>,
 )
 
 /** The clause results, other errors, hole errors and run error of one isolation run (see [Isolation]). */
@@ -188,6 +204,33 @@ fun isolationRun(
     return IsolationRun(results, otherByMethod.values.flatten(), hole, null)
 }
 
+private val METHOD_KINDS = setOf(MethodKind.INIT, MethodKind.LEMMA, MethodKind.PROBE)
+
+/**
+ * The rows of init, each lemma and each probe from the Silicon [outcome] of [emitted], the whole program of `kv verify`
+ * ([emitViper] without options), read as `kv verify` reads its pass 1 ([buildReport]). The second value is why the run
+ * counts for nothing (an abnormal run, or errors outside every method), or null.
+ */
+fun methodResults(
+    module: Module,
+    sidecar: Sidecar,
+    emitted: Emitted,
+    outcome: SiliconOutcome,
+): Pair<List<MethodResult>, String?> {
+    val report = buildReport(module, sidecar, emitted, outcome, null)
+    val rows =
+        report.rows.filter { it.kind in METHOD_KINDS }.map { r ->
+            val detail =
+                when {
+                    r.findings.isNotEmpty() -> r.findings.joinToString("; ") { it.describe() }
+                    r.verdict == Verdict.ERROR -> report.error
+                    else -> r.note
+                }
+            MethodResult(r.label, r.verdict.name, detail)
+        }
+    return rows to report.error
+}
+
 /** The inputs of [specCheck] (`kv spec check`, DESIGN-C.md 7.1). Without [root], only mode b runs and no isolation. */
 data class SpecCheckOptions(
     val sidecar: File,
@@ -232,7 +275,8 @@ data class SpecCheckReport(
  * 4. Determinacy of the cells on the contract-only model ([ContractOnly]): mode a (with the hole) and mode b (the hole
  *    is true) with code, mode b alone without. One Silicon run per mode. Without cells, mode b runs alone: Silicon
  *    type-checks the clauses and checks that the contracts are well-formed.
- * 5. With code: clause isolation, one Silicon run per clause index ([emitViper] onlyClause).
+ * 5. With code: clause isolation, one Silicon run per clause index ([emitViper] onlyClause), and one run of the whole
+ *    program for the rows of init, the lemmas and the probes ([methodResults]).
  * The Viper files and check.json go to [SpecCheckOptions.out], check.json also after an error. Silicon runs
  * [SpecCheckOptions.jobs] at a time.
  */
@@ -330,7 +374,9 @@ private fun codeModule(o: SpecCheckOptions): Pair<Module?, List<String>> {
 
 /**
  * Clause isolation on the code: run j keeps clause j of every action ([emitViper] onlyClause). The number of runs is
- * the largest number of sidecar clauses of one action.
+ * the largest number of sidecar clauses of one action. One more run, of the whole program (`program.vpr`, the program
+ * of `kv verify`), gives the rows of init, the lemmas and the probes, which the isolation runs leave out or do not
+ * report ([methodResults]).
  */
 private fun isolation(
     module: Module,
@@ -338,7 +384,8 @@ private fun isolation(
     o: SpecCheckOptions,
     pool: ExecutorService,
 ): Future<Isolation> {
-    val all = emitViper(module, sidecar).clauses
+    val whole = emitViper(module, sidecar)
+    val all = whole.clauses
     val runs = all.groupingBy { it.action }.eachCount().values.maxOrNull() ?: 0
     val futures =
         (0 until runs).map { j ->
@@ -346,15 +393,19 @@ private fun isolation(
             val vpr = File(o.out, "isolate-$j.vpr").apply { writeText(emitted.text) }
             pool.submit(Callable { Silicon.run(vpr, o.home, o.budget).let { run -> isolationRun(emitted, classify(run, o.budget)) } })
         }
+    val program = File(o.out, "program.vpr").apply { writeText(whole.text) }
+    val methods = pool.submit(Callable { methodResults(module, sidecar, whole, classify(Silicon.run(program, o.home, o.budget), o.budget)) })
     return pool.submit(
         Callable {
             val done = futures.map { it.get() }
+            val (rows, error) = methods.get()
             Isolation(
                 runs,
                 done.flatMap { it.clauses }.sortedWith(compareBy({ c -> all.indexOfFirst { it.action == c.action } }, { it.index })),
                 done.flatMap { it.other }.distinct(),
                 done.flatMap { it.hole }.distinct(),
-                done.mapIndexedNotNull { j, r -> r.error?.let { "isolation run $j: $it" } },
+                done.mapIndexedNotNull { j, r -> r.error?.let { "isolation run $j: $it" } } + listOfNotNull(error?.let { "run of the whole program: $it" }),
+                rows,
             )
         },
     )
@@ -430,13 +481,22 @@ fun SpecCheckReport.render(): String {
             "  Hole MI_INV on the code: " +
                 if (iso.hole.isEmpty()) "no hole conjunct fails in any run" else "a hole conjunct fails, so mode a assumes a hole this code does not keep and counts for nothing",
         )
+        val m = iso.methods.groupingBy { it.verdict }.eachCount()
+        line(
+            "Init, lemmas and probes (on the code; one run of the whole program, as pass 1 of kv verify): ${iso.methods.size} row(s): " +
+                listOf("FAILED", "UNSUPPORTED", "PROVEN", "ERROR").joinToString { "${m[it] ?: 0} $it" },
+        )
+        iso.methods.filter { it.verdict != "PROVEN" }.forEach { r ->
+            line("  ${r.verdict} ${r.label}")
+            r.detail?.let { line("      $it") }
+        }
     }
     specToReview?.let { line("Spec to review: $it") }
     val b = determinacy.find { it.mode == Mode.B }?.cells?.values.orEmpty()
     line(
         "kv spec check: $errorCount error(s), ${fieldWarnings.size + (stale?.findings?.count { !it.error } ?: 0)} warning(s)" +
             (if (cells.isNotEmpty()) "; mode b cells: ${b.count { it.startsWith("DETERMINED") }} DETERMINED, ${b.count { it == CellVerdict.OPEN }} OPEN, ${b.count { it == CellVerdict.INFEASIBLE }} INFEASIBLE" else "") +
-            (isolation?.let { "; ${it.clauses.count { c -> c.verdict == "FAILED" }} failing clause(s)" } ?: ""),
+            (isolation?.let { "; ${it.clauses.count { c -> c.verdict == "FAILED" }} failing clause(s), ${it.methods.count { r -> r.verdict == "FAILED" }} failing init, lemma or probe" } ?: ""),
     )
     return sb.toString()
 }
@@ -471,6 +531,7 @@ fun SpecCheckReport.json(): String {
                         "other" to iso.other,
                         "hole" to iso.hole,
                         "errors" to iso.errors,
+                        "methods" to iso.methods.map { linkedMapOf("label" to it.label, "verdict" to it.verdict, "detail" to it.detail) },
                     )
                 },
             "spec_to_review" to specToReview,

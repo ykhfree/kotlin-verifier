@@ -3,9 +3,10 @@
 # The LLM steps are stand-ins from the pilot (pilot-c is read only):
 #   phase 1   pilot-c/frozen-phase1/D-opus (DRAFT.kv, COVERAGE.md, QUESTIONS.md)
 #   phase 2   pilot-c/frozen-final/D-opus/ANSWERS.md, converted to kv-answers/1 by scripts/pilot_answers.py
-#   grouping  specdraft/pilot-replay/groups-opus.json (the pilot grouping of the 6 opus question cells)
+#   grouping  specdraft/pilot-replay/groups-opus.json (the pilot grouping of the 6 opus question cells, and D9 for C16,
+#             which rule 6 adds since DESIGN-C.md 10.6 finding 3)
 #   options   option A of Q-D1 = pilot-c/aligned/opus.kv, option B = the opus draft itself
-#   decisions specdraft/pilot-replay/decisions-opus.json (the pilot's choices: D1 strict, D4, D2, D5 as signed)
+#   decisions specdraft/pilot-replay/decisions-opus.json (the pilot's choices: D1 strict, D4, D2, D5 as signed; D9 open)
 #   alignment pilot-c/aligned/opus.kv as the alignment agent's DRAFT.kv
 # The phase-2 cells are the pilot's 20 (19 formal) cells, because the frozen answers answer them. A second run on the
 # same draft builds the phase-2 box of the generated cells (kv spec cells, DESIGN-C.md 10.4) for the cost data.
@@ -47,7 +48,8 @@ step 06-outcomes-D1 outcomes --run "$RUN" --group D1 --option "A=$R/pilot-c/alig
 # Step 8: the alignment box, the stand-in alignment, the check.
 step 07-align align --run "$RUN" --decisions "$HERE/decisions-opus.json"
 cp "$R/pilot-c/aligned/opus.kv" "$RUN/align/box/DRAFT.kv"
-step 08-align-check align --run "$RUN" --check
+# The pilot's aligned draft decides C16, which D9 leaves open: the check fails (exit 1) and writes FEEDBACK-1.md.
+step 08-align-check align --run "$RUN" --check || true
 
 # Cost data (DESIGN-C.md 10.4): the phase-2 box of the generated cells, on the same draft.
 step 09-generated-task task --run "$GEN" --drafter opus --config "$P/config.json" --env "$ENV"

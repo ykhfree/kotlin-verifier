@@ -32,38 +32,45 @@ class SpecQuestionsScriptTest {
 
     private fun selected(out: String) = out.lines().single { it.startsWith("question cells: ") }.substringAfter(": ").split(" ").drop(1)
 
-    /** The rules of each question cell: `C04 rules 1,2,3,4,5 | ...` lines. */
+    /** The rules of each question cell: `  C04 rules 1,2,3,4,5 | ...` or `  C09 (cell C08) rules 1 | ...` lines. */
     private fun rules(out: String) =
-        out.lines().filter { it.startsWith("  C") }.associate { l -> l.trim().substringBefore(" ") to l.substringAfter("rules ").substringBefore(" ").split(",").map(String::toInt) }
+        out.lines().mapNotNull { Regex("""^  (\S+)(?: \(cell \S+\))? rules ([\d,]+) \|""").find(it) }.associate { m -> m.groupValues[1] to m.groupValues[2].split(",").map(String::toInt) }
 
     private val reference get() = listOf("--reference", specResource("questions/check-signed.json").path)
 
+    /**
+     * Rules 1-5 give exactly the 8 question cells of the pilot. Rule 6 (DESIGN-C.md 10.6 finding 3) adds C16: the
+     * signed sidecar leaves the monitor duty open (D9), and the three drafts decide it (DESIGN-C.md 3.3: D9 shows only
+     * against the signed sidecar).
+     */
     @Test
-    fun `three drafts - exactly the 8 question cells of the pilot, with the rules of DESIGN-C 3_3`() {
+    fun `three drafts - the 8 question cells of the pilot by rules 1-5, and C16 (D9) by rule 6 alone`() {
         val (code, out) = questions(*drafts(*models.toTypedArray()).toTypedArray(), *reference.toTypedArray())
         assertEquals(0, code, out)
-        assertEquals(listOf("C04", "C05", "C06", "C07", "C09", "C12", "C15", "C19"), selected(out), out)
+        assertEquals(listOf("C04", "C05", "C06", "C07", "C09", "C12", "C15", "C16", "C19"), selected(out), out)
         assertEquals(
             mapOf(
                 "C04" to listOf(1, 2, 3, 4, 5), "C05" to listOf(1, 2, 3, 4), "C06" to listOf(2, 4), "C07" to listOf(2, 4),
-                "C09" to listOf(1), "C12" to listOf(1), "C15" to listOf(1, 3, 4, 5), "C19" to listOf(1, 2, 3, 4),
+                "C09" to listOf(1), "C12" to listOf(1), "C15" to listOf(1, 3, 4, 5), "C16" to listOf(6), "C19" to listOf(1, 2, 3, 4),
             ),
             rules(out),
             out,
         )
         assertTrue(out.lines().first().startsWith("kv spec questions: 3 draft(s) (haiku, sonnet, opus), mode a; rule 1: one author answered open, or two or more assumed; rule 2 on"), out)
+        assertTrue(out.lines().first().endsWith("; rule 6 on (the reference's OPEN cells)"), out)
         assertTrue("  C09 (cell C08) rules 1 |" in out, out)
+        assertTrue("  C16 rules 6 | answers haiku=dropped/assumed sonnet=dropped/settled opus=dropped/settled | drafts haiku=dropped sonnet=dropped opus=dropped | reference open" in out, out)
     }
 
     @Test
-    fun `one draft (JC1) - haiku 9, sonnet 8, opus 6 cells, each covering the decisions D1, D2, D4 and D5`() {
+    fun `one draft (JC1) - haiku 9, sonnet 9, opus 7 cells, each covering the decisions D1, D2, D4, D5 and D9`() {
         val expected =
             mapOf(
                 "haiku" to listOf("C03", "C04", "C05", "C09", "C12", "C14", "C15", "C16", "C19"),
-                "sonnet" to listOf("C04", "C05", "C06", "C07", "C09", "C12", "C15", "C19"),
-                "opus" to listOf("C04", "C05", "C09", "C12", "C15", "C19"),
+                "sonnet" to listOf("C04", "C05", "C06", "C07", "C09", "C12", "C15", "C16", "C19"),
+                "opus" to listOf("C04", "C05", "C09", "C12", "C15", "C16", "C19"),
             )
-        val decisions = mapOf("D1" to setOf("C04", "C15"), "D2" to setOf("C09"), "D4" to setOf("C05", "C06", "C07", "C19"), "D5" to setOf("C12"))
+        val decisions = mapOf("D1" to setOf("C04", "C15"), "D2" to setOf("C09"), "D4" to setOf("C05", "C06", "C07", "C19"), "D5" to setOf("C12"), "D9" to setOf("C16"))
         for ((m, cells) in expected) {
             val (code, out) = questions(*drafts(m).toTypedArray(), *reference.toTypedArray())
             assertEquals(0, code, out)
@@ -71,9 +78,49 @@ class SpecQuestionsScriptTest {
             assertEquals(cells, selected(out), "$m:\n$out")
             decisions.forEach { (d, cs) -> assertTrue(cs.any { it in cells }, "$m does not cover $d") }
         }
-        // Without the reference, rule 4 is off: sonnet's C06 and C07 came from rule 4 alone (INFEASIBLE in its draft).
+        // Without the reference, rules 4 and 6 are off: sonnet's C06 and C07 came from rule 4 alone (INFEASIBLE in its
+        // draft), C16 from rule 6 alone.
         val (_, out) = questions(*drafts("sonnet").toTypedArray())
         assertEquals(listOf("C04", "C05", "C09", "C12", "C15", "C19"), selected(out), out)
+        assertTrue(out.lines().first().endsWith("; rule 6 off (no --reference, no earlier decisions)"), out)
+    }
+
+    private fun decisionsFile(
+        name: String,
+        vararg decisions: String,
+    ): File = File(dir, name).apply { writeText("""{"format": "kv-decisions/1", "decisions": [${decisions.joinToString()}]}""") }
+
+    /**
+     * DESIGN-C.md 10.6 finding 3, persistence: a decision file of an earlier run that leaves a cell open makes it a
+     * question by rule 6 whenever a draft decides it, also without a reference. A cell left open that the draft
+     * leaves OPEN too is no question; an open cell that is no scenario of the drafts, or an open group without its
+     * cells, is an input error.
+     */
+    @Test
+    fun `rule 6 - an earlier decision that leaves a cell open makes it a question when a draft decides it`() {
+        val (_, before) = questions(*drafts("opus").toTypedArray())
+        assertTrue("C16" !in selected(before), before)
+        val c16 = decisionsFile("c16.json", """{"group": "D9", "cells": {"C16": "open"}}""", """{"group": "D1", "cells": {"C04": "null", "C15": "stays"}}""")
+        val (code, out) = questions(*drafts("opus").toTypedArray(), "--decisions-ref", c16.path)
+        assertEquals(0, code, out)
+        assertEquals(selected(before) + "C16", selected(out).let { s -> s.filter { it != "C16" } + "C16" })
+        assertEquals(listOf(6), rules(out)["C16"], out)
+        assertTrue(out.lines().first().endsWith("; rule 4 off (no --reference); rule 6 on (1 cell(s) that earlier decisions leave open)"), out)
+        // Only the cell left open counts: C04 and C15, decided earlier, keep their rules.
+        assertEquals(rules(before)["C04"], rules(out)["C04"], out)
+        // The signed sidecar as the draft leaves C16 OPEN, so rule 6 does not ask.
+        val signed = listOf("--check", "signed=${specResource("questions/check-signed.json")}", "--answers", "signed=${specResource("answers/opus.json")}")
+        val (_, open) = questions(*signed.toTypedArray(), "--decisions-ref", c16.path)
+        assertTrue("C16" !in selected(open), open)
+        // Input errors.
+        val unknown = decisionsFile("unknown.json", """{"group": "D9", "cells": {"C21": "open"}}""")
+        val (c1, o1) = questions(*drafts("opus").toTypedArray(), "--decisions-ref", unknown.path)
+        assertEquals(2, c1, o1)
+        assertTrue("the earlier decisions leave C21 open, which is no scenario of these drafts" in o1, o1)
+        val noCells = decisionsFile("nocells.json", """{"group": "D9", "option": "open"}""")
+        val (c2, o2) = questions(*drafts("opus").toTypedArray(), "--decisions-ref", noCells.path)
+        assertEquals(2, c2, o2)
+        assertTrue("group D9 is decided \"open\" and names no cell" in o2, o2)
     }
 
     /**
@@ -94,6 +141,31 @@ class SpecQuestionsScriptTest {
         assertEquals(selected(before) + "C14", selected(after).let { s -> s.filter { it != "C14" } + "C14" })
     }
 
+    /**
+     * DESIGN-C.md 10.6 finding 3 on the real run's data: `kv spec check --root` with the run's 65 cells on the run's
+     * phase-1 draft (spec/e2e/check-d1.json) and on the current signed sidecar (check-reference.json): the files
+     * WORK/run/drafts/d1/check/check.json and WORK/run/reference/check/check.json of
+     * specdraft/keylocallock/e2e-open-decision.sh, with the WORK and repository paths removed. The answers are the run's. Mode a: rule 6 adds H14s alone (the
+     * monitor duty that the user declined, UC1) to the run's 15 question cells. Mode b: the reference's clauses alone
+     * also leave open the 4 cells after a monitor step that took t1's entry (its hole decides them), and rule 6 asks
+     * them too.
+     */
+    @Test
+    fun `rule 6 on the real run - mode a adds H14s alone to the run's 15 questions, mode b adds 4 more cells`() {
+        val run = File(pilotDir.parentFile, "specdraft/e2e-2026-10-26")
+        val args = listOf("--check", "d1=${specResource("e2e/check-d1.json")}", "--answers", "d1=${File(run, "answers.json")}", "--reference", specResource("e2e/check-reference.json").path)
+        val earlier = ((parseJson(File(run, "questions.json").readText()) as Map<*, *>)["questions"] as List<*>).map { (it as Map<*, *>)["cell"] as String }
+        assertEquals(15, earlier.size)
+        val (code, a) = questions(*args.toTypedArray())
+        assertEquals(0, code, a)
+        assertEquals((earlier + "H14s").toSet(), selected(a).toSet(), a)
+        assertEquals(mapOf("H14s" to listOf(6)), rules(a).filterValues { 6 in it }, a)
+        assertTrue("  H14s rules 6 | answers d1=no_entry/settled | drafts d1=no_entry | reference open" in a, a)
+        val (_, b) = questions(*args.toTypedArray(), "--mode", "b")
+        assertEquals(listOf("H14s", "O8r", "O8s", "O9s", "O10s"), rules(b).filterValues { 6 in it }.keys.toList(), b)
+        assertEquals(20, selected(b).size, b)
+    }
+
     private fun groupFile(edit: (String) -> String): File = File(dir, "groups.json").apply { writeText(edit(specResource("questions/pilot-groups.json").readText())) }
 
     @Test
@@ -102,9 +174,14 @@ class SpecQuestionsScriptTest {
         val bundle = File(dir, "bundle.md")
         val (code, out) = questions(*args.toTypedArray(), "--groups", specResource("questions/pilot-groups.json").path, "--bundle", bundle.path)
         assertEquals(0, code, out)
-        assertTrue("group check: OK, 4 group(s)" in out, out)
+        assertTrue("group check: OK, 5 group(s)" in out, out)
         val text = bundle.readText()
-        assertEquals(listOf("## Q-D1 Expiry boundary", "## Q-D4 Takeover of an expired lock", "## Q-D2 unLock by the holder after expiry", "## Q-D5 unLock of a token no entry backs"), text.lines().filter { it.startsWith("## ") })
+        assertEquals(
+            listOf("## Q-D1 Expiry boundary", "## Q-D4 Takeover of an expired lock", "## Q-D2 unLock by the holder after expiry", "## Q-D5 unLock of a token no entry backs", "## Q-D9 Monitor duty after the lease end"),
+            text.lines().filter { it.startsWith("## ") },
+        )
+        // D9's options: the signed sidecar leaves C16 open, the three drafts drop the entry.
+        assertTrue("Cells: C16 (rules 6)" in text && "A. C16 open: reference.\nB. C16 dropped: draft haiku, draft sonnet, draft opus." in text, text)
         val d1 = text.substringAfter("## Q-D1").substringBefore("## Q-D4")
         assertTrue("Cells: C04 (rules 1, 2, 3, 4, 5), C15 (rules 1, 3, 4, 5)" in d1, d1)
         assertTrue("""- [README.md#local-lock-map-size/2] "cleanup monitor once `lockTimeoutMillis` has passed" (haiku C04, haiku C15, opus C04, opus C15)""" in d1, d1)

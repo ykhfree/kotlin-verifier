@@ -1,10 +1,11 @@
 {
  "format": "kv-groups/1",
- "from": "the pilot grouping of DESIGN-C.md 3.3 (translator/src/test/resources/spec/questions/pilot-groups.json) restricted to the 6 question cells of the opus draft alone (DESIGN-C.md 9.2 JC1 note); in a real run an LLM writes this file",
+ "from": "the pilot grouping of DESIGN-C.md 3.3 (translator/src/test/resources/spec/questions/pilot-groups.json) restricted to the 6 question cells of the opus draft alone (DESIGN-C.md 9.2 JC1 note), and D9 for C16, the cell that rule 6 adds (DESIGN-C.md 10.6 finding 3); in a real run an LLM writes this file",
  "groups": [
   {"id": "D1", "title": "Expiry boundary", "question": "At exactly the lease end (clock = lease), is a lock that nobody released still held?", "cells": ["C04", "C15"]},
   {"id": "D4", "title": "Takeover of an expired lock", "question": "Does tryLock take over an expired lock before the cleanup monitor drops it?", "cells": ["C05", "C19"]},
   {"id": "D2", "title": "unLock by the holder after expiry", "question": "Can the holder still release its lock after the lease ended, if nobody took it over?", "cells": ["C09"]},
-  {"id": "D5", "title": "unLock of a token no entry backs", "question": "Does unLock release a permit that no map entry backs?", "cells": ["C12"]}
+  {"id": "D5", "title": "unLock of a token no entry backs", "question": "Does unLock release a permit that no map entry backs?", "cells": ["C12"]},
+  {"id": "D9", "title": "Monitor duty after the lease end", "question": "Must the cleanup monitor drop the entry of a lock that nobody released, one step after the lease end?", "cells": ["C16"]}
  ]
 }

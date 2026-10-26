@@ -104,4 +104,28 @@ class SpecCheckUnitTest {
         val abnormal = isolationRun(run1, SiliconOutcome.Abnormal("exit code 2", emptyList()))
         assertEquals(listOf("ERROR", "ERROR", "ERROR") to "exit code 2", abnormal.clauses.map { it.verdict } to abnormal.error)
     }
+
+    /**
+     * DESIGN-C.md 10.6 finding 2: the rows of init, the lemmas and the probes come from the whole program, as pass 1 of
+     * kv verify reads them. An action's error is no row of theirs; an abnormal run makes every row ERROR.
+     */
+    @Test
+    fun `init, lemma and probe rows - an error in init or a lemma is FAILED with its error line, an action error is not theirs`() {
+        val (m, s) = lowerReqShield("coroutine")
+        val bound = bindGhosts(m, s)
+        val whole = emitViper(bound, s)
+        val init = errorAt(whole, "init", "ensures MI(S)", "Postcondition of init might not hold. Assertion MI(S) might not hold. (incomplete quantifiers)")
+        val lemma = errorAt(whole, "lemma_P3c", "tok(t1).gIssued && tok(t2).gIssued", "Postcondition of lemma_P3c might not hold.")
+        val action = errorAt(whole, "tryLock", "ensures MI_OWN(S)", "Postcondition of tryLock might not hold.")
+        val (rows, error) = methodResults(bound, s, whole, SiliconOutcome.Failed(listOf(init, lemma, action)))
+        assertEquals(null, error)
+        assertEquals(listOf("init FAILED", "lemma P3c FAILED", "probe PROVEN"), rows.map { "${it.label} ${it.verdict}" })
+        assertEquals("Postcondition of init might not hold: generated MI", rows[0].detail)
+        assertTrue(rows[1].detail!!.startsWith("Postcondition of lemma_P3c might not hold: sidecar P3c keylocallock.common.kv:"), rows[1].detail)
+        assertEquals(null, rows[2].detail)
+        assertEquals(listOf("PROVEN", "PROVEN", "PROVEN"), methodResults(bound, s, whole, SiliconOutcome.Failed(listOf(action))).first.map { it.verdict })
+        val (abnormal, why) = methodResults(bound, s, whole, SiliconOutcome.Abnormal("timeout: killed", emptyList()))
+        assertEquals("timeout: killed", why)
+        assertEquals(listOf("ERROR" to "timeout: killed", "ERROR" to "timeout: killed", "ERROR" to "timeout: killed"), abnormal.map { it.verdict to it.detail })
+    }
 }
