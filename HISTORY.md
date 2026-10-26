@@ -305,3 +305,6 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - C4 완료 (`ea1ffcc`, `83de51d`; `DESIGN-C.md` 10.4): 칸 생성(KeyLocalLock 65칸이 파일럿 19칸을 덮음, Aspect 12칸), 질문 규칙(3초안 8칸, 1초안 9/8/6칸), 묶음 검사, 검토 묶음. 도구 사실 WITNESS와 ISSUE_ONLY를 더했다.
   - 메인 세션 확인: gate 목표 모델을 손으로 고침, 테스트 536개, 변이 63회 불일치 0, 기계적 변이 264개 변화 0 (`mutation/rerun-c4/`).
   - 새 질문 2개를 사용자에게 묻는다: KeyLocalLock "unLock·sweep은 entry를 만들지 않음", Aspect "생성 함수가 throw하면".
+- 서명 (사용자 승인 2026-10-26, `2137e85`): KeyLocalLock unLock·sweep의 `no_entry_created`, Aspect의 `factory_throw`. C4의 칸 생성이 찾은 빈틈이다.
+  - 결과: KeyLocalLock 방식 b OPEN 11 → 5 (남은 것은 모두 UC1에서 나옴), Aspect는 모든 칸이 정해짐. 여섯 모듈 PROVEN.
+  - 5차 재측정 (`MUTATION.md` 9.8): KeyLocalLock 변화 0 (예측 맞음). Aspect 변이 15회는 판정 그대로, `factory_throw`가 진짜 위반으로 더 보고됨.
