@@ -316,3 +316,9 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 흐름의 빈틈 3개 메우기 시작 (사용자 요청 2026-10-26, feature-developer): (1) 절 분리와 `align --check`가 init·lemma·probe를 보고, 실패하면 오류 줄만 담은 FEEDBACK을 교정 상자에 쓴다(최대 2회); (2) 결정 파일의 `open` 결정과 규칙 6(참조가 OPEN인 칸을 초안이 정하면 질문); (3) LANGUAGE.md의 `gIssued` 조건 안내.
 - 빈틈 메우기 완료 (`2158745`; `DESIGN-C.md` 10.7): init·lemma·probe 검사와 FEEDBACK 되돌림, `open` 결정과 규칙 6, LANGUAGE.md의 `gIssued` 안내. 실제 실행 자료로 확인: 규칙 6이 monitor 의무 칸(H14s)을 질문으로 올리고, open으로 정하면 그 의무가 든 초안을 막는다. 후속(방식 b의 규칙 6 제한, 재현 기록 갱신)은 진행 중.
 - 후속 완료 (`8d1ce1c`, `5b49821`): 방식 b의 규칙 6은 이전 결정의 open 칸만 본다 (실제 실행 방식 b의 잡음 4칸이 사라짐). 파일럿 재현 기록을 다시 만들었다: 질문 7칸(C16 포함), align --check는 C16 때문에 의도대로 실패하고 FEEDBACK 1줄. 메인 세션 확인: 테스트 551개, 변이 63회 불일치 0.
+
+### 사용자 결정 (2026-10-26): AI 코드 지원 범위 넓히기
+
+- 계획과 예측은 결과 전에 `AI-CODE.md` 14절에 등록했다 (`2d479ee`). 2b에서 판정하지 못한 action 14개를 원인별로 셌다: Semaphore를 먼저 만들고 넘기는 모양 9, 값으로 쓴 if/when·별칭 2, `?.`·멤버 helper 3, compute 밖 토큰 3 (겹침 있음).
+- A1-A5 구현 시작 (feature-developer), Part B(compute 밖 토큰) 설계 시작 (deep-reasoner, `DESIGN-D.md`).
+- 과적합 검사: 구현 뒤 새 AI 구현 12개를 만들어 수정 전·후 도구를 모두 돌린다. 기준: 수정 뒤 판정 비율 75% 이상.
