@@ -1,6 +1,7 @@
 package kv.cli
 
 import kv.frontend.ActionSite
+import kv.frontend.ClientSite
 import kv.frontend.Frontend
 import kv.emit.AssumedFact
 import kv.emit.Emitted
@@ -43,9 +44,12 @@ import java.io.PrintStream
 import kotlin.system.exitProcess
 
 private const val USAGE = """usage:
-  kv discover [--classpath CP] [--kotlinc "ARGS"] FILE.kt|DIR...
+  kv discover [--classpath CP] [--kotlinc "ARGS"] [--client] FILE.kt|DIR...
       Compiles the files (a directory means every .kt file under it) and lists every ConcurrentHashMap call that
-      can be an action: compute, computeIfAbsent, putIfAbsent, put, remove, m[k] = v and getOrPut.
+      can be an action: compute, computeIfAbsent, putIfAbsent, put, remove, m[k] = v and getOrPut. With --client
+      (DESIGN-E 6.10 E0), it lists the client module candidates instead: each class with a CompletableFuture.runAsync
+      call, its public functions (entries) with the private helpers they reach, and its tasks (the lambda literals
+      that reach runAsync, with the helpers they pass through).
   kv resolve --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
       Checks the sidecar, compiles its source files (relative to DIR) and binds its Kotlin names to FIR symbols.
   kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
@@ -119,16 +123,18 @@ fun runCli(
     if (command == "spec") return spec(args.drop(1), out, err)
     // `kv verify --draft` (DESIGN-C.md 9.2 JC6): the sidecar is checked as not signed yet.
     val draft = command == "verify" && "--draft" in args
+    // `kv discover --client` (DESIGN-E 6.10 E0): client module candidates instead of map action calls.
+    val client = command == "discover" && "--client" in args
     val options =
         try {
-            Options.parse(args.drop(1).filterNot { draft && it == "--draft" })
+            Options.parse(args.drop(1).filterNot { draft && it == "--draft" || client && it == "--client" })
         } catch (e: UsageError) {
             err.println("kv: ${e.message}")
             err.println(USAGE)
             return 2
         }
     return when (command) {
-        "discover" -> discover(options, out, err)
+        "discover" -> discover(options, out, err, client)
         "resolve" -> resolve(options, out, err)
         "lower" -> lower(options, out, err)
         "emit" -> emit(options, out, err)
@@ -145,19 +151,29 @@ private fun discover(
     options: Options,
     out: PrintStream,
     err: PrintStream,
+    client: Boolean,
 ): Int {
     if (options.files.isEmpty()) {
         err.println("kv: discover needs at least one .kt file")
         return 2
     }
-    val result = Frontend.run(options.files.flatMap { if (it.isDirectory) Frontend.kotlinFiles(it) else listOf(it) }, options.classpath, options.kotlincArgs)
+    val result = Frontend.run(options.files.flatMap { if (it.isDirectory) Frontend.kotlinFiles(it) else listOf(it) }, options.classpath, options.kotlincArgs, clients = client)
     if (!result.compiled) {
         err.print(result.messages)
         err.println("kv: compilation failed")
         return 1
     }
-    result.sites.forEach { out.println(format(it)) }
+    if (client) result.clients.forEach { formatClient(it).forEach(out::println) } else result.sites.forEach { out.println(format(it)) }
     return 0
+}
+
+/** The lines of one client module candidate: the class, its entries, its tasks and the spawns discovery cannot follow. */
+private fun formatClient(c: ClientSite): List<String> {
+    fun at(p: kv.kvir.Pos) = "${p.line}:${p.col}"
+    return listOf("${c.pos} client ${c.fqn} entries=${c.entries.size} tasks=${c.tasks.size}") +
+        c.entries.map { "${it.pos} entry ${it.name} helpers=${it.helpers.joinToString(",").ifEmpty { "-" }}" } +
+        c.tasks.map { "${it.lambda} task fun=${it.inFunction} via=${it.via.joinToString(",").ifEmpty { "-" }} spawn=${at(it.spawn)}" } +
+        c.opaque.map { "${it.spawn} spawn unresolved: ${it.reason}" }
 }
 
 /**
