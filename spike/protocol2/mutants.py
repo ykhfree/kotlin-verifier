@@ -1,15 +1,63 @@
 """DESIGN-E spike: Kotlin-source mutants of req-shield ReqShield (core), as the L3 lowering of DESIGN-E would emit them.
 
-Each entry applies exact edits to target.vpr. An edit is (old, new, count): `old` must occur exactly `count` times in
-the file (count > 1 when the edited Kotlin helper is inlined at several call sites), so a target edit that breaks a
-mutant fails loudly. The Kotlin change each mutant stands for is in its comment; lines are ReqShield.kt at 2e792d2.
-Same output contract as ../aspect/mutants.py:
-Usage: python3 -I mutants.py OUT_DIR   (writes OUT_DIR/<id>.vpr and prints "<id> <expect>" per line)
+Two bases (DESIGN-E 5): `canonical` is target.vpr, the code as it is. `fixed` is target.vpr with FIX applied, the
+Viper form of fixed-core.patch (fixed.vpr is a copy of it). Each entry applies exact edits to the base. An edit is
+(old, new, count): `old` must occur exactly `count` times (count > 1 when the edited Kotlin helper is inlined at several
+call sites), so a base edit that breaks a mutant fails loudly. On the fixed base, FIX is also applied to the text of
+every edit, so a mutant of the fixed code keeps the fix wherever it keeps the fixed lines.
+The Kotlin change each mutant stands for is in its comment; lines are ReqShield.kt at 2e792d2.
+Usage: python3 -I mutants.py OUT_DIR [--base canonical|fixed]
+  Writes OUT_DIR/original.vpr (the base) and OUT_DIR/<id>.vpr, and prints "<id> <expect>" per line. Expectations
+  (verdicts.py checks them against isolate.py): base=<IDs> = the original fails exactly these obligations; fail = the
+  entry fails an obligation the original does not; same = the entry fails exactly what the original fails; pass = none.
 """
 import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# The fix (fixed-core.patch) in Viper: (old, new, count in target.vpr). releaseQuietly and the refresh-path try/catch
+# catch an Exception; under A1 no call throws an Error, so these branches never set exc. The last two lines adapt C2's
+# own release calls, which the fixed code makes through releaseQuietly (count 0 in target.vpr).
+FIX = [
+    ("// DESIGN-E spike: req-shield ReqShield (core), lock discipline.",
+     "// DESIGN-E spike: req-shield ReqShield (core) with spike/protocol2/fixed-core.patch, lock discipline.", 1),
+    ("          if (e_66 != NONE) {\n            exc := e_66                 // propagates as is\n",
+     "          if (e_66 != NONE && !IS_EXCEPTION(e_66)) {\n"
+     "            exc := e_66                 // FIX: catch (e: Exception) skips the refresh; an Error propagates\n", 1),
+    ("          if (e_101 != NONE) {\n            exc := e_101                // replaces the pending return or exception\n",
+     "          if (e_101 != NONE && !IS_EXCEPTION(e_101)) {\n"
+     "            exc := e_101                // FIX: releaseQuietly logs an Exception; an Error replaces the result\n", 1),
+    ("      if (e_265_at72 != NONE) {\n",
+     "      if (e_265_at72 != NONE && !IS_EXCEPTION(e_265_at72)) {   // FIX: releaseQuietly logs an Exception\n", 1),
+    ("              if (e_265_at122 != NONE) {\n",
+     "              if (e_265_at122 != NONE && !IS_EXCEPTION(e_265_at122)) {   // FIX: releaseQuietly logs an Exception\n", 1),
+    ("          exc := e_c2a != NONE ? e_c2a : CE_GET\n",
+     "          exc := e_c2a != NONE && !IS_EXCEPTION(e_c2a) ? e_c2a : CE_GET   // FIX: releaseQuietly\n", 0),
+    ("          if (e_c2b != NONE) {\n",
+     "          if (e_c2b != NONE && !IS_EXCEPTION(e_c2b)) {   // FIX: releaseQuietly\n", 0),
+]
+
+# What the original of each base fails (DESIGN-E 5.2): the user's UE3 decision makes the canonical original fail.
+BASE_FAILS = {"canonical": "RET_hit,RET_recheck,RET_supplier_error", "fixed": ""}
+
+
+def fixify(text):
+    """FIX applied to any text: the fixed form of every unfixed line it holds."""
+    for old, new, _ in FIX:
+        text = text.replace(old, new)
+    return text
+
+
+def base_text(base):
+    text = open(os.path.join(HERE, "target.vpr")).read()
+    if base == "canonical":
+        return text
+    for old, new, count in FIX:
+        found = text.count(old)
+        if found != count:
+            sys.exit("FIX matched %d times in target.vpr, expected %d: %r" % (found, count, old[:70]))
+    return fixify(text)
 
 
 # executeCallable's release on failure, at its two inlined copies with a token (task_69 @72, createReqShieldData @122).
@@ -210,10 +258,10 @@ MUTANTS = {
          "            var reqShieldData__120: Ref := new(value)\n", 1),
     ]),
 
-    # ---- Controls: equivalent Kotlin rewrites, expected PROVEN ----
+    # ---- Controls: equivalent Kotlin rewrites; they fail exactly what the base original fails ----
     # Kotlin: executeSetCacheFunction without finally: release in a `catch (e: Throwable)` that rethrows (wrapping an
     # Exception as SET_CACHE_ERROR), and again after a normal return.
-    "C1_write_release_without_finally": ("pass", [
+    "C1_write_release_without_finally": ("same", [
         ("  e_237_at126, b_237_at126 := setCacheFunction(k, reqShieldData)   // try @236-237\n"
          "  if (e_237_at126 != NONE) {\n"
          "    if (IS_EXCEPTION(e_237_at126)) {\n"
@@ -259,7 +307,7 @@ MUTANTS = {
     # Kotlin: handleLockForCacheCreation without the flag:
     #   val cachedData = try { executeGetCacheFunction(...) } catch (e: Throwable) { unLock(...); throw e }
     #   if (cachedData != null) { unLock(...); return cachedData }
-    "C2_recheck_release_without_flag": ("pass", [
+    "C2_recheck_release_without_flag": ("same", [
         ("        var cacheCreationRequired__92: Bool := false\n", "", 1),
         ("        if (e_224_at95 != NONE) {\n"
          "          exc := CE_GET\n"
@@ -302,7 +350,7 @@ MUTANTS = {
     # Kotlin: the refresh lambda releases in one finally around the supplier and the write:
     #   try { val data = build(wrapSupplier { callable.call() }); wrapSet { setCacheFunction(...) } }
     #   finally { if (token != null) reqShieldConfig.keyLock.unLock(key, lockType, token) }
-    "C3_refresh_release_in_one_finally": ("pass", [
+    "C3_refresh_release_in_one_finally": ("same", [
         ("  if (e_262_at72 != NONE) {\n"
          "    // getOrElse { ... } @263: runCatching caught every Throwable\n" + FAIL72 + "  }\n",
          "  if (e_262_at72 != NONE) {\n"
@@ -330,25 +378,37 @@ MUTANTS = {
          "  }\n", 1),
     ]),
 
-    # ---- Assumption toggles (DESIGN-E 4): expected FAILED; they show what each trusted-model choice carries ----
-    "A1_errors_not_fatal": ("fail", [
+    # ---- Assumption toggles (DESIGN-E 4): what each signed assumption carries ----
+    "A1_off_errors_not_fatal": ("fail", [
         ("define ERRORS_ARE_FATAL true", "define ERRORS_ARE_FATAL false", 1),
     ]),
-    "A2_lock_calls_throw": ("fail", [
-        ("define LOCK_CALLS_THROW false", "define LOCK_CALLS_THROW true", 1),
+    # The model before the UE3 decision: lock calls never throw.
+    "A2_on_lock_calls_return": ("pass", [
+        ("define LOCK_CALLS_THROW true", "define LOCK_CALLS_THROW false", 1),
     ]),
-    "A3_accepted_task_may_be_dropped": ("fail", [
+    "A3_off_accepted_task_may_be_dropped": ("fail", [
         ("define ACCEPTED_TASKS_RUN true", "define ACCEPTED_TASKS_RUN false", 1),
+    ]),
+    "A4_off_throwing_unlock_keeps_obligation": ("fail", [
+        ("define THROWING_UNLOCK_RELEASES true", "define THROWING_UNLOCK_RELEASES false", 1),
+    ]),
+    "A5_off_throwing_trylock_may_take_lock": ("fail", [
+        ("define THROWING_TRYLOCK_TAKES_NOTHING true", "define THROWING_TRYLOCK_TAKES_NOTHING false", 1),
     ]),
 }
 
 
-def build(out_dir):
-    src = open(os.path.join(HERE, "target.vpr")).read()
+def build(out_dir, base):
+    src = base_text(base)
     os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "original.vpr"), "w") as f:
+        f.write(src)
+    print("original", "base=" + BASE_FAILS[base])
     for name, (expect, edits) in MUTANTS.items():
         text = src
         for old, new, count in edits:
+            if base == "fixed":
+                old, new = fixify(old), fixify(new)
             found = text.count(old)
             if found != count:
                 sys.exit("%s: replacement matched %d times, expected %d: %r" % (name, found, count, old[:70]))
@@ -359,4 +419,12 @@ def build(out_dir):
 
 
 if __name__ == "__main__":
-    build(sys.argv[1])
+    args = sys.argv[1:]
+    chosen = "canonical"
+    if "--base" in args:
+        i = args.index("--base")
+        chosen = args[i + 1]
+        del args[i:i + 2]
+    if chosen not in BASE_FAILS or len(args) != 1:
+        sys.exit("usage: mutants.py OUT_DIR [--base canonical|fixed]")
+    build(args[0], chosen)

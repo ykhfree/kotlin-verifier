@@ -43,3 +43,17 @@ req-shield의 `ReqShield` (요청 합치기, single-flight): `core/.../ReqShield
 - 구현 추정 (DESIGN-E 6.10, 추정): core 12.5-19.5 인일 (E0-E4), coroutine +3-5, reactor +10-20. aspect 캐시(B)는 7-12 인일이었다.
 
 판단: 도입 비용은 새 프로토콜이 기존 모델 층에 맞는지에 크게 달려 있다. aspect 캐시는 L1에 맞았고, ReqShield는 새 층을 요구한다. 손 모델(spike)은 병목이 아니다 (약 16분). 비용은 함수 본문 전체의 lowering(예외, 람다, 반복문)에 있다.
+
+## 5. 구현 전 예측 (2026-10-27, 결과 전)
+
+사용자 결정 (2026-10-26): core 변형 구현 (E0-E4). UE1 호출 하나의 규율, UE2·UE4 가정, UE3 "이미 얻은 결과를 잃지 않는다". 손 모델의 기준은 A2를 끈 `spike/protocol2/target.vpr`이고, 고친 core는 `fixed.vpr`과 `fixed-core.patch`다 (DESIGN-E 5.6).
+
+예측 (도구가 낼 결과):
+1. 원본 core: FAILED, 깨지는 의무는 정확히 RET_hit, RET_recheck, RET_supplier_error. LD_* 7개, MODE, SUP_once, POLL_bound, TERM, 나머지 RET은 PROVEN.
+2. 고친 core (`fixed-core.patch`를 적용한 사본): PROVEN.
+3. 손으로 고른 변이 12개와 대조 3개, 가정 토글: 판정과 깨지는 의무가 `spike/protocol2/expected-verdicts.txt`와 같다 (원본 위와 고친 코드 위 모두).
+4. 생성 모델은 정규화 뒤 `target.vpr`, `fixed.vpr`과 같다 (gate).
+5. 기존 결과는 그대로다: 기존 sidecar 8개의 `kv discover`/`kv lower` 출력과 생성 Viper가 바이트 단위로 같다; AI 구현 24개의 보고서가 Silicon 시간 말고 같다; 테스트 621개와 손 변이 63회 불일치 0.
+6. 사용자 서명: 16개 (의도 절 12, 가정 4) + 신뢰 선언 6개 + 어휘 층 승인 1번 (DESIGN-E 2.5).
+
+진행 방식: 마일스톤 E0-E2(발견, 문법, 함수 본문 lowering)를 먼저 하고 메인 세션이 확인한 뒤 E3-E4(emitter와 gate, 보고서와 변이)를 한다. 구현 agent는 `spike/protocol2/`를 고치지 못한다. req-shield 코드는 도구가 예측 1을 보고한 뒤에 고친다 (사용자에게 묻고).

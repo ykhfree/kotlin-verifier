@@ -1,19 +1,42 @@
-target: none
-M1_no_release_on_supplier_failure: LD_noleak
-M2_no_release_after_rejection: LD_noleak
-M3_double_release: LD_own, LD_supplier, LD_transfer
-M4_write_without_lock_after_fallback: LD_write, RET_supplier
-M5_unlock_with_stale_token: LD_own
-M6_unlock_wrong_lock_type: LD_own
-M7_refresh_without_lock: LD_supplier, LD_write
-M8_create_lock_in_update_only_mode: MODE_create
-M9_swallow_supplier_error: LD_own, LD_transfer, LD_write, RET_supplier_error
-M10_retry_fallback_supplier: SUP_once
-M11_only_failed_reads_count: HOLE, TERM
-M12_release_before_write: LD_own, LD_transfer
-C1_write_release_without_finally: none
-C2_recheck_release_without_flag: none
-C3_refresh_release_in_one_finally: none
-A1_errors_not_fatal: LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error
-A2_lock_calls_throw: RET_hit, RET_recheck, RET_supplier_error
-A3_accepted_task_may_be_dropped: LD_noleak
+canonical/A1_off_errors_not_fatal: LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error
+canonical/A2_on_lock_calls_return: none
+canonical/A3_off_accepted_task_may_be_dropped: LD_noleak, RET_hit, RET_recheck, RET_supplier_error
+canonical/A4_off_throwing_unlock_keeps_obligation: LD_noleak, RET_hit, RET_recheck, RET_supplier_error
+canonical/A5_off_throwing_trylock_may_take_lock: LD_noleak, RET_hit, RET_recheck, RET_supplier_error
+canonical/C1_write_release_without_finally: RET_hit, RET_recheck, RET_supplier_error
+canonical/C2_recheck_release_without_flag: RET_hit, RET_recheck, RET_supplier_error
+canonical/C3_refresh_release_in_one_finally: RET_hit, RET_recheck, RET_supplier_error
+canonical/M1_no_release_on_supplier_failure: LD_noleak, RET_hit, RET_recheck
+canonical/M10_retry_fallback_supplier: RET_hit, RET_recheck, RET_supplier_error, SUP_once
+canonical/M11_only_failed_reads_count: HOLE, RET_hit, RET_recheck, RET_supplier_error, TERM
+canonical/M12_release_before_write: LD_own, LD_transfer, RET_hit, RET_recheck, RET_supplier_error
+canonical/M2_no_release_after_rejection: LD_noleak, RET_hit, RET_recheck, RET_supplier_error
+canonical/M3_double_release: LD_own, LD_supplier, LD_transfer, RET_hit, RET_recheck
+canonical/M4_write_without_lock_after_fallback: LD_write, RET_hit, RET_recheck, RET_supplier, RET_supplier_error
+canonical/M5_unlock_with_stale_token: LD_own, RET_hit, RET_recheck, RET_supplier_error
+canonical/M6_unlock_wrong_lock_type: LD_own, RET_hit, RET_recheck, RET_supplier_error
+canonical/M7_refresh_without_lock: LD_supplier, LD_write, RET_hit, RET_recheck, RET_supplier_error
+canonical/M8_create_lock_in_update_only_mode: MODE_create, RET_hit, RET_recheck, RET_supplier_error
+canonical/M9_swallow_supplier_error: LD_own, LD_transfer, LD_write, RET_hit, RET_recheck, RET_supplier_error
+canonical/original: RET_hit, RET_recheck, RET_supplier_error
+fixed/A1_off_errors_not_fatal: LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error
+fixed/A2_on_lock_calls_return: none
+fixed/A3_off_accepted_task_may_be_dropped: LD_noleak
+fixed/A4_off_throwing_unlock_keeps_obligation: LD_noleak
+fixed/A5_off_throwing_trylock_may_take_lock: LD_noleak
+fixed/C1_write_release_without_finally: none
+fixed/C2_recheck_release_without_flag: none
+fixed/C3_refresh_release_in_one_finally: none
+fixed/M1_no_release_on_supplier_failure: LD_noleak
+fixed/M10_retry_fallback_supplier: SUP_once
+fixed/M11_only_failed_reads_count: HOLE, TERM
+fixed/M12_release_before_write: LD_own, LD_transfer
+fixed/M2_no_release_after_rejection: LD_noleak
+fixed/M3_double_release: LD_own, LD_supplier, LD_transfer
+fixed/M4_write_without_lock_after_fallback: LD_write, RET_supplier
+fixed/M5_unlock_with_stale_token: LD_own
+fixed/M6_unlock_wrong_lock_type: LD_own
+fixed/M7_refresh_without_lock: LD_supplier, LD_write
+fixed/M8_create_lock_in_update_only_mode: MODE_create
+fixed/M9_swallow_supplier_error: LD_own, LD_transfer, LD_write, RET_supplier_error
+fixed/original: none

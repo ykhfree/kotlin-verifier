@@ -17,8 +17,15 @@
 // 5. A trace record `tr` per thread run counts the calls of the trusted interfaces (events). Properties are stated
 //    over it. Event rules are effect-based: a cache read is the first read, a read under the CREATE lease
 //    (recheck), or a poll, by the call's history and its obligations, not by its code position.
+// 6. Canonical assumptions (user decisions 2026-10-26, DESIGN-E 2.3 and 4): A1, A3, A4 and A5 on; A2 off, so the
+//    KeyLock calls may throw (UE3). The original fails RET_hit, RET_recheck and RET_supplier_error (DESIGN-E 5.2).
 
 domain Key {}
+
+// A5 off: the token of a lock the store took although tryLock threw. The caller never sees it.
+domain LostToken {
+  function lostToken(k: Key, lt: Int): Int
+}
 
 define NULL (-1)
 
@@ -52,10 +59,12 @@ define OK 1
 // MAX_CONSECUTIVE_GET_CACHE_FAILURES (ConfigValues.kt:33)
 define MAX_FAIL 3
 
-// ---- Assumptions of the trusted models (DESIGN-E 4). The spike's baseline is the first value. ----
-define ERRORS_ARE_FATAL true   // A1: a java.lang.Error ends the process, so no call throws one here
-define LOCK_CALLS_THROW false  // A2: KeyLock.tryLock and KeyLock.unLock return normally
-define ACCEPTED_TASKS_RUN true // A3: a task the executor accepted runs (no shutdownNow drop)
+// ---- Assumptions of the trusted models (DESIGN-E 4), canonical values ----
+define ERRORS_ARE_FATAL true               // A1 on: a java.lang.Error ends the process, so no call throws one here
+define LOCK_CALLS_THROW true               // A2 off (UE3): KeyLock.tryLock and KeyLock.unLock may throw
+define ACCEPTED_TASKS_RUN true             // A3 on: a task the executor accepted runs (no shutdownNow drop)
+define THROWING_UNLOCK_RELEASES true       // A4 on: a throwing unLock ends the obligation (ReqShield.kt:150)
+define THROWING_TRYLOCK_TAKES_NOTHING true // A5 on: a throwing tryLock leaves the caller no obligation
 define MAY_ERR (!ERRORS_ARE_FATAL)
 
 // ---- Obligation (DESIGN-E 3.1) ----
@@ -159,17 +168,19 @@ define EV_SUP(tr, e, v) {
 // ---- Trusted models (DESIGN-E 3.3) ----
 
 // KeyLock.tryLock (KeyLock.kt:28-35): an ownership token, or null when another holder owns the lock.
-// A throw leaves the caller no obligation; a lock the store took anyway ends by its lease.
+// A5: a throw leaves the caller no obligation; a lock the store took anyway ends by its lease.
 method KeyLock_tryLock(k: Key, lt: Int) returns (exc: Int, t: Int)
   ensures exc == NONE || (LOCK_CALLS_THROW && exc == RTE) || (MAY_ERR && exc == ERR)
   ensures exc != NONE ==> t == NULL
   ensures t != NULL ==> Lease(k, lt, t)
+  ensures exc != NONE && !THROWING_TRYLOCK_TAKES_NOTHING ==> Lease(k, lt, lostToken(k, lt))
 
 // KeyLock.unLock (KeyLock.kt:37-46): only the holder releases, so the caller must hold the obligation (LD_own).
-// The call consumes it even when it throws: the release was attempted and the lease ends the rest.
+// A4: the call consumes it even when it throws: the release was attempted and the lease ends the rest.
 method KeyLock_unLock(k: Key, lt: Int, t: Int) returns (exc: Int, released: Bool)
   requires t != NULL && Lease(k, lt, t)
   ensures exc == NONE || (LOCK_CALLS_THROW && exc == RTE) || (MAY_ERR && exc == ERR)
+  ensures exc != NONE && !THROWING_UNLOCK_RELEASES ==> Lease(k, lt, t)
 
 // getCacheFunction(key) (ReqShieldConfiguration.kt:34): data, null, or a throw. The cache is outside the model.
 method getCacheFunction(k: Key) returns (exc: Int, d: Ref)

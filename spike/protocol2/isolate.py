@@ -5,7 +5,8 @@ one copy per property ID that keeps only that ID's tagged checks (`ensures|asser
 other tagged checks into `true`, plus one copy with every tagged check off. It verifies all copies and maps each error to
 a property ID. Untagged checks stay on in every copy: the obligation transfer of a spawn (LD_transfer), the unLock
 precondition (LD_own), the loop invariants of the hole (HOLE) and the loop measure (TERM).
-Usage: python3 -I isolate.py OUT_DIR FILE.vpr...   (prints one line per file: name, then the IDs that failed)
+Usage: python3 -I isolate.py OUT_DIR FILE.vpr...
+  Prints one line per file: <parent directory>/<name>: the IDs that failed ("none" if none).
 """
 import concurrent.futures
 import os
@@ -60,14 +61,19 @@ def verify(path):
     return found
 
 
+def key(path):
+    """The file's name with its directory, so the same mutant of two bases stays apart: canonical/M1_..."""
+    return os.path.basename(os.path.dirname(os.path.abspath(path))) + "/" + os.path.splitext(os.path.basename(path))[0]
+
+
 def main(out_dir, files):
     os.makedirs(out_dir, exist_ok=True)
     jobs = {}
     for f in files:
-        name = os.path.splitext(os.path.basename(f))[0]
+        name = key(f)
         text = open(f).read()
         for keep in IDS + ["none"]:
-            path = os.path.join(out_dir, "%s.%s.vpr" % (name, keep))
+            path = os.path.join(out_dir, "%s.%s.vpr" % (name.replace("/", "."), keep))
             with open(path, "w") as g:
                 g.write(copy_with(text, keep))
             jobs[path] = name
@@ -76,7 +82,7 @@ def main(out_dir, files):
         for path, found in zip(jobs, pool.map(verify, jobs)):
             result.setdefault(jobs[path], set()).update(found)
     for f in files:
-        name = os.path.splitext(os.path.basename(f))[0]
+        name = key(f)
         print("%s: %s" % (name, ", ".join(sorted(result[name])) or "none"))
 
 

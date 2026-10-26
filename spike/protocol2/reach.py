@@ -1,8 +1,10 @@
-"""Branch reachability check for target.vpr (DESIGN-E 6.2): is the model vacuous on a path it should cover?
+"""Branch reachability check (DESIGN-E 5.4): is the model vacuous on a path it should cover?
 
 Inserts `refute false` after each anchor line below. A reachable branch makes its refute succeed; an unreachable one
-fails with "Refute holds in all cases". So the generated file verifies with no error iff every probed branch is reachable.
-Usage: python3 -I reach.py OUT.vpr
+fails with "Refute holds in all cases". So the generated file has no refute error iff every probed branch is reachable.
+The anchors hold in both bases (target.vpr and the fixed model). Other errors of the input (a failing postcondition of
+the canonical original) stay in the output; only "Refute holds" errors count.
+Usage: python3 -I reach.py [IN.vpr] OUT.vpr   (IN defaults to target.vpr)
 """
 import os
 import sys
@@ -15,11 +17,14 @@ PROBES = [
     ("hit_no_refresh", "        res := currentReqShieldData__43 // return it @48", "!upd__45"),
     ("refresh_spawned_with_lock", "                exhale TASK69_PRE(k, mode, PHASE(tr), lockType__62, token__66)   // spawn task_69", "token__66 != NULL"),
     ("refresh_spawned_without_lock_OCC", "                exhale TASK69_PRE(k, mode, PHASE(tr), lockType__62, token__66)   // spawn task_69", "mode == OCC"),
-    ("refresh_lock_busy", "            exc := e_66                 // propagates as is\n          }\n        }", "exc == NONE && !onlyCreateCache__63 && token__66 == NULL"),
+    ("refresh_lock_busy", "          EV_TRY(tr, lockType__62)", "e_66 == NONE && token__66 == NULL"),
+    ("refresh_trylock_throws", "          EV_TRY(tr, lockType__62)", "e_66 != NONE"),
     ("refresh_rejected_release", "                e_152_at69, u_152_at69 := KeyLock_unLock(k, lockType__62, token__66)   // @152", None),
     ("recheck_hit", "            ret_96 := true", None),
     ("recheck_throws", "        EV_READ(tr, k, e_224_at95, cachedData__95)", "e_224_at95 != NONE"),
+    ("recheck_release_throws", "          e_101, u_101 := KeyLock_unLock(k, lockType__85, token__89)   // @101", "e_101 != NONE"),
     ("create_supplier_throws_release", "              e_265_at122, u_265_at122 := KeyLock_unLock(k, lockType__85, token__89)   // @265", None),
+    ("create_supplier_release_throws", "              e_265_at122, u_265_at122 := KeyLock_unLock(k, lockType__85, token__89)   // @265", "e_265_at122 != NONE"),
     ("create_spawned_with_lock", "                exhale TASK125_PRE(k, mode, PHASE(tr), lockType__85, token__89)   // spawn task_125", "token__89 != NULL"),
     ("create_spawned_OUC_no_lock", "                exhale TASK125_PRE(k, mode, PHASE(tr), lockType__85, token__89)   // spawn task_125", "mode == OUC"),
     ("create_rejected_release", "                e_152_at125, u_152_at125 := KeyLock_unLock(k, lockType__85, token__89)   // @152", None),
@@ -35,8 +40,8 @@ PROBES = [
 ]
 
 
-def build(out_path):
-    text = open(os.path.join(HERE, "target.vpr")).read()
+def build(in_path, out_path):
+    text = open(in_path).read()
     for pid, anchor, guard in PROBES:
         count = text.count(anchor)
         if count != 1:
@@ -54,4 +59,7 @@ def build(out_path):
 
 
 if __name__ == "__main__":
-    build(sys.argv[1])
+    if len(sys.argv) == 2:
+        build(os.path.join(HERE, "target.vpr"), sys.argv[1])
+    else:
+        build(sys.argv[1], sys.argv[2])

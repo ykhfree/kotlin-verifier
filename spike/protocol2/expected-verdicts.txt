@@ -1,20 +1,44 @@
-== target expect=pass -> ACCEPTED
-== reach expect=pass -> ACCEPTED
-== M1_no_release_on_supplier_failure expect=fail -> DETECTED
-== M2_no_release_after_rejection expect=fail -> DETECTED
-== M3_double_release expect=fail -> DETECTED
-== M4_write_without_lock_after_fallback expect=fail -> DETECTED
-== M5_unlock_with_stale_token expect=fail -> DETECTED
-== M6_unlock_wrong_lock_type expect=fail -> DETECTED
-== M7_refresh_without_lock expect=fail -> DETECTED
-== M8_create_lock_in_update_only_mode expect=fail -> DETECTED
-== M9_swallow_supplier_error expect=fail -> DETECTED
-== M10_retry_fallback_supplier expect=fail -> DETECTED
-== M11_only_failed_reads_count expect=fail -> DETECTED
-== M12_release_before_write expect=fail -> DETECTED
-== C1_write_release_without_finally expect=pass -> ACCEPTED
-== C2_recheck_release_without_flag expect=pass -> ACCEPTED
-== C3_refresh_release_in_one_finally expect=pass -> ACCEPTED
-== A1_errors_not_fatal expect=fail -> DETECTED
-== A2_lock_calls_throw expect=fail -> DETECTED
-== A3_accepted_task_may_be_dropped expect=fail -> DETECTED
+== canonical reach: 24 probes, 0 unreachable
+== fixed reach: 24 probes, 0 unreachable
+== canonical/original expect=base=RET_hit,RET_recheck,RET_supplier_error -> FAILED: RET_hit, RET_recheck, RET_supplier_error
+== canonical/M1_no_release_on_supplier_failure expect=fail -> DETECTED: LD_noleak, RET_hit, RET_recheck  [beyond the original: LD_noleak]
+== canonical/M2_no_release_after_rejection expect=fail -> DETECTED: LD_noleak, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_noleak]
+== canonical/M3_double_release expect=fail -> DETECTED: LD_own, LD_supplier, LD_transfer, RET_hit, RET_recheck  [beyond the original: LD_own, LD_supplier, LD_transfer]
+== canonical/M4_write_without_lock_after_fallback expect=fail -> DETECTED: LD_write, RET_hit, RET_recheck, RET_supplier, RET_supplier_error  [beyond the original: LD_write, RET_supplier]
+== canonical/M5_unlock_with_stale_token expect=fail -> DETECTED: LD_own, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_own]
+== canonical/M6_unlock_wrong_lock_type expect=fail -> DETECTED: LD_own, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_own]
+== canonical/M7_refresh_without_lock expect=fail -> DETECTED: LD_supplier, LD_write, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_supplier, LD_write]
+== canonical/M8_create_lock_in_update_only_mode expect=fail -> DETECTED: MODE_create, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: MODE_create]
+== canonical/M9_swallow_supplier_error expect=fail -> DETECTED: LD_own, LD_transfer, LD_write, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_own, LD_transfer, LD_write]
+== canonical/M10_retry_fallback_supplier expect=fail -> DETECTED: RET_hit, RET_recheck, RET_supplier_error, SUP_once  [beyond the original: SUP_once]
+== canonical/M11_only_failed_reads_count expect=fail -> DETECTED: HOLE, RET_hit, RET_recheck, RET_supplier_error, TERM  [beyond the original: HOLE, TERM]
+== canonical/M12_release_before_write expect=fail -> DETECTED: LD_own, LD_transfer, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_own, LD_transfer]
+== canonical/C1_write_release_without_finally expect=same -> ACCEPTED: RET_hit, RET_recheck, RET_supplier_error
+== canonical/C2_recheck_release_without_flag expect=same -> ACCEPTED: RET_hit, RET_recheck, RET_supplier_error
+== canonical/C3_refresh_release_in_one_finally expect=same -> ACCEPTED: RET_hit, RET_recheck, RET_supplier_error
+== canonical/A1_off_errors_not_fatal expect=fail -> DETECTED: LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error  [beyond the original: LD_noleak, RET_supplier]
+== canonical/A2_on_lock_calls_return expect=pass -> PROVEN: none
+== canonical/A3_off_accepted_task_may_be_dropped expect=fail -> DETECTED: LD_noleak, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_noleak]
+== canonical/A4_off_throwing_unlock_keeps_obligation expect=fail -> DETECTED: LD_noleak, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_noleak]
+== canonical/A5_off_throwing_trylock_may_take_lock expect=fail -> DETECTED: LD_noleak, RET_hit, RET_recheck, RET_supplier_error  [beyond the original: LD_noleak]
+== fixed/original expect=base= -> PROVEN: none
+== fixed/M1_no_release_on_supplier_failure expect=fail -> DETECTED: LD_noleak  [beyond the original: LD_noleak]
+== fixed/M2_no_release_after_rejection expect=fail -> DETECTED: LD_noleak  [beyond the original: LD_noleak]
+== fixed/M3_double_release expect=fail -> DETECTED: LD_own, LD_supplier, LD_transfer  [beyond the original: LD_own, LD_supplier, LD_transfer]
+== fixed/M4_write_without_lock_after_fallback expect=fail -> DETECTED: LD_write, RET_supplier  [beyond the original: LD_write, RET_supplier]
+== fixed/M5_unlock_with_stale_token expect=fail -> DETECTED: LD_own  [beyond the original: LD_own]
+== fixed/M6_unlock_wrong_lock_type expect=fail -> DETECTED: LD_own  [beyond the original: LD_own]
+== fixed/M7_refresh_without_lock expect=fail -> DETECTED: LD_supplier, LD_write  [beyond the original: LD_supplier, LD_write]
+== fixed/M8_create_lock_in_update_only_mode expect=fail -> DETECTED: MODE_create  [beyond the original: MODE_create]
+== fixed/M9_swallow_supplier_error expect=fail -> DETECTED: LD_own, LD_transfer, LD_write, RET_supplier_error  [beyond the original: LD_own, LD_transfer, LD_write, RET_supplier_error]
+== fixed/M10_retry_fallback_supplier expect=fail -> DETECTED: SUP_once  [beyond the original: SUP_once]
+== fixed/M11_only_failed_reads_count expect=fail -> DETECTED: HOLE, TERM  [beyond the original: HOLE, TERM]
+== fixed/M12_release_before_write expect=fail -> DETECTED: LD_own, LD_transfer  [beyond the original: LD_own, LD_transfer]
+== fixed/C1_write_release_without_finally expect=same -> ACCEPTED: none
+== fixed/C2_recheck_release_without_flag expect=same -> ACCEPTED: none
+== fixed/C3_refresh_release_in_one_finally expect=same -> ACCEPTED: none
+== fixed/A1_off_errors_not_fatal expect=fail -> DETECTED: LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error  [beyond the original: LD_noleak, RET_hit, RET_recheck, RET_supplier, RET_supplier_error]
+== fixed/A2_on_lock_calls_return expect=pass -> PROVEN: none
+== fixed/A3_off_accepted_task_may_be_dropped expect=fail -> DETECTED: LD_noleak  [beyond the original: LD_noleak]
+== fixed/A4_off_throwing_unlock_keeps_obligation expect=fail -> DETECTED: LD_noleak  [beyond the original: LD_noleak]
+== fixed/A5_off_throwing_trylock_may_take_lock expect=fail -> DETECTED: LD_noleak  [beyond the original: LD_noleak]
