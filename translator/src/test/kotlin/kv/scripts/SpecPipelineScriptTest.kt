@@ -143,6 +143,10 @@ class SpecPipelineScriptTest {
 
     private val opusDraft get() = File(pilotDir, "frozen-phase1/D-opus/DRAFT.kv").readText()
 
+    /** A decision file of an earlier run that leaves C16 open (kv-decisions/1). */
+    private val earlierDecisions: File
+        get() = File(dir, "earlier.json").apply { writeText("""{"format": "kv-decisions/1", "decisions": [{"group": "D9", "cells": {"C16": "open"}}]}""") }
+
     /** Gives the run the code after its cells ran without it (mode b, no isolation runs): `kv verify` runs from now on. */
     private fun withCode() {
         val runJson = File(run, "run.json")
@@ -152,12 +156,13 @@ class SpecPipelineScriptTest {
         )
     }
 
-    /** task, collect (phase 1), cells with the pilot cells, the opus answers, collect (phase 2), questions with groups. */
-    private fun pipeline(
-        fakeVerify: Boolean = false,
-        decisions: File? = null,
-    ) {
-        newRun(fakeVerify, decisions = decisions)
+    /**
+     * task, collect (phase 1), cells with the pilot cells, the opus answers, collect (phase 2), questions with groups.
+     * The run is mode b (no code), where only an earlier decision makes a cell a question by rule 6: the run config
+     * names [earlierDecisions], which leaves C16 open (D9, user decision UC1), so the pilot grouping's D9 is a question.
+     */
+    private fun pipeline(fakeVerify: Boolean = false) {
+        newRun(fakeVerify, decisions = earlierDecisions)
         putDraft(opusDraft)
         ok(spec("collect", "--run", run.path, "--drafter", "opus"))
         ok(spec("cells", "--run", run.path, "--cells", pilotCells.path, "--notes", File(protocol, "pilot-cells-notes.md").path))
@@ -330,12 +335,12 @@ class SpecPipelineScriptTest {
 
     @Test
     fun `questions --run - one draft, rule 1 open or assumed - the 6 opus cells and C16 by rule 6, the bundle and the options of Q-D1`() {
-        // The run config names a decision file of an earlier run (DESIGN-C.md 10.6 finding 3): rule 6 takes it too.
-        val earlier = File(dir, "earlier.json").apply { writeText("""{"format": "kv-decisions/1", "decisions": [{"group": "D9", "cells": {"C16": "open"}}]}""") }
-        pipeline(decisions = earlier)
-        assertTrue("\"decisions\": [\n  \"${earlier.path}\"\n ]" in File(run, "run.json").readText(), File(run, "run.json").readText())
+        // The run config names a decision file of an earlier run (DESIGN-C.md 10.6 finding 3). In mode b, rule 6 takes
+        // it alone: the reference's OPEN cells (C05, C16, C19 here) count in mode a only.
+        pipeline()
+        assertTrue("\"decisions\": [\n  \"${File(dir, "earlier.json").path}\"\n ]" in File(run, "run.json").readText(), File(run, "run.json").readText())
         val out = ok(spec("questions", "--run", run.path))
-        assertTrue("kv spec questions: 1 draft(s) (opus), mode b; rule 1: the author answered open or assumed; rule 2 off (one draft); rule 4 on (proxy: --reference); rule 6 on (the reference's OPEN cells, 1 cell(s) that earlier decisions leave open)" in out, out)
+        assertTrue("kv spec questions: 1 draft(s) (opus), mode b; rule 1: the author answered open or assumed; rule 2 off (one draft); rule 4 on (proxy: --reference); rule 6 on (1 cell(s) that earlier decisions leave open)" in out, out)
         assertEquals("question cells: 7 C04 C05 C09 C12 C15 C16 C19", out.lines().single { it.startsWith("question cells:") })
         assertTrue("  C16 rules 6 |" in out, out)
         assertTrue("group check: OK, 5 group(s)" in out, out)
