@@ -61,6 +61,15 @@ class Workspace(
         replaceOnce(File(root, "$rel/KeyLocalLock.kt"), old, new)
     }
 
+    /** Replaces the variant's KeyLocalLock.kt with [text], in a copy of the sources (an AI implementation, AI-CODE.md). */
+    fun writeKotlin(
+        variant: String,
+        text: String,
+    ) {
+        copySources(variant)
+        File(root, "${variantDirs.getValue(variant)}/KeyLocalLock.kt").writeText(text)
+    }
+
     /** Copies the variant's sources and the support sources under [dir]/root once, and makes it the [root]. */
     private fun copySources(variant: String) {
         val copy = File(dir, "root")

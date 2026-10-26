@@ -2,6 +2,7 @@ package kv.verify
 
 import kv.emit.Emitted
 import kv.emit.MethodKind
+import kv.emit.RESERVE_FRESH
 import kv.emit.Source
 import kv.emit.emitViper
 import kv.emit.kind
@@ -14,9 +15,11 @@ import kv.kvir.Module
 import kv.kvir.ModuleKind
 import kv.model.TrustedModels
 import kv.kvir.Pos
+import kv.kvir.Reservation
 import kv.kvir.Status
 import kv.kvir.checkWellFormed
 import kv.kvir.incomplete
+import kv.lower.NOT_RESERVE
 import kv.lower.bindGhosts
 import kv.sidecar.Allowance
 import kv.sidecar.AllowanceItem
@@ -124,15 +127,19 @@ data class Report(
     val propertyCheck: PropertyCheck? = null,
 )
 
-private val ACTIONS = setOf(MethodKind.ACTION, MethodKind.STRAY)
+/** The rows with an action's verdict and sub-status: actions, stray actions and reserve steps (DESIGN-D.md 6.7). */
+private val ACTIONS = setOf(MethodKind.ACTION, MethodKind.STRAY, MethodKind.RESERVE)
 
 private val HOLE_ID = Regex("""MI_INV_\d+""")
 
 /** The emitter's warning for a probe it left out; group 1 is the probe's label (`probe` or `probe NAME`). */
 private val NOT_EMITTED = Regex("""^(probe(?: \w+)?) not emitted: """)
 
-/** True if the error is at a hole conjunct: its `ensures MI_INV_i(S)` line or its text. */
-private val Finding.atHole: Boolean get() = (source as? Source.Sidecar)?.id?.let(HOLE_ID::matches) == true
+/**
+ * True if the error is at a hole conjunct (its `ensures MI_INV_i(S)` line or its text) or at a fresh assert of a
+ * reserve step, which rests on MI only (DESIGN-D.md 6.7 item 2).
+ */
+private val Finding.atHole: Boolean get() = (source as? Source.Sidecar)?.id?.let(HOLE_ID::matches) == true || (source as? Source.Kotlin)?.note == RESERVE_FRESH
 
 private const val OUTSIDE = "Silicon reported errors outside every method"
 
@@ -166,7 +173,8 @@ fun Report.withPropertyCheck(
     val checked =
         rows.map { r ->
             if (r.verdict != Verdict.FAILED || r.label !in actions) return@map r
-            val mine = errors.filter { emitted.methodAt(it.line)?.label == r.label }.map { finding(emitted, it) }
+            // A reserve step keeps its fresh asserts in pass 2; an error there is not a property (DESIGN-D.md 6.7 item 2).
+            val mine = errors.filter { emitted.methodAt(it.line)?.label == r.label }.map { finding(emitted, it) }.filter { !it.atHole }
             when {
                 error != null -> r.copy(sub = SubStatus.INVARIANT_ONLY_CHECK_ERROR)
                 mine.isNotEmpty() -> r.copy(sub = SubStatus.PROPERTY, pass2 = mine)
@@ -264,7 +272,7 @@ fun Report.render(): String {
     line("${module.id} (${sidecar.file.substringAfterLast('/')})    module: $verdict" + (seconds?.let { " (Silicon %.2f s)".format(it) } ?: ""))
     error?.let { line("  ERROR: $it; this run proves nothing") }
     sidecarErrors.forEach { line("  sidecar error: $it") }
-    val actions = rows.filter { it.kind == MethodKind.ACTION || it.kind == MethodKind.STRAY }
+    val actions = rows.filter { it.kind in ACTIONS }
     val width = actions.maxOfOrNull { label(it).length } ?: 0
     for (r in actions) {
         line("  ${label(r).padEnd(width)}  ${r.kotlin?.let(::at) ?: "-"}   ${r.verdict}" + (r.sub?.let { " (${it.text})" } ?: ""))
@@ -285,7 +293,7 @@ fun Report.render(): String {
             else -> {}
         }
     }
-    val others = rows.filter { it.kind != MethodKind.ACTION && it.kind != MethodKind.STRAY }
+    val others = rows.filter { it.kind !in ACTIONS }
     if (others.isNotEmpty()) line("  " + others.joinToString(" · ") { "${it.label} ${it.verdict}" })
     others.forEach { r ->
         r.note?.let { line("      ${r.label}: $it") }
@@ -308,13 +316,18 @@ fun Report.render(): String {
         (listOf(a.key) + a.free).joinToString { fv -> "${fv.local.name} <- ${fv.kotlin} ${fv.local.pos.line}:${fv.local.pos.col} (${origin(fv, fv === a.key)})" }
     module.operations.forEach { line("    ${it.name}: ${freeValues(it.action)}") }
     module.strayActions.forEach { line("    stray ${it.id}: ${freeValues(it)}") }
+    // DESIGN-D.md 6.7: each reserve step, the counter operation it runs before its action, and its reserved val.
+    module.operations.mapNotNull { op -> op.reserve?.let { op.name to it } }.takeIf { it.isNotEmpty() }?.let { steps ->
+        line("  Reserve steps (DESIGN-D.md 2.1, one atomic counter step before the action): " + steps.joinToString { (op, r) -> "$op: ${r.local.name} <- ${r.kotlin} ${r.pos.line}:${r.pos.col}" })
+    }
     line("  Trusted models: ${sidecar.uses.joinToString { it.model.text }}")
     line("  Trusted project functions: " + sidecar.trusted.joinToString { "${it.shortName} (reviewed: ${it.reviewed})" }.ifEmpty { "none" })
     if (module.kind == ModuleKind.INSTANCE) {
         instanceAssumptions().forEach { line("  $it") }
         line("  Init: the map is empty and no object is created, as after the constructor's initializer")
     } else {
-        line("  Init: the ghost records are allocated by an inhale with no record issued (trusted)")
+        val reserved = if (module.operations.any { it.reserve != null && it.action.status == Status.Supported }) " or reserved" else ""
+        line("  Init: the ghost records are allocated by an inhale with no record issued$reserved (trusted)")
     }
     // Q5 (DESIGN-v0.md 8.3): v0 lists the racy reads without linking them to the free values that hold them.
     val racy = module.ledger.filter { it.kind == DispositionKind.RACY_READ }.distinctBy { it.what to it.pos }
@@ -326,6 +339,10 @@ fun Report.render(): String {
             module.diagnostics.filter { it.kind == DiagnosticKind.UNSUPPORTED }.map { "${it.message} ${at(it.pos)}" } +
             module.ledger.filter { it.kind == DispositionKind.UNSUPPORTED }.distinctBy { it.what to it.pos }.map { "${it.what} ${it.pos.line}:${it.pos.col}" }
     line("Unsupported: " + unsupported.distinct().joinToString("; ").ifEmpty { "none" })
+    // DESIGN-D.md 6.3: why a counter increment outside an action is not a reserve step.
+    module.diagnostics.filter { it.kind == DiagnosticKind.INFO && it.message.startsWith(NOT_RESERVE) }.takeIf { it.isNotEmpty() }?.let { ds ->
+        line("Counter operations outside an action: " + ds.joinToString("; ") { "${at(it.pos)}: ${it.message}" })
+    }
     reach?.let { r ->
         val head = "Branch reachability (INFO, not part of any verdict; DESIGN-v0.md 5.4):"
         if (r.notChecked != null) {
@@ -341,7 +358,12 @@ fun Report.render(): String {
     return sb.toString()
 }
 
-private fun label(r: Row) = if (r.kind == MethodKind.STRAY) r.label else "action ${r.label}"
+private fun label(r: Row) =
+    when (r.kind) {
+        MethodKind.STRAY -> r.label
+        MethodKind.RESERVE -> "step ${r.label}"
+        else -> "action ${r.label}"
+    }
 
 /** What INVARIANT_ONLY means. It is not harmless: a real defect can fail this way (MUTATION.md change log, item 6). */
 private val INVARIANT_ONLY =
@@ -355,7 +377,7 @@ private val INVARIANT_ONLY =
 private fun origin(
     fv: FreeValue,
     key: Boolean,
-): String = fv.origin.kind() + if (fv.sidecarName == null && !key) ", unnamed" else ""
+): String = fv.origin.kind() + if (fv.sidecarName == null && !key && fv.origin !is Reservation) ", unnamed" else ""
 
 /**
  * The assumptions an instance module adds (DESIGN-B.md 5.5 rule 2, appendix B, 9.4 questions 5, 6 and 8). Silicon

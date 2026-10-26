@@ -103,4 +103,15 @@ class CheckTest {
         assertEquals("name-clash", errors.single().code, errors.joinToString("\n"))
         assertTrue("a name the tool generates" in errors.single().message)
     }
+
+    @Test
+    fun `the names of reserve steps are tool names - gPend, MI_PEND and the method prefix reserve_ (DESIGN-D 6_6)`() {
+        val pend = check("state m:   Map<Key, LockInfo> = lockMap", "state gPend:   Map<Key, LockInfo> = lockMap")
+        assertEquals("name-clash", pend.single().code, pend.joinToString("\n"))
+        assertTrue("a name the tool generates" in pend.single().message)
+        val prefix = check("operation sweep = compute in KeyLocalLock.Companion {", "operation reserve_sweep = compute in KeyLocalLock.Companion {")
+        assertEquals(listOf("name-clash"), prefix.map { it.code }, prefix.joinToString("\n"))
+        assertTrue("prefix of the tool's reserve step methods" in prefix.single().message, prefix.single().message)
+        assertEquals(lineOf("operation reserve_sweep"), prefix.single().pos.line)
+    }
 }

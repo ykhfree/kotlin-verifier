@@ -8,6 +8,12 @@ object Reserved {
      */
     val names = setOf("S", "k", "qt", "qk", "qr", "NULL", "exc", "null")
 
-    /** Macros, functions, fields, locals and methods the tool generates; `gFor` is the creation ledger (DESIGN-B.md 4.1). */
-    val tool = setOf("has", "carried", "created", "gFor", "pre_tok", "GHOST_PERMS", "MI_PERMS", "MI_OWN", "MI_INV", "MI", "HIST", "init", "probe")
+    /**
+     * Macros, functions, fields, locals and methods the tool generates; `gFor` is the creation ledger (DESIGN-B.md
+     * 4.1), `gPend` and `MI_PEND` the reservations of reserve steps (DESIGN-D.md 6.6).
+     */
+    val tool = setOf("has", "carried", "created", "gFor", "pre_tok", "GHOST_PERMS", "MI_PERMS", "MI_OWN", "MI_INV", "MI", "HIST", "init", "probe", "gPend", "MI_PEND")
+
+    /** The prefix of the method of a reserve step (DESIGN-D.md 6.6): `reserve_<operation>`. No operation name starts with it. */
+    const val RESERVE_PREFIX = "reserve_"
 }

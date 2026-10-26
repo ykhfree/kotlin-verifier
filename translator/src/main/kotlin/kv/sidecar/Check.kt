@@ -147,6 +147,10 @@ private class SidecarChecker(
             g.fields.forEach { global(it.name, "ghost field") }
         }
         s.operations.forEach { global(it.name, "operation") }
+        // DESIGN-D.md 6.6: the method of a reserve step is reserve_<operation>.
+        s.operations.filter { it.name.text.startsWith(Reserved.RESERVE_PREFIX) }.forEach {
+            err(it.name.pos, "name-clash", "operation '${it.name.text}' starts with '${Reserved.RESERVE_PREFIX}', the prefix of the tool's reserve step methods")
+        }
         s.properties.forEach { global(it.id, it.kind.name.lowercase()) }
         s.setOnce.forEach { global(it.id, "set-once property") }
     }
