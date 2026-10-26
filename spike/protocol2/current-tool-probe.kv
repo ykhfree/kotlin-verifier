@@ -1,0 +1,11 @@
+// DESIGN-E 8, PROTOCOL2.md prediction 1: the smallest sidecar that names ReqShield's public function as an operation.
+// Measured 2026-10-26 with translator/build/install/kv (kv lower, req-shield 2e792d2): "unsupported operation getAndSet:
+// fun ReqShield.getAndSetReqShieldData has 0 action calls []; an operation has exactly one", module INCOMPLETE.
+module com.linecorp.cse.reqshield.ReqShield
+source "core/src/main/kotlin"
+operation getAndSet = fun ReqShield.getAndSetReqShieldData {
+  result res
+}
+hole MI_INV """
+  true
+"""

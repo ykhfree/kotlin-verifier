@@ -21,3 +21,5 @@ aicode/judge-work/*/out/
 aicode/judge-work/*/check/out/
 aicode/round3g/judge-work/*/build/
 aicode/round3g/judge-work/*/*/classes/
+spike/protocol2/mutants/
+spike/protocol2/mutants.list

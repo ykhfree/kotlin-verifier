@@ -1,0 +1,555 @@
+// DESIGN-E spike: req-shield ReqShield (core), lock discipline. Hand-written "expected emitter output" of an
+// L3 lowering (thread-modular obligations), not tool output.
+// Source: req-shield core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt at 2e792d2.
+// `@<line>` in comments is a line of that file.
+//
+// Encoding (DESIGN-E 3 and 5):
+// 1. Lease(k, lt, t) is a linear obligation: a non-null KeyLock.tryLock result creates it, KeyLock.unLock consumes it.
+//    Viper permissions are affine, so every thread end (the call, each task) checks NO_LEASES with forperm.
+// 2. The public function is one method. Its private helpers are inlined. Their local names carry the helper line;
+//    a helper inlined at several call sites gets the call-site line as a suffix (`_at122`).
+// 3. A lambda handed to the executor (runInBackground @137) is a task: its own method. At the spawn the caller
+//    exhales the task precondition: the obligations the task releases, the captured constants, and the branch
+//    conditions over captured values. The task's leak check is its own NO_LEASES.
+// 4. Exceptions: every call that may throw returns an exception kind. `exc != NONE` skips the rest of the try or
+//    function; catch clauses test the kind; finally blocks run on every path and a throw inside one replaces the
+//    pending exception or return.
+// 5. A trace record `tr` per thread run counts the calls of the trusted interfaces (events). Properties are stated
+//    over it. Event rules are effect-based: a cache read is the first read, a read under the CREATE lease
+//    (recheck), or a poll, by the call's history and its obligations, not by its code position.
+
+domain Key {}
+
+define NULL (-1)
+
+// LockType
+define CREATE 0
+define UPDATE 1
+
+// ReqShieldWorkMode
+define CAU 0 // CREATE_AND_UPDATE_CACHE
+define OCC 1 // ONLY_CREATE_CACHE
+define OUC 2 // ONLY_UPDATE_CACHE
+
+// Exception kinds; NONE = no exception
+define NONE 0
+define CE_GET 1 // ClientException(GET_CACHE_ERROR)
+define CE_SET 2 // ClientException(SET_CACHE_ERROR)
+define CE_SUP 3 // ClientException(SUPPLIER_ERROR)
+define REE 4    // java.util.concurrent.RejectedExecutionException
+define RTE 5    // another RuntimeException
+define CHK 6    // a checked Exception other than InterruptedException
+define INTR 7   // InterruptedException
+define ERR 8    // java.lang.Error
+define IS_EXCEPTION(e) (CE_GET <= (e) && (e) <= INTR) // `catch (e: Exception)`
+
+// Event outcomes in the trace record
+define HIT 1
+define MISS 2
+define THREW 3
+define OK 1
+
+// MAX_CONSECUTIVE_GET_CACHE_FAILURES (ConfigValues.kt:33)
+define MAX_FAIL 3
+
+// ---- Assumptions of the trusted models (DESIGN-E 4). The spike's baseline is the first value. ----
+define ERRORS_ARE_FATAL true   // A1: a java.lang.Error ends the process, so no call throws one here
+define LOCK_CALLS_THROW false  // A2: KeyLock.tryLock and KeyLock.unLock return normally
+define ACCEPTED_TASKS_RUN true // A3: a task the executor accepted runs (no shutdownNow drop)
+define MAY_ERR (!ERRORS_ARE_FATAL)
+
+// ---- Obligation (DESIGN-E 3.1) ----
+// One per successful acquisition: key k, lock type lt, ownership token t.
+predicate Lease(k: Key, lt: Int, t: Int)
+
+// LD_noleak: the thread holds no obligation.
+define NO_LEASES [true, forperm qk: Key, qlt: Int, qt: Int [Lease(qk, qlt, qt)] :: false]
+// The thread holds an obligation for key k and lock type lt.
+define HOLDS(k, lt) (!(forperm qk: Key, qlt: Int, qt: Int [Lease(qk, qlt, qt)] :: !(qk == (k) && qlt == (lt))))
+
+// LD_write: a cache write of a collapsing path holds that path's lock (CLAUDE.md:103-105 work modes).
+define WRITE_OK(k, phase, mode) (
+  ((phase) == CREATE && (mode) != OUC ==> HOLDS(k, CREATE)) &&
+  ((phase) == UPDATE && (mode) != OCC ==> HOLDS(k, UPDATE)))
+// LD_supplier: so does a supplier call, except the creation fallback after the wait gave up (ReqShield.kt:165-167).
+define SUP_OK(k, phase, mode, gaveUp) (
+  ((phase) == CREATE && (mode) != OUC ==> HOLDS(k, CREATE) || (gaveUp)) &&
+  ((phase) == UPDATE && (mode) != OCC ==> HOLDS(k, UPDATE)))
+
+// ---- ReqShieldData ----
+field value: Int
+
+// ---- Trace record (DESIGN-E 3.2): one per thread run ----
+field first: Int      // outcome of the first cache read: HIT, MISS, THREW (0: none yet)
+field firstObj: Ref
+field recheck: Int    // outcome of a cache read made while holding a CREATE obligation
+field recheckObj: Ref
+field pollHit: Bool   // a later read made while holding no CREATE obligation found data
+field pollObj: Ref
+field npoll: Int      // later reads made while holding no CREATE obligation
+field consec: Int     // trailing run of failed reads among them
+field sup: Int        // outcome of the last supplier call: OK or THREW (0: none)
+field supVal: Int
+field nsup: Int       // supplier calls
+field ntryC: Int      // tryLock(CREATE) calls
+field ntryU: Int      // tryLock(UPDATE) calls
+field nspawn: Int     // tasks the executor accepted
+
+define TR(tr) (acc(tr.first) && acc(tr.firstObj) && acc(tr.recheck) && acc(tr.recheckObj) &&
+  acc(tr.pollHit) && acc(tr.pollObj) && acc(tr.npoll) && acc(tr.consec) && acc(tr.sup) && acc(tr.supVal) &&
+  acc(tr.nsup) && acc(tr.ntryC) && acc(tr.ntryU) && acc(tr.nspawn))
+
+define TR_NEW(tr) {
+  tr := new(*)
+  tr.first := 0
+  tr.firstObj := null
+  tr.recheck := 0
+  tr.recheckObj := null
+  tr.pollHit := false
+  tr.pollObj := null
+  tr.npoll := 0
+  tr.consec := 0
+  tr.sup := 0
+  tr.supVal := 0
+  tr.nsup := 0
+  tr.ntryC := 0
+  tr.ntryU := 0
+  tr.nspawn := 0
+}
+
+// The path of the call: a first read that hit is the update path; otherwise the creation path.
+define PHASE(tr) ((tr).first == HIT ? UPDATE : CREATE)
+// The wait gave up: maxAttemptGetCache polls, or MAX_FAIL failed reads in a row (ReqShield.kt:169-171).
+define GAVE_UP(tr, maxAttempt) ((tr).npoll >= (maxAttempt) || (tr).consec >= MAX_FAIL)
+
+// Event rules (tool-generated after each trusted call; effect-based).
+define EV_READ(tr, k, e, d) {
+  if (tr.first == 0) {
+    tr.first := ((e) != NONE ? THREW : ((d) != null ? HIT : MISS))
+    tr.firstObj := d
+  } elseif (HOLDS(k, CREATE)) {
+    tr.recheck := ((e) != NONE ? THREW : ((d) != null ? HIT : MISS))
+    tr.recheckObj := d
+  } else {
+    tr.npoll := tr.npoll + 1
+    if ((e) == NONE) {
+      tr.consec := 0
+      if ((d) != null) {
+        tr.pollHit := true
+        tr.pollObj := d
+      }
+    } else {
+      tr.consec := tr.consec + 1
+    }
+  }
+}
+define EV_TRY(tr, lt) {
+  if ((lt) == CREATE) {
+    tr.ntryC := tr.ntryC + 1
+  } else {
+    tr.ntryU := tr.ntryU + 1
+  }
+}
+define EV_SUP(tr, e, v) {
+  tr.nsup := tr.nsup + 1
+  tr.sup := ((e) == NONE ? OK : THREW)
+  tr.supVal := v
+}
+
+// ---- Trusted models (DESIGN-E 3.3) ----
+
+// KeyLock.tryLock (KeyLock.kt:28-35): an ownership token, or null when another holder owns the lock.
+// A throw leaves the caller no obligation; a lock the store took anyway ends by its lease.
+method KeyLock_tryLock(k: Key, lt: Int) returns (exc: Int, t: Int)
+  ensures exc == NONE || (LOCK_CALLS_THROW && exc == RTE) || (MAY_ERR && exc == ERR)
+  ensures exc != NONE ==> t == NULL
+  ensures t != NULL ==> Lease(k, lt, t)
+
+// KeyLock.unLock (KeyLock.kt:37-46): only the holder releases, so the caller must hold the obligation (LD_own).
+// The call consumes it even when it throws: the release was attempted and the lease ends the rest.
+method KeyLock_unLock(k: Key, lt: Int, t: Int) returns (exc: Int, released: Bool)
+  requires t != NULL && Lease(k, lt, t)
+  ensures exc == NONE || (LOCK_CALLS_THROW && exc == RTE) || (MAY_ERR && exc == ERR)
+
+// getCacheFunction(key) (ReqShieldConfiguration.kt:34): data, null, or a throw. The cache is outside the model.
+method getCacheFunction(k: Key) returns (exc: Int, d: Ref)
+  ensures exc == NONE || exc == RTE || exc == CHK || (MAY_ERR && exc == ERR)
+  ensures exc != NONE ==> d == null
+
+// setCacheFunction(key, data, ttl) (ReqShieldConfiguration.kt:33): a Boolean, or a throw.
+method setCacheFunction(k: Key, d: Ref) returns (exc: Int, b: Bool)
+  ensures exc == NONE || exc == RTE || exc == CHK || (MAY_ERR && exc == ERR)
+
+// Callable.call() (the supplier): a value, or a throw (Callable.call declares `throws Exception`).
+method Callable_call() returns (exc: Int, v: Int)
+  ensures exc == NONE || exc == RTE || exc == CHK || exc == INTR || (MAY_ERR && exc == ERR)
+
+// CompletableFuture.runAsync(task, executor) (JDK 21 CompletableFuture.java:2031-2034, 1815-1820; Executor.java:126-136):
+// the executor accepts the task, or execute throws RejectedExecutionException and the task never runs.
+// An accepted task runs later, once (AsyncRun.run @1798-1809 catches the task's Throwable). `dropped`: A3 is off.
+method CompletableFuture_runAsync() returns (exc: Int, dropped: Bool)
+  ensures exc == NONE || exc == REE || (MAY_ERR && exc == ERR)
+  ensures dropped ==> exc == NONE && !ACCEPTED_TASKS_RUN
+
+// Thread.sleep(GET_CACHE_INTERVAL_MILLIS): returns, or throws InterruptedException.
+method Thread_sleep() returns (exc: Int)
+  ensures exc == NONE || exc == INTR || (MAY_ERR && exc == ERR)
+
+// decideToUpdateCache(...) (CommonUtils.kt:19-28): reads the clock, so an arbitrary Boolean.
+method decideToUpdateCache() returns (b: Bool)
+
+// ---- Tasks ----
+
+// Task precondition of the lambda @69 (updateReqShieldData): the obligation its release calls name, the captured
+// constant lockType, the caller's path, and the branch condition @68 over captured values.
+define TASK69_PRE(k, mode, phase, lt, t) (
+  (mode == CAU || mode == OCC || mode == OUC) &&
+  lt == UPDATE && phase == UPDATE && (mode == OCC || t != NULL) &&
+  (t != NULL ==> Lease(k, lt, t)))
+
+// runInBackground(key, lockType, token) { ... } @69-76: refresh the entry.
+method task_69(k: Key, mode: Int, phase: Int, lt: Int, t: Int) returns (exc: Int, tr: Ref)
+  requires TASK69_PRE(k, mode, phase, lt, t)
+  ensures NO_LEASES                                   // LD_noleak
+  ensures TR(tr)
+  ensures tr.nsup <= 1                                // SUP_once
+{
+  exc := NONE
+  TR_NEW(tr)
+  // executeCallable(callable, key, lockType, token) @72 (inlined, 255-268)
+  var e_262_at72: Int
+  var v_262_at72: Int
+  assert SUP_OK(k, phase, mode, false)                // LD_supplier
+  e_262_at72, v_262_at72 := Callable_call()           // runCatching { callable.call() } @261-262
+  EV_SUP(tr, e_262_at72, v_262_at72)
+  if (e_262_at72 != NONE) {
+    // getOrElse { ... } @263: runCatching caught every Throwable
+    if (t != NULL) {                                  // token != null && lockType != null @264
+      var e_265_at72: Int
+      var u_265_at72: Bool
+      e_265_at72, u_265_at72 := KeyLock_unLock(k, lt, t)   // @265
+      if (e_265_at72 != NONE) {
+        exc := e_265_at72
+      } else {
+        exc := CE_SUP                                 // throw ClientException(SUPPLIER_ERROR) @267
+      }
+    } else {
+      exc := CE_SUP
+    }
+  }
+  if (exc == NONE) {
+    // buildReqShieldData(...) @71
+    var reqShieldData__70: Ref := new(value)
+    reqShieldData__70.value := v_262_at72
+    // executeSetCacheFunction(setCacheFunction, key, reqShieldData, lockType, token) @75 (inlined, 229-249)
+    var e_237_at75: Int
+    var b_237_at75: Bool
+    assert WRITE_OK(k, phase, mode)                   // LD_write
+    e_237_at75, b_237_at75 := setCacheFunction(k, reqShieldData__70)   // try @236-237
+    if (e_237_at75 != NONE) {
+      if (IS_EXCEPTION(e_237_at75)) {
+        exc := CE_SET                                 // catch (e: Exception) @238-239
+      } else {
+        exc := e_237_at75
+      }
+    }
+    // finally @240-248
+    if (t != NULL) {
+      var e_243_at75: Int
+      var u_243_at75: Bool
+      e_243_at75, u_243_at75 := KeyLock_unLock(k, lt, t)   // @243
+      if (e_243_at75 != NONE) {
+        exc := e_243_at75                             // a throw in finally replaces the pending one
+      }
+    }
+  }
+  // The task's exception completes the future; whenComplete @146 logs it.
+}
+
+// Task precondition of the lambda @125 (createReqShieldData).
+define TASK125_PRE(k, mode, phase, lt, t) (
+  (mode == CAU || mode == OCC || mode == OUC) &&
+  lt == CREATE && phase == CREATE && (mode == OUC || t != NULL) &&
+  (t != NULL ==> Lease(k, lt, t)))
+
+// runInBackground(key, lockType, token) { executeSetCacheFunction(...) } @125-127: write the new entry.
+method task_125(k: Key, mode: Int, phase: Int, lt: Int, t: Int, reqShieldData: Ref) returns (exc: Int)
+  requires TASK125_PRE(k, mode, phase, lt, t)
+  ensures NO_LEASES                                   // LD_noleak
+{
+  exc := NONE
+  // executeSetCacheFunction(setCacheFunction, key, reqShieldData, lockType, token) @126 (inlined, 229-249)
+  var e_237_at126: Int
+  var b_237_at126: Bool
+  assert WRITE_OK(k, phase, mode)                     // LD_write
+  e_237_at126, b_237_at126 := setCacheFunction(k, reqShieldData)   // try @236-237
+  if (e_237_at126 != NONE) {
+    if (IS_EXCEPTION(e_237_at126)) {
+      exc := CE_SET                                   // catch (e: Exception) @238-239
+    } else {
+      exc := e_237_at126
+    }
+  }
+  // finally @240-248
+  if (t != NULL) {
+    var e_243_at126: Int
+    var u_243_at126: Bool
+    e_243_at126, u_243_at126 := KeyLock_unLock(k, lt, t)   // @243
+    if (e_243_at126 != NONE) {
+      exc := e_243_at126
+    }
+  }
+}
+
+// ---- The public function ----
+
+// getAndSetReqShieldData(key, callable, timeToLiveMillis) @38-52.
+// mode = reqShieldConfig.reqShieldWorkMode, maxAttempt = reqShieldConfig.maxAttemptGetCache (immutable instance values).
+method getAndSetReqShieldData(k: Key, mode: Int, maxAttempt: Int) returns (exc: Int, res: Ref, tr: Ref)
+  requires mode == CAU || mode == OCC || mode == OUC
+  ensures TR(tr)
+  ensures NO_LEASES                                                         // LD_noleak
+  ensures mode == OUC ==> tr.ntryC == 0                                     // MODE_create
+  ensures mode == OCC ==> tr.ntryU == 0                                     // MODE_update
+  ensures tr.nsup <= 1                                                      // SUP_once
+  ensures tr.npoll <= (maxAttempt < 0 ? 0 : maxAttempt)                    // POLL_bound
+  ensures tr.first == HIT ==> exc == NONE && res == tr.firstObj             // RET_hit
+  ensures tr.first == THREW ==> exc == CE_GET                               // RET_get_error
+  ensures tr.recheck == HIT ==> exc == NONE && res == tr.recheckObj && tr.nsup == 0 && tr.nspawn == 0  // RET_recheck
+  ensures tr.pollHit ==> exc == NONE && res == tr.pollObj && tr.nsup == 0   // RET_poll
+  ensures tr.sup == OK ==> exc == NONE && res != null && acc(res.value, wildcard) && res.value == tr.supVal  // RET_supplier
+  ensures tr.sup == THREW ==> exc == CE_SUP                                 // RET_supplier_error
+{
+  exc := NONE
+  res := null
+  TR_NEW(tr)
+
+  // executeGetCacheFunction(getCacheFunction, key) @43 (inlined, 219-227)
+  var e_224_at43: Int
+  var currentReqShieldData__43: Ref
+  e_224_at43, currentReqShieldData__43 := getCacheFunction(k)
+  EV_READ(tr, k, e_224_at43, currentReqShieldData__43)
+  if (e_224_at43 != NONE) {
+    exc := CE_GET                       // runCatching catches every Throwable; getOrElse throws GET_CACHE_ERROR @226
+  }
+
+  if (exc == NONE) {
+    if (currentReqShieldData__43 != null) {
+      // currentReqShieldData?.let { ... } @44-48: a hit
+      var upd__45: Bool
+      upd__45 := decideToUpdateCache() // shouldUpdateCache(it) @45
+      if (upd__45) {
+        // updateReqShieldData(key, callable, timeToLiveMillis) @46 (inlined, 57-78)
+        var lockType__62: Int := UPDATE
+        var onlyCreateCache__63: Bool := mode == OCC
+        var token__66: Int := NULL
+        if (!onlyCreateCache__63) {
+          var e_66: Int
+          e_66, token__66 := KeyLock_tryLock(k, lockType__62)   // @66
+          EV_TRY(tr, lockType__62)
+          if (e_66 != NONE) {
+            exc := e_66                 // propagates as is
+          }
+        }
+        if (exc == NONE) {
+          if (onlyCreateCache__63 || token__66 != NULL) {      // @68
+            // runInBackground(key, lockType, token) { ... } @69 (inlined, 137-158)
+            var e_145_at69: Int
+            var dropped_145_at69: Bool
+            e_145_at69, dropped_145_at69 := CompletableFuture_runAsync()   // @144-146
+            if (e_145_at69 == NONE) {
+              tr.nspawn := tr.nspawn + 1
+              if (!dropped_145_at69) {
+                exhale TASK69_PRE(k, mode, PHASE(tr), lockType__62, token__66)   // spawn task_69
+              }
+            } elseif (e_145_at69 == REE) {
+              // catch (e: RejectedExecutionException) @147
+              if (token__66 != NULL) {                         // @149
+                var e_152_at69: Int
+                var u_152_at69: Bool
+                e_152_at69, u_152_at69 := KeyLock_unLock(k, lockType__62, token__66)   // @152
+                if (e_152_at69 != NONE && !IS_EXCEPTION(e_152_at69)) {
+                  exc := e_152_at69           // catch (unlockError: Exception) @153 does not catch an Error
+                }
+              }
+            } else {
+              exc := e_145_at69               // only RejectedExecutionException is caught
+            }
+          }
+        }
+      }
+      if (exc == NONE) {
+        res := currentReqShieldData__43 // return it @48
+      }
+    } else {
+      // ?: run { return handleLockForCacheCreation(key, callable, timeToLiveMillis) } @49-50 (inlined, 80-111)
+      var lockType__85: Int := CREATE
+      var onlyUpdateCache__86: Bool := mode == OUC
+      var token__89: Int := NULL
+      if (!onlyUpdateCache__86) {
+        var e_89: Int
+        e_89, token__89 := KeyLock_tryLock(k, lockType__85)     // @89
+        EV_TRY(tr, lockType__85)
+        if (e_89 != NONE) {
+          exc := e_89
+        }
+      }
+      var ret_96: Bool := false         // `return cachedData` @96 is pending
+      if (exc == NONE && token__89 != NULL) {
+        var cacheCreationRequired__92: Bool := false
+        // try @93
+        var e_224_at95: Int
+        var cachedData__95: Ref
+        e_224_at95, cachedData__95 := getCacheFunction(k)      // executeGetCacheFunction @95 (inlined)
+        EV_READ(tr, k, e_224_at95, cachedData__95)
+        if (e_224_at95 != NONE) {
+          exc := CE_GET
+        } else {
+          if (cachedData__95 != null) {
+            res := cachedData__95       // return cachedData @96
+            ret_96 := true
+          } else {
+            cacheCreationRequired__92 := true   // @97
+          }
+        }
+        // finally @98-103
+        if (!cacheCreationRequired__92) {
+          var e_101: Int
+          var u_101: Bool
+          e_101, u_101 := KeyLock_unLock(k, lockType__85, token__89)   // @101
+          if (e_101 != NONE) {
+            exc := e_101                // replaces the pending return or exception
+            ret_96 := false
+            res := null
+          }
+        }
+      }
+      if (exc == NONE && !ret_96) {
+        if (onlyUpdateCache__86 || token__89 != NULL) {        // @106
+          // createReqShieldData(key, callable, timeToLiveMillis, lockType, token) @107 (inlined, 113-130)
+          // executeCallable(callable, key, lockType, token) @122 (inlined, 255-268)
+          var e_262_at122: Int
+          var v_262_at122: Int
+          assert SUP_OK(k, PHASE(tr), mode, GAVE_UP(tr, maxAttempt))   // LD_supplier
+          e_262_at122, v_262_at122 := Callable_call()
+          EV_SUP(tr, e_262_at122, v_262_at122)
+          if (e_262_at122 != NONE) {
+            if (token__89 != NULL) {                           // token != null && lockType != null @264
+              var e_265_at122: Int
+              var u_265_at122: Bool
+              e_265_at122, u_265_at122 := KeyLock_unLock(k, lockType__85, token__89)   // @265
+              if (e_265_at122 != NONE) {
+                exc := e_265_at122
+              } else {
+                exc := CE_SUP                                  // @267
+              }
+            } else {
+              exc := CE_SUP
+            }
+          }
+          if (exc == NONE) {
+            // buildReqShieldData(...) @121
+            var reqShieldData__120: Ref := new(value)
+            reqShieldData__120.value := v_262_at122
+            // runInBackground(key, lockType, token) { ... } @125 (inlined, 137-158)
+            var e_145_at125: Int
+            var dropped_145_at125: Bool
+            e_145_at125, dropped_145_at125 := CompletableFuture_runAsync()   // @144-146
+            if (e_145_at125 == NONE) {
+              tr.nspawn := tr.nspawn + 1
+              if (!dropped_145_at125) {
+                exhale TASK125_PRE(k, mode, PHASE(tr), lockType__85, token__89)   // spawn task_125
+              }
+            } elseif (e_145_at125 == REE) {
+              // catch (e: RejectedExecutionException) @147
+              if (token__89 != NULL) {                         // @149
+                var e_152_at125: Int
+                var u_152_at125: Bool
+                e_152_at125, u_152_at125 := KeyLock_unLock(k, lockType__85, token__89)   // @152
+                if (e_152_at125 != NONE && !IS_EXCEPTION(e_152_at125)) {
+                  exc := e_152_at125
+                }
+              }
+            } else {
+              exc := e_145_at125
+            }
+            if (exc == NONE) {
+              res := reqShieldData__120                        // return reqShieldData @129
+            }
+          }
+        } else {
+          // handleLockFailure(key, callable, timeToLiveMillis) @109 (inlined, 173-198)
+          var attempts__178: Int := 0
+          var consecutiveFailures__179: Int := 0
+          var found_187: Ref := null    // `return cachedData` @187 is pending
+          var break_192: Bool := false  // `break` @192
+          while (exc == NONE && found_187 == null && !break_192 && attempts__178 < maxAttempt)   // @181
+            // tool frame: the loop reads tr.first and writes the poll fields; it holds no obligation (LD_wait)
+            invariant acc(tr.first, 1/2) && tr.first == MISS
+            invariant acc(tr.npoll) && acc(tr.consec) && acc(tr.pollHit) && acc(tr.pollObj)
+            invariant NO_LEASES                                 // LD_wait
+            invariant exc == NONE || exc == CE_GET || (MAY_ERR && exc == ERR)
+            // hole (loop invariant): the code's counters against the trace
+            invariant 0 <= attempts__178 && (maxAttempt < 0 ? attempts__178 == 0 : attempts__178 <= maxAttempt)
+            invariant tr.npoll <= attempts__178 && (exc == NONE ==> tr.npoll == attempts__178)
+            invariant exc == NONE && found_187 == null ==> tr.consec == consecutiveFailures__179
+            invariant (break_192 ==> consecutiveFailures__179 >= MAX_FAIL) && (!break_192 ==> consecutiveFailures__179 < MAX_FAIL)
+            invariant (found_187 != null) == tr.pollHit && (found_187 != null ==> tr.pollObj == found_187 && exc == NONE)
+            decreases maxAttempt - attempts__178
+          {
+            attempts__178 := attempts__178 + 1                 // @182
+            // sleepBetweenPolls(key) @183 (inlined, 200-208)
+            var e_202_at183: Int
+            e_202_at183 := Thread_sleep()
+            if (e_202_at183 == INTR) {
+              exc := CE_GET                                    // interrupt restored, GET_CACHE_ERROR @203-206
+            } elseif (e_202_at183 != NONE) {
+              exc := e_202_at183
+            }
+            if (exc == NONE) {
+              // try @185
+              var e_186: Int
+              var cachedData__186: Ref
+              e_186, cachedData__186 := getCacheFunction(k)    // @186
+              EV_READ(tr, k, e_186, cachedData__186)
+              if (e_186 == NONE) {
+                if (cachedData__186 != null) {
+                  found_187 := cachedData__186                 // return cachedData @187
+                } else {
+                  consecutiveFailures__179 := 0                // @189
+                }
+              } elseif (IS_EXCEPTION(e_186)) {
+                // catch (e: Exception) @190
+                consecutiveFailures__179 := consecutiveFailures__179 + 1
+                if (consecutiveFailures__179 >= MAX_FAIL) {
+                  break_192 := true                            // @192
+                }
+              } else {
+                exc := e_186
+              }
+            }
+          }
+          if (exc == NONE) {
+            if (found_187 != null) {
+              res := found_187
+            } else {
+              // return buildReqShieldData(executeCallable(callable, key, null, null), timeToLiveMillis) @197
+              var e_262_at197: Int
+              var v_262_at197: Int
+              assert SUP_OK(k, PHASE(tr), mode, GAVE_UP(tr, maxAttempt))   // LD_supplier
+              e_262_at197, v_262_at197 := Callable_call()
+              EV_SUP(tr, e_262_at197, v_262_at197)
+              if (e_262_at197 != NONE) {
+                exc := CE_SUP                                  // token == null: nothing to release @196, @267
+              } else {
+                var d_197: Ref := new(value)
+                d_197.value := v_262_at197
+                res := d_197
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
