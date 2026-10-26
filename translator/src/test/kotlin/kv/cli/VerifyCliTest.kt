@@ -101,6 +101,25 @@ class VerifyCliTest {
         assertTrue("module: ERROR" in out.lines().first(), out)
     }
 
+    /**
+     * DESIGN-C.md C5: `spec.py outcomes` and `align --check` run drafts on code. Without --draft an unsigned allowance
+     * clause is a sidecar error (U7); with it the module is verified and the report says first that it is a draft.
+     */
+    @Test
+    fun `--draft accepts an unsigned intent clause and marks the report`() {
+        Silicon.check(Silicon.defaultHome())
+        ws.editSpec("keylocallock.common.kv", "  reviewed \"ykhfree 2026-10-23: README: only the holder that acquired the lock can release it\" sha256 \"d679f5c705a959be\"\n", "")
+        val (signed, _, signedErr) = verify("core")
+        assertEquals(4, signed, signedErr)
+        assertTrue("error[unreviewed]" in signedErr, signedErr)
+        val (exit, out, err) = verify("core", "--draft")
+        assertEquals(0, exit, out + err)
+        assertEquals("DRAFT: not signed; the verdict counts for nothing", out.lines()[0], out)
+        assertTrue("module: PROVEN" in out.lines()[1], out)
+        // --draft belongs to verify only.
+        assertEquals(2, kv(listOf("emit", "--draft", "--root", ws.root.path, File(ws.specs, "keylocallock.core.kv").path)).first)
+    }
+
     @Test
     fun `exit 2 for a usage error`() {
         assertEquals(2, kv(listOf("verify", File(ws.specs, "keylocallock.core.kv").path)).first)
