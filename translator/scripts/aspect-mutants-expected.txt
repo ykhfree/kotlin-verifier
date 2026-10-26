@@ -9,6 +9,9 @@
 # - M2, M4, M7: getTargetMethod(joinPoint) runs after createReqShield and before the action, so a raise path drops the
 #   created object (DESIGN-B.md 9.4 question 5); that path fails P_once or MI_INV_1 first. DESIGN-B.md 7.2 measured
 #   the first report without that path (M2 P_stable, M4 and M7 P_once).
+# - 2026-10-26 (DESIGN-C.md 10.4): factory_throw says the factory runs only for an unmapped method. M1, M2, M3, M4
+#   and M7 may call createReqShield for a mapped method (a stale racy read, or a create before the action), so
+#   they also fail factory_throw. The controls R1 and R2 stay PROVEN.
 # - M5: its ReqShield constructor outside createReqShield makes the module INCOMPLETE too (DESIGN-B.md 3.3 rule 4);
 #   FAILED ranks first.
 # - M6: the stray remove is in a different around function per module, so the action column differs.
@@ -17,30 +20,30 @@
 core-spring  original  PROVEN   -                                          -
 core-spring  R1        PROVEN   -                                          -
 core-spring  R2        PROVEN   -                                          -
-core-spring  M1        FAILED   getOrCreate                                P_stable
-core-spring  M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1
-core-spring  M3        FAILED   getOrCreate                                P_once
-core-spring  M4        FAILED   getOrCreate                                P_once; MI_INV_1
+core-spring  M1        FAILED   getOrCreate                                P_stable; factory_throw
+core-spring  M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1; factory_throw
+core-spring  M3        FAILED   getOrCreate                                P_once; factory_throw
+core-spring  M4        FAILED   getOrCreate                                P_once; MI_INV_1; factory_throw
 core-spring  M5        FAILED   getOrCreate                                MI_OWN
 core-spring  M6        FAILED   stray action aroundReqShieldCacheable#100  P_stable
-core-spring  M7        FAILED   getOrCreate                                P_once; MI_INV_1
+core-spring  M7        FAILED   getOrCreate                                P_once; MI_INV_1; factory_throw
 webflux      original  PROVEN   -                                          -
 webflux      R1        PROVEN   -                                          -
 webflux      R2        PROVEN   -                                          -
-webflux      M1        FAILED   getOrCreate                                P_stable
-webflux      M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1
-webflux      M3        FAILED   getOrCreate                                P_once
-webflux      M4        FAILED   getOrCreate                                P_once; MI_INV_1
+webflux      M1        FAILED   getOrCreate                                P_stable; factory_throw
+webflux      M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1; factory_throw
+webflux      M3        FAILED   getOrCreate                                P_once; factory_throw
+webflux      M4        FAILED   getOrCreate                                P_once; MI_INV_1; factory_throw
 webflux      M5        FAILED   getOrCreate                                MI_OWN
 webflux      M6        FAILED   stray action aroundTargetCacheable#83      P_stable
-webflux      M7        FAILED   getOrCreate                                P_once; MI_INV_1
+webflux      M7        FAILED   getOrCreate                                P_once; MI_INV_1; factory_throw
 coroutine    original  PROVEN   -                                          -
 coroutine    R1        PROVEN   -                                          -
 coroutine    R2        PROVEN   -                                          -
-coroutine    M1        FAILED   getOrCreate                                P_stable
-coroutine    M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1
-coroutine    M3        FAILED   getOrCreate                                P_once
-coroutine    M4        FAILED   getOrCreate                                P_once; MI_INV_1
+coroutine    M1        FAILED   getOrCreate                                P_stable; factory_throw
+coroutine    M2        FAILED   getOrCreate                                P_stable; P_once; MI_INV_1; factory_throw
+coroutine    M3        FAILED   getOrCreate                                P_once; factory_throw
+coroutine    M4        FAILED   getOrCreate                                P_once; MI_INV_1; factory_throw
 coroutine    M5        FAILED   getOrCreate                                MI_OWN
 coroutine    M6        FAILED   stray action aroundReqShieldCacheable#98   P_stable
-coroutine    M7        FAILED   getOrCreate                                P_once; MI_INV_1
+coroutine    M7        FAILED   getOrCreate                                P_once; MI_INV_1; factory_throw

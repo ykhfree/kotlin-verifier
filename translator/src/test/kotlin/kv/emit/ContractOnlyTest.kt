@@ -120,13 +120,13 @@ class ContractOnlyTest {
                 "tryLock" to "ensures progress_free", "tryLock" to "ensures progress_live", "tryLock" to "ensures cap_unbacked",
                 "tryLock" to "ensures expired_takeover", "tryLock" to "ensures refusal_keeps_entry",
                 "unLock" to "ends_only_if P3a", "unLock" to "ensures P1", "unLock" to "ensures progress_owner",
-                "sweep" to "ends_only_if P3a",
+                "unLock" to "ensures no_entry_created", "sweep" to "ends_only_if P3a", "sweep" to "ensures no_entry_created",
             ),
             full.clauses.map { it.action to it.name },
         )
-        assertEquals((0..8).toList() + (0..2) + 0, full.clauses.map { it.index })
+        assertEquals((0..8).toList() + (0..3) + (0..1), full.clauses.map { it.index })
         val run1 = emitViper(m, s, onlyClause = 1)
-        assertEquals(listOf("tryLock" to "unbacked_only_if P3b", "unLock" to "ensures P1"), run1.clauses.map { it.action to it.name })
+        assertEquals(listOf("tryLock" to "unbacked_only_if P3b", "unLock" to "ensures P1", "sweep" to "ensures no_entry_created"), run1.clauses.map { it.action to it.name })
         assertEquals(listOf("init", "tryLock", "unLock", "sweep"), run1.methods.map { it.name })
         val tryLock = method(run1.text, "tryLock")
         assertTrue(tryLock.any { it.startsWith("  ensures res != NULL && !tok(res).gBacked ==>") }, tryLock.joinToString("\n"))

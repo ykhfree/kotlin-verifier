@@ -93,15 +93,15 @@ class SpecCheckUnitTest {
     fun `isolation - an error in the kept clause is FAILED, another error of the action makes its clause UNKNOWN, a hole error is named`() {
         val (m, s) = lowerReqShield("coroutine")
         val run1 = emitViper(bindGhosts(m, s), s, onlyClause = 1)
-        // Run 1 keeps tryLock's unbacked_only_if P3b and unLock's P1.
+        // Run 1 keeps tryLock's unbacked_only_if P3b, unLock's P1 and sweep's no_entry_created.
         val p1 = errorAt(run1, "unLock", "ensures res ==> old(has(S, k))", "Postcondition of unLock might not hold.")
         val hole = errorAt(run1, "tryLock", "ensures MI_INV_4(S)", "Postcondition of tryLock might not hold.")
         val r = isolationRun(run1, SiliconOutcome.Failed(listOf(p1, hole)))
-        assertEquals(listOf("tryLock unbacked_only_if P3b UNKNOWN", "unLock ensures P1 FAILED"), r.clauses.map { "${it.action} ${it.clause} ${it.verdict}" })
+        assertEquals(listOf("tryLock unbacked_only_if P3b UNKNOWN", "unLock ensures P1 FAILED", "sweep ensures no_entry_created PROVEN"), r.clauses.map { "${it.action} ${it.clause} ${it.verdict}" })
         assertTrue(r.clauses[0].detail!!.startsWith("another error of the action in this run may hide it: tryLock: Postcondition of tryLock might not hold: sidecar MI_INV_4"), r.clauses[0].detail)
         assertEquals(1, r.hole.size)
-        assertEquals(listOf("PROVEN", "PROVEN"), isolationRun(run1, SiliconOutcome.Verified).clauses.map { it.verdict })
+        assertEquals(listOf("PROVEN", "PROVEN", "PROVEN"), isolationRun(run1, SiliconOutcome.Verified).clauses.map { it.verdict })
         val abnormal = isolationRun(run1, SiliconOutcome.Abnormal("exit code 2", emptyList()))
-        assertEquals(listOf("ERROR", "ERROR") to "exit code 2", abnormal.clauses.map { it.verdict } to abnormal.error)
+        assertEquals(listOf("ERROR", "ERROR", "ERROR") to "exit code 2", abnormal.clauses.map { it.verdict } to abnormal.error)
     }
 }

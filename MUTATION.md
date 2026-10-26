@@ -272,3 +272,9 @@ README 인용 3개는 quote-check로 원문을 확인했다.
 집계 (KeyLocalLock 세 모듈, 264개): FAILED property 138, invariant only 6, PROVEN 52, INCOMPLETE 8, ERROR 36 (review 막힘), 사산 24. 처음 측정(9.5)의 "invariant only" 36개 중 30개가 이제 이름 있는 성질 위반으로 보고된다.
 
 메인 세션 확인: 테스트 519개 통과 (지금 sidecar의 모양을 고정한 테스트 5개를 고쳤다: 기대 목록에 `entry_held`, 필드 고정 경고 0개, PropertyCheckTest 2개는 hole 조각이 먼저 실패하는 경로를 계속 시험하도록 작업 사본에서 `entry_held`를 뺀다), mutantsReqShield 33회와 mutantsAspect 30회 불일치 0.
+
+### 9.8 5차 재측정 (2026-10-26, `no_entry_created`와 `factory_throw` 뒤)
+
+- KeyLocalLock 세 모듈 (`mutation/rerun5/`, 비교 대상 `rerun-c4/`): 판정 변화 0, 하위 상태 변화 0, 실패 의무 변화 0. 예측 1, 2 모두 맞음.
+- Aspect의 손으로 고른 변이 (`scripts/aspect-mutants-expected.txt`, 예측은 등록하지 않음): 판정은 모두 그대로다. M1, M2, M3, M4, M7 (각 세 모듈, 15회)은 실패 의무에 `factory_throw`가 더해졌다. 이 변이들은 이미 캐시가 있는 메서드에도 생성 함수를 부를 수 있다 (낡은 경쟁 읽기, 또는 action 전의 생성). 새 절은 바로 그것을 금지하므로 진짜 위반이다. 대조군 R1, R2는 PROVEN 그대로다.
+- 메인 세션 확인: 지금 sidecar의 절 목록을 고정한 테스트 4개를 고쳤다 (FingerprintTest, SpecCellsAcceptanceTest, ContractOnlyTest, SpecCheckUnitTest).
