@@ -13,4 +13,4 @@ decisions, the aligned drafts and the command outputs (01-08), with the scratch 
 - DRAFT-aligned-fixed.kv: the main session added `tok(x).gIssued` to the invariant and the lemma (two edits).
   This draft is PROVEN on the reference code (08-outcomes.txt, option A).
 - DRAFT-aligned-loopback.kv: the alignment agent's own fix after it got only the init error line (loop-back test).
-  Its clauses equal the hand fix; 09-align-check-loopback.txt: PROVEN on the reference code.
+  It adds the same guards as the hand fix (line breaks and conjunct order differ); 09-align-check-loopback.txt: PROVEN on the reference code.
