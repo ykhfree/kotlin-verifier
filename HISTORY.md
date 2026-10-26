@@ -332,3 +332,5 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 판정자 3명(블라인드 deep-reasoner) 시작: 각자 새 구현 4개, 도구 결과와 그것을 적은 문서(AI-CODE.md, HISTORY.md, git 기록)를 보지 못한다. 결과는 `aicode/round3g/judgments-{1,2,3}.md`.
 - Part B: advisor 권고로 메인 세션이 (b)·(c)의 반례가 실제 코드로 만들 수 있는 경우임을 확인했다 (E6: action 안 `counter.get()`, E5: 예약 값 비교). 예측은 `AI-CODE.md` 15절에 등록했다 (`adbe2f8`). 구현 시작 (feature-developer). 검증은 새 폴더 `aicode/round4/`에서 한다 (판정자 작업과 겹치지 않게).
 - 새 12개의 정답 (판정자 3명, `AI-CODE.md` 14.7): tryLock·sweep 12개 모두 결함, unLock은 G-haiku-3만 결함. 도구 대조: 놓침 0, 오경보 0 (수정 전·후 모두). 수정 뒤 검출 20, 맞은 PROVEN 11, 판정 안 함 5.
+- Part B 완료 (`8422673`, `f794827`, `05be47d`; `AI-CODE.md` 15.2): compute 밖 토큰(예약 단계 + gPend). 2차 12개 32 → 35, 새 12개 31 → 35 (각 36 action 중), 놓침 0, 오경보 0. 예측 7개 중 6개 맞음, 1개 일부 맞음. 참조 모듈 Viper 바이트 동일. 메인 세션 확인: 테스트 621개, 변이 63회 불일치 0.
+- 누적: AI 구현 24개, action 72개 중 70개 판정 (97%), 놓침 0, 오경보 0. AI 구현 24개 모두 만료 경계를 `>=`로 썼다.
