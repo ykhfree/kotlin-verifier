@@ -339,3 +339,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 
 - 대상: req-shield `ReqShield` (요청 합치기). 측정 계획과 예측은 `PROTOCOL2.md` (결과 전).
 - 설계 시작 (deep-reasoner, `DESIGN-E.md`).
+- 두 번째 프로토콜 설계 (`DESIGN-E.md`, `c400308`; `PROTOCOL2.md` 4절): ReqShield는 새 층(L3, 자원 사용 규율)이 필요하다. 손 모델: 원본 PROVEN, 결함 변이 12개 FAILED, 대조 3개 PROVEN (메인 세션 재실행). 구현 추정 core 12.5-19.5 인일 (aspect 캐시의 약 1.6배). 사용자 결정 6개 (UE1-UE6). 예측 3개 모두 맞음.
