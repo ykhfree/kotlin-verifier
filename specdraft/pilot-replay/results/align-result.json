@@ -2,11 +2,16 @@
  "draft": "opus",
  "grammar": [],
  "undecided": [],
+ "open_decided": [
+  "C16 mode a: dropped, not open",
+  "C16 mode b: dropped, not open"
+ ],
  "changed": [],
  "failing_clauses": [],
+ "methods_not_proven": [],
  "reference": {
   "verdict": "PROVEN",
-  "seconds": 19.5,
+  "seconds": 19.1,
   "actions": {
    "tryLock": [
     "PROVEN",
@@ -26,7 +31,8 @@
    "lemma lemma_one_backed_holder_per_key PROVEN",
    "probe PROVEN"
   ],
-  "pass2": {}
+  "pass2": {},
+  "errors": []
  },
  "missing_probes": [
   "decision_D1",
@@ -34,5 +40,6 @@
   "decision_D2",
   "decision_D5"
  ],
- "source_notes": []
+ "source_notes": [],
+ "feedback": 1
 }

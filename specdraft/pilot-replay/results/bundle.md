@@ -114,3 +114,27 @@ Results per option on implementations (decision mutants, AI code): not measured.
 | Draft | C12 verdict | C12 answer |
 |---|---|---|
 | opus | false | false (assumed) |
+
+## Q-D9 Monitor duty after the lease end
+
+Must the cleanup monitor drop the entry of a lock that nobody released, one step after the lease end?
+
+Cells: C16 (rules 6)
+
+| Cell | Scenario | Outcomes |
+|---|---|---|
+| C16 | Acquired at time 0: a monitor pass at time 11 looks at k | stays: `carried(S, k, t1)`; dropped: `!has(S, k)` |
+
+Sources (the quotes in the authors' answers):
+- [README.md#local-lock-map-size/2] "an entry whose holder never released it is dropped by the" (opus C16)
+- [README.md#local-lock-map-size/2] "cleanup monitor once `lockTimeoutMillis` has passed" (opus C16)
+
+Options (the outcome of each cell; from the verdicts):
+A. C16 open: reference.
+B. C16 dropped: draft opus.
+
+Results per option on implementations (decision mutants, AI code): not measured.
+
+| Draft | C16 verdict | C16 answer |
+|---|---|---|
+| opus | dropped | dropped (settled) |

@@ -1,4 +1,4 @@
 $ spec.py align --run translator/build/kv/spec-replay/run --decisions specdraft/pilot-replay/decisions-opus.json
-alignment box (draft opus, 4 decision(s)): run/align/box
+alignment box (draft opus, 5 decision(s)): run/align/box
 prompt (also in run/harness/_align/prompt.txt):
 Read TASK.md in the directory run/align/box and do the task it describes. Work only inside run/align/box: do not read, list or search anything outside it.

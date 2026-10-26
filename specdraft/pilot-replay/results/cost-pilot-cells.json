@@ -4,12 +4,12 @@
  "answers": 19,
  "box_chars": {
   "ANSWERS.json": 1928,
-  "LANGUAGE.md": 6708,
+  "LANGUAGE.md": 6925,
   "SCENARIOS.md": 3016,
   "SOURCES.md": 28682,
   "TASK.md": 1571,
   "check.sh": 1118
  },
- "total_chars": 43023,
+ "total_chars": 43240,
  "cell_chars": 4944
 }

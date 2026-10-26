@@ -4,6 +4,7 @@
   "opus"
  ],
  "rule1": "the author answered open or assumed",
+ "left_open": [],
  "questions": [
   {
    "cell": "C04",
@@ -44,6 +45,13 @@
     1,
     4,
     5
+   ]
+  },
+  {
+   "cell": "C16",
+   "formal_cell": "C16",
+   "rules": [
+    6
    ]
   },
   {
@@ -145,6 +153,34 @@
      },
      "who": [
       "reference",
+      "draft opus"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "D9",
+   "title": "Monitor duty after the lease end",
+   "question": "Must the cleanup monitor drop the entry of a lock that nobody released, one step after the lease end?",
+   "cells": [
+    "C16"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "C16": "open"
+     },
+     "who": [
+      "reference"
+     ]
+    },
+    {
+     "letter": "B",
+     "cells": {
+      "C16": "dropped"
+     },
+     "who": [
       "draft opus"
      ]
     }

@@ -6,8 +6,8 @@ Sources (snapshot run/tool/snapshot): 50 quoted source line(s), 0 without a bloc
 Field fixing: 0 warning(s)
 Model: contract-only (no method bodies), from the code; mode a assumes the hole, which the isolation runs check on the code
 Cells (run/cells/scenario.cells): 19 cell(s)
-  mode a, with the hole MI_INV (the clauses and the implementation's inductive invariant): Silicon 22.51 s
-  mode b, the hole is true (the sidecar clauses alone): Silicon 19.39 s
+  mode a, with the hole MI_INV (the clauses and the implementation's inductive invariant): Silicon 21.73 s
+  mode b, the hole is true (the sidecar clauses alone): Silicon 19.03 s
   cell  mode a                mode b                title
   C01   DETERMINED(backed)    DETERMINED(backed)    Empty map, no cap: tryLock(k)
   C02   DETERMINED(unbacked)  DETERMINED(unbacked)  The map is full; k has no entry: tryLock(k)
@@ -34,6 +34,7 @@ Clause isolation (on the code; each run keeps the tool ensures, the hole and one
   FAILED action sweep: ensures progress_sweep_drops_expired keylocallock.common.kv:138:3
       Postcondition of sweep might not hold: sidecar progress_sweep_drops_expired keylocallock.common.kv:138:41 (incomplete quantifiers)
   Hole MI_INV on the code: no hole conjunct fails in any run
+Init, lemmas and probes (on the code; one run of the whole program, as pass 1 of kv verify): 3 row(s): 0 FAILED, 0 UNSUPPORTED, 3 PROVEN, 0 ERROR
 Spec to review: ends_only_if tryLock tryLock_ends_only_expired, unLock unLock_ends_only_presented_token, sweep sweep_ends_only_expired; unbacked_only_if tryLock tryLock_unbacked_only_for_refused_new_key; issue tryLock
-kv spec check: 0 error(s), 0 warning(s); mode b cells: 19 DETERMINED, 0 OPEN, 0 INFEASIBLE; 2 failing clause(s)
+kv spec check: 0 error(s), 0 warning(s); mode b cells: 19 DETERMINED, 0 OPEN, 0 INFEASIBLE; 2 failing clause(s), 0 failing init, lemma or probe
 Viper files and check.json: run/drafts/opus/check

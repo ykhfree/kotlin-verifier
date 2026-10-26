@@ -6,8 +6,8 @@ Field fixing: 2 warning(s)
   pilot-c/specs-signed/keylocallock.common.kv:72:3: warning[field-fixing]: ensures expired_takeover of tryLock reads entry field expiresAt in its premise, and no intent clause ties it to a ghost value or an issue value: the meaning lives only in the hole, so a new hole can change it (DESIGN-C.md 4.1)
 Model: contract-only (no method bodies), from the code; mode a assumes the hole, which the isolation runs check on the code
 Cells (run/cells/scenario.cells): 19 cell(s)
-  mode a, with the hole MI_INV (the clauses and the implementation's inductive invariant): Silicon 20.35 s
-  mode b, the hole is true (the sidecar clauses alone): Silicon 17.02 s
+  mode a, with the hole MI_INV (the clauses and the implementation's inductive invariant): Silicon 19.67 s
+  mode b, the hole is true (the sidecar clauses alone): Silicon 16.44 s
   cell  mode a                mode b                title
   C01   DETERMINED(backed)    DETERMINED(backed)    Empty map, no cap: tryLock(k)
   C02   DETERMINED(unbacked)  DETERMINED(unbacked)  The map is full; k has no entry: tryLock(k)
@@ -30,6 +30,7 @@ Cells (run/cells/scenario.cells): 19 cell(s)
   C20   DETERMINED(token)     DETERMINED(token)     Acquired at time 0 for k, not released: tryLock(k2) at time 5 for another key k2 with no entry, no cap
 Clause isolation (on the code; each run keeps the tool ensures, the hole and one sidecar clause per action): 8 run(s), 12 clause(s): 0 FAILED, 0 UNKNOWN, 12 PROVEN, 0 ERROR
   Hole MI_INV on the code: no hole conjunct fails in any run
+Init, lemmas and probes (on the code; one run of the whole program, as pass 1 of kv verify): 3 row(s): 0 FAILED, 0 UNSUPPORTED, 3 PROVEN, 0 ERROR
 Spec to review: ends_only_if tryLock P3a, unLock P3a, sweep P3a; unbacked_only_if tryLock P3b; issue tryLock
-kv spec check: 0 error(s), 2 warning(s); mode b cells: 16 DETERMINED, 3 OPEN, 0 INFEASIBLE; 0 failing clause(s)
+kv spec check: 0 error(s), 2 warning(s); mode b cells: 16 DETERMINED, 3 OPEN, 0 INFEASIBLE; 0 failing clause(s), 0 failing init, lemma or probe
 Viper files and check.json: run/reference/check

@@ -1,8 +1,15 @@
 $ spec.py align --run translator/build/kv/spec-replay/run --check
-align check: draft opus, 4 decision(s)
+align check: draft opus, 5 decision(s)
   decided cells: all 6 DETERMINED as decided in mode(s) a, b
+  cells decided open: 1 of 1 NOT OPEN (modes a, b):
+    C16 mode a: dropped, not open
+    C16 mode b: dropped, not open
   other cells whose verdict changed from draft opus: none
   clause isolation on the code: 0 failing clause(s)
+  init, lemmas and probes on the code: 0 of 3 not PROVEN
   kv verify --draft on the reference implementation: PROVEN
   decision probes (DESIGN-C.md 10 UC5): missing decision_D1, decision_D4, decision_D2, decision_D5
+  loop-back: 1 line(s), round 1 of 2: run/align/box/FEEDBACK-1.md
+prompt for the alignment agent:
+In the directory run/align/box, FEEDBACK-1.md lists problems of DRAFT.kv. Fix them as it says. Work only inside run/align/box.
   aligned sidecar: run/align/sidecar
