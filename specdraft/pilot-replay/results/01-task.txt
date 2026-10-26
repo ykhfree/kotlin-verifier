@@ -1,0 +1,4 @@
+$ spec.py task --run translator/build/kv/spec-replay/run --drafter opus --config specdraft/keylocallock/config.json --env translator/build/kv/aicode-env.json
+phase-1 box of opus: run/boxes/opus/phase1
+prompt (also in run/harness/opus/prompt-phase1.txt):
+Read TASK.md in the directory run/boxes/opus/phase1 and do the task it describes. Work only inside run/boxes/opus/phase1: do not read, list or search anything outside it.

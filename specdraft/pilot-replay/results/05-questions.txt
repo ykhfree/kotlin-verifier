@@ -1,0 +1,11 @@
+$ spec.py questions --run translator/build/kv/spec-replay/run --groups specdraft/pilot-replay/groups-opus.json
+kv spec questions: 1 draft(s) (opus), mode a; rule 1: the author answered open or assumed; rule 2 off (one draft); rule 4 on (proxy: --reference)
+  C04 rules 1,3,4,5 | answers opus=none/open | drafts opus=token | reference null
+  C05 rules 1,3 | answers opus=none/open | drafts opus=token | reference token
+  C09 (cell C08) rules 1 | answers opus=true/assumed | drafts opus=true | reference true
+  C12 rules 1 | answers opus=false/assumed | drafts opus=false | reference false
+  C15 rules 1,4,5 | answers opus=dropped/assumed | drafts opus=dropped | reference stays
+  C19 rules 1,3 | answers opus=none/open | drafts opus=backed | reference backed
+question cells: 6 C04 C05 C09 C12 C15 C19
+group check: OK, 4 group(s)
+review bundle: run/bundle.md

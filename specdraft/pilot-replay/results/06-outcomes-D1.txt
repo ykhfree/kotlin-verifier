@@ -1,0 +1,23 @@
+$ spec.py outcomes --run translator/build/kv/spec-replay/run --group D1 --option A=pilot-c/aligned/opus.kv --option B=translator/build/kv/spec-replay/run/drafts/opus/DRAFT.kv --mutants specdraft/keylocallock/decision-mutants.json --impl T-haiku-2=aicode/round2/impl/T-haiku-2 --impl T-haiku-4=aicode/round2/impl/T-haiku-4 --impl T-sonnet-1=aicode/round2/impl/T-sonnet-1 --impl T-sonnet-3=aicode/round2/impl/T-sonnet-3 --impl T-sonnet-4=aicode/round2/impl/T-sonnet-4 --impl T-opus-1=aicode/round2/impl/T-opus-1 --impl T-opus-2=aicode/round2/impl/T-opus-2
+option A (C04 null, C15 stays): the draft decides the cells so (mode b)
+option B (C04 token, C15 dropped): the draft decides the cells so (mode b)
+26 kv verify run(s) in 161 s; run/outcomes/D1.json
+Results per option on implementations (measured: `kv verify --draft` of a draft fixed to each option; DESIGN-C.md 3.6):
+
+| Implementation | A | B |
+|---|---|---|
+| reference | PROVEN | FAILED (sweep progress_sweep_drops_expired; tryLock progress_tryLock_takeover) |
+| dm:D1-both | FAILED (sweep ends_only_if sweep_ends_only_expired; tryLock ends_only_if tryLock_ends_only_expired) | PROVEN |
+| dm:D2-expired-unlock-false | FAILED (unLock progress_unLock_owner_releases) | FAILED (sweep progress_sweep_drops_expired; tryLock progress_tryLock_takeover; unLock progress_unLock_owner_releases) |
+| dm:D4-no-takeover | FAILED (tryLock progress_tryLock_takeover) | FAILED (sweep progress_sweep_drops_expired; tryLock progress_tryLock_takeover) |
+| dm:D9-sweep-never | FAILED (sweep progress_sweep_drops_expired) | FAILED (sweep progress_sweep_drops_expired; tryLock progress_tryLock_takeover) |
+| dm:D3-cap-null | FAILED (tryLock progress_tryLock_cap_refusal) | FAILED (sweep progress_sweep_drops_expired; tryLock progress_tryLock_cap_refusal, progress_tryLock_takeover) |
+| impl:T-haiku-2 | FAILED (sweep ends_only_if sweep_ends_only_expired; tryLock UNSUPPORTED; probe UNSUPPORTED) | INCOMPLETE (tryLock UNSUPPORTED; probe UNSUPPORTED) |
+| impl:T-haiku-4 | FAILED (sweep ends_only_if sweep_ends_only_expired; tryLock UNSUPPORTED; probe UNSUPPORTED) | INCOMPLETE (tryLock UNSUPPORTED; probe UNSUPPORTED) |
+| impl:T-sonnet-1 | FAILED (sweep ends_only_if sweep_ends_only_expired; tryLock ends_only_if tryLock_ends_only_expired) | PROVEN |
+| impl:T-sonnet-3 | FAILED (sweep ends_only_if sweep_ends_only_expired; tryLock UNSUPPORTED; unLock UNSUPPORTED; probe UNSUPPORTED) | INCOMPLETE (tryLock UNSUPPORTED; unLock UNSUPPORTED; probe UNSUPPORTED) |
+| impl:T-sonnet-4 | FAILED (sweep ends_only_if sweep_ends_only_expired; tryLock ends_only_if tryLock_ends_only_expired) | PROVEN |
+| impl:T-opus-1 | FAILED (sweep ends_only_if sweep_ends_only_expired; tryLock UNSUPPORTED; unLock UNSUPPORTED; probe UNSUPPORTED) | INCOMPLETE (tryLock UNSUPPORTED; unLock UNSUPPORTED; probe UNSUPPORTED) |
+| impl:T-opus-2 | FAILED (sweep ends_only_if sweep_ends_only_expired; tryLock UNSUPPORTED; probe UNSUPPORTED) | INCOMPLETE (tryLock UNSUPPORTED; probe UNSUPPORTED) |
+
+review bundle: run/bundle.md

@@ -1,0 +1,2 @@
+$ spec.py collect --run translator/build/kv/spec-replay/run --drafter opus
+opus phase 2: collected after 0 correction round(s), 0 check.sh call(s): 14 settled, 3 assumed, 3 open

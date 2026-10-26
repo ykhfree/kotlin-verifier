@@ -1,0 +1,38 @@
+{
+ "draft": "opus",
+ "grammar": [],
+ "undecided": [],
+ "changed": [],
+ "failing_clauses": [],
+ "reference": {
+  "verdict": "PROVEN",
+  "seconds": 19.5,
+  "actions": {
+   "tryLock": [
+    "PROVEN",
+    []
+   ],
+   "unLock": [
+    "PROVEN",
+    []
+   ],
+   "sweep": [
+    "PROVEN",
+    []
+   ]
+  },
+  "others": [
+   "init PROVEN",
+   "lemma lemma_one_backed_holder_per_key PROVEN",
+   "probe PROVEN"
+  ],
+  "pass2": {}
+ },
+ "missing_probes": [
+  "decision_D1",
+  "decision_D4",
+  "decision_D2",
+  "decision_D5"
+ ],
+ "source_notes": []
+}

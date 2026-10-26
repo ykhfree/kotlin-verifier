@@ -1,0 +1,8 @@
+$ spec.py cells --run translator/build/kv/spec-replay/run-generated
+cells: kv spec cells on the draft of opus (the first that passed collection)
+  draft opus: mode a 65 DETERMINED, 0 OPEN, 0 INFEASIBLE; mode b 65 DETERMINED, 0 OPEN, 0 INFEASIBLE; 2 failing clause(s) on the code
+  reference pilot-c/specs-signed/keylocallock.coroutine.kv: mode a 64 DETERMINED, 1 OPEN, 0 INFEASIBLE; mode b 48 DETERMINED, 17 OPEN, 0 INFEASIBLE; 0 failing clause(s) on the code
+phase-2 box of opus: run-generated/boxes/opus/phase2
+prompt (also in run-generated/harness/opus/prompt-phase2.txt):
+Read TASK.md in the directory run-generated/boxes/opus/phase2 and do the task it describes. Work only inside run-generated/boxes/opus/phase2: do not read, list or search anything outside it.
+phase-2 box size: 65 cells (7 boundary), 65562 characters (SCENARIOS.md and ANSWERS.json: 27453); run-generated/cells/cost.json

@@ -1,0 +1,8 @@
+$ spec.py align --run translator/build/kv/spec-replay/run --check
+align check: draft opus, 4 decision(s)
+  decided cells: all 6 DETERMINED as decided in mode(s) a, b
+  other cells whose verdict changed from draft opus: none
+  clause isolation on the code: 0 failing clause(s)
+  kv verify --draft on the reference implementation: PROVEN
+  decision probes (DESIGN-C.md 10 UC5): missing decision_D1, decision_D4, decision_D2, decision_D5
+  aligned sidecar: run/align/sidecar

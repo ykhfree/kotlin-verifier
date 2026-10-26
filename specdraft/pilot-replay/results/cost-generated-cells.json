@@ -1,0 +1,15 @@
+{
+ "cells": 65,
+ "boundary": 7,
+ "answers": 65,
+ "box_chars": {
+  "ANSWERS.json": 6444,
+  "LANGUAGE.md": 6708,
+  "SCENARIOS.md": 21009,
+  "SOURCES.md": 28682,
+  "TASK.md": 1571,
+  "check.sh": 1148
+ },
+ "total_chars": 65562,
+ "cell_chars": 27453
+}

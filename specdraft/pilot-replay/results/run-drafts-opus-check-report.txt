@@ -1,0 +1,39 @@
+DRAFT: not signed; the verdict counts for nothing
+kv spec check: keylocallock.coroutine.kv (module com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion)
+Grammar and types: OK
+Signatures: draft, 19 intent clause(s) without a 'reviewed' note: the issue rule of tryLock, ensures progress_tryLock_free_key of tryLock, ensures progress_tryLock_cap_refusal of tryLock, ensures tryLock_live_entry_returns_null of tryLock, ensures progress_tryLock_takeover of tryLock, unbacked_only_if tryLock_unbacked_only_for_refused_new_key of tryLock, ends_only_if tryLock_ends_only_expired of tryLock, ensures progress_unLock_owner_releases of unLock, ensures unLock_non_owner_returns_false of unLock, ensures unLock_non_owner_keeps_map of unLock, ends_only_if unLock_ends_only_presented_token of unLock, ensures progress_sweep_drops_expired of sweep, ensures sweep_keeps_live_entry of sweep, ensures sweep_adds_no_entry of sweep, ends_only_if sweep_ends_only_expired of sweep, invariant inv_held_backed_token_carried_with_lease, invariant inv_unbacked_token_never_carried, lemma lemma_one_backed_holder_per_key, the probe
+Sources (snapshot run/tool/snapshot): 50 quoted source line(s), 0 without a block fingerprint, 1 'source none': 0 stale-source, 0 source-moved, 0 source-context-changed
+Field fixing: 0 warning(s)
+Model: contract-only (no method bodies), from the code; mode a assumes the hole, which the isolation runs check on the code
+Cells (run/cells/scenario.cells): 19 cell(s)
+  mode a, with the hole MI_INV (the clauses and the implementation's inductive invariant): Silicon 22.51 s
+  mode b, the hole is true (the sidecar clauses alone): Silicon 19.39 s
+  cell  mode a                mode b                title
+  C01   DETERMINED(backed)    DETERMINED(backed)    Empty map, no cap: tryLock(k)
+  C02   DETERMINED(unbacked)  DETERMINED(unbacked)  The map is full; k has no entry: tryLock(k)
+  C03   DETERMINED(null)      DETERMINED(null)      Acquired at time 0, not released: tryLock(k) at time 5
+  C04   DETERMINED(token)     DETERMINED(token)     Acquired at time 0, not released: tryLock(k) at time 10 (the lease end)
+  C05   DETERMINED(token)     DETERMINED(token)     Acquired at time 0, not released, no monitor pass since: tryLock(k) at time 11
+  C06   DETERMINED(false)     DETERMINED(false)     After C05 returned a new token t2: the first holder calls unLock(k, t1)
+  C07   DETERMINED(true)      DETERMINED(true)      After C05 returned t2: unLock(k, t2)
+  C08   DETERMINED(true)      DETERMINED(true)      Acquired at time 0: unLock(k, t1) at time 5
+  C10   DETERMINED(false)     DETERMINED(false)     After C08 returned true: unLock(k, t1) again
+  C11   DETERMINED(false)     DETERMINED(false)     Acquired at time 0: unLock(k, x) with a token x that was never issued
+  C12   DETERMINED(false)     DETERMINED(false)     After C02 returned a token u: unLock(k, u)
+  C13   DETERMINED(unbacked)  DETERMINED(unbacked)  After C02 returned u, the map is still full: another tryLock(k)
+  C14   DETERMINED(stays)     DETERMINED(stays)     Acquired at time 0: a monitor pass at time 5 looks at k
+  C15   DETERMINED(dropped)   DETERMINED(dropped)   Acquired at time 0: a monitor pass at time 10 looks at k
+  C16   DETERMINED(dropped)   DETERMINED(dropped)   Acquired at time 0: a monitor pass at time 11 looks at k
+  C17   DETERMINED(false)     DETERMINED(false)     After C16 dropped the entry: unLock(k, t1)
+  C18   DETERMINED(backed)    DETERMINED(backed)    A cap is set but the map is not full; k has no entry: tryLock(k)
+  C19   DETERMINED(backed)    DETERMINED(backed)    Acquired at time 0, not released; the map is full: tryLock(k) at time 11
+  C20   DETERMINED(token)     DETERMINED(token)     Acquired at time 0 for k, not released: tryLock(k2) at time 5 for another key k2 with no entry, no cap
+Clause isolation (on the code; each run keeps the tool ensures, the hole and one sidecar clause per action): 6 run(s), 14 clause(s): 2 FAILED, 0 UNKNOWN, 12 PROVEN, 0 ERROR
+  FAILED action tryLock: ensures progress_tryLock_takeover keylocallock.common.kv:87:3
+      Postcondition of tryLock might not hold: sidecar progress_tryLock_takeover keylocallock.common.kv:87:38 (incomplete quantifiers)
+  FAILED action sweep: ensures progress_sweep_drops_expired keylocallock.common.kv:138:3
+      Postcondition of sweep might not hold: sidecar progress_sweep_drops_expired keylocallock.common.kv:138:41 (incomplete quantifiers)
+  Hole MI_INV on the code: no hole conjunct fails in any run
+Spec to review: ends_only_if tryLock tryLock_ends_only_expired, unLock unLock_ends_only_presented_token, sweep sweep_ends_only_expired; unbacked_only_if tryLock tryLock_unbacked_only_for_refused_new_key; issue tryLock
+kv spec check: 0 error(s), 0 warning(s); mode b cells: 19 DETERMINED, 0 OPEN, 0 INFEASIBLE; 2 failing clause(s)
+Viper files and check.json: run/drafts/opus/check

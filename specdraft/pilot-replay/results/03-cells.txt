@@ -1,0 +1,8 @@
+$ spec.py cells --run translator/build/kv/spec-replay/run --cells translator/src/test/resources/spec/cells/keylocallock.cells --notes specdraft/keylocallock/pilot-cells-notes.md
+cells: the cell file translator/src/test/resources/spec/cells/keylocallock.cells
+  draft opus: mode a 19 DETERMINED, 0 OPEN, 0 INFEASIBLE; mode b 19 DETERMINED, 0 OPEN, 0 INFEASIBLE; 2 failing clause(s) on the code
+  reference pilot-c/specs-signed/keylocallock.coroutine.kv: mode a 18 DETERMINED, 1 OPEN, 0 INFEASIBLE; mode b 16 DETERMINED, 3 OPEN, 0 INFEASIBLE; 0 failing clause(s) on the code
+phase-2 box of opus: run/boxes/opus/phase2
+prompt (also in run/harness/opus/prompt-phase2.txt):
+Read TASK.md in the directory run/boxes/opus/phase2 and do the task it describes. Work only inside run/boxes/opus/phase2: do not read, list or search anything outside it.
+phase-2 box size: 19 cells (2 boundary), 43023 characters (SCENARIOS.md and ANSWERS.json: 4944); run/cells/cost.json

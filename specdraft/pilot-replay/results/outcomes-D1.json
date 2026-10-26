@@ -1,0 +1,843 @@
+{
+ "group": "D1",
+ "cells": [
+  "C04",
+  "C15"
+ ],
+ "options": {
+  "A": {
+   "draft": "pilot-c/aligned/opus.kv",
+   "cells": {
+    "C04": "null",
+    "C15": "stays"
+   },
+   "undecided": [],
+   "results": {
+    "reference": {
+     "verdict": "PROVEN",
+     "seconds": 26.7,
+     "actions": {
+      "tryLock": [
+       "PROVEN",
+       []
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {}
+    },
+    "dm:D1-both": {
+     "verdict": "FAILED",
+     "seconds": 26.6,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "ends_only_if tryLock_ends_only_expired"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "ends_only_if sweep_ends_only_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ],
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "dm:D2-expired-unlock-false": {
+     "verdict": "FAILED",
+     "seconds": 26.6,
+     "actions": {
+      "tryLock": [
+       "PROVEN",
+       []
+      ],
+      "unLock": [
+       "FAILED",
+       [
+        "progress_unLock_owner_releases"
+       ]
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "unLock": [
+       "property",
+       []
+      ]
+     }
+    },
+    "dm:D4-no-takeover": {
+     "verdict": "FAILED",
+     "seconds": 26.8,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "progress_tryLock_takeover"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ]
+     }
+    },
+    "dm:D9-sweep-never": {
+     "verdict": "FAILED",
+     "seconds": 26.6,
+     "actions": {
+      "tryLock": [
+       "PROVEN",
+       []
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "progress_sweep_drops_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "dm:D3-cap-null": {
+     "verdict": "FAILED",
+     "seconds": 26.6,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "progress_tryLock_cap_refusal"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ]
+     }
+    },
+    "impl:T-haiku-2": {
+     "verdict": "FAILED",
+     "seconds": 8.8,
+     "actions": {
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "ends_only_if sweep_ends_only_expired"
+       ]
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "impl:T-haiku-4": {
+     "verdict": "FAILED",
+     "seconds": 8.9,
+     "actions": {
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "ends_only_if sweep_ends_only_expired"
+       ]
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "impl:T-sonnet-1": {
+     "verdict": "FAILED",
+     "seconds": 28.2,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "ends_only_if tryLock_ends_only_expired"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "ends_only_if sweep_ends_only_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ],
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "impl:T-sonnet-3": {
+     "verdict": "FAILED",
+     "seconds": 7.1,
+     "actions": {
+      "sweep": [
+       "FAILED",
+       [
+        "ends_only_if sweep_ends_only_expired"
+       ]
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ],
+      "unLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "impl:T-sonnet-4": {
+     "verdict": "FAILED",
+     "seconds": 26.7,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "ends_only_if tryLock_ends_only_expired"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "ends_only_if sweep_ends_only_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ],
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "impl:T-opus-1": {
+     "verdict": "FAILED",
+     "seconds": 5.3,
+     "actions": {
+      "sweep": [
+       "FAILED",
+       [
+        "ends_only_if sweep_ends_only_expired"
+       ]
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ],
+      "unLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "impl:T-opus-2": {
+     "verdict": "FAILED",
+     "seconds": 5.5,
+     "actions": {
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "ends_only_if sweep_ends_only_expired"
+       ]
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    }
+   }
+  },
+  "B": {
+   "draft": "run/drafts/opus/DRAFT.kv",
+   "cells": {
+    "C04": "token",
+    "C15": "dropped"
+   },
+   "undecided": [],
+   "results": {
+    "reference": {
+     "verdict": "FAILED",
+     "seconds": 24.1,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "progress_tryLock_takeover"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "progress_sweep_drops_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ],
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "dm:D1-both": {
+     "verdict": "PROVEN",
+     "seconds": 24.1,
+     "actions": {
+      "tryLock": [
+       "PROVEN",
+       []
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {}
+    },
+    "dm:D2-expired-unlock-false": {
+     "verdict": "FAILED",
+     "seconds": 23.8,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "progress_tryLock_takeover"
+       ]
+      ],
+      "unLock": [
+       "FAILED",
+       [
+        "progress_unLock_owner_releases"
+       ]
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "progress_sweep_drops_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ],
+      "unLock": [
+       "property",
+       []
+      ],
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "dm:D4-no-takeover": {
+     "verdict": "FAILED",
+     "seconds": 24.0,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "progress_tryLock_takeover"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "progress_sweep_drops_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ],
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "dm:D9-sweep-never": {
+     "verdict": "FAILED",
+     "seconds": 24.0,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "progress_tryLock_takeover"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "progress_sweep_drops_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ],
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "dm:D3-cap-null": {
+     "verdict": "FAILED",
+     "seconds": 23.2,
+     "actions": {
+      "tryLock": [
+       "FAILED",
+       [
+        "progress_tryLock_cap_refusal",
+        "progress_tryLock_takeover"
+       ]
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "FAILED",
+       [
+        "progress_sweep_drops_expired"
+       ]
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {
+      "tryLock": [
+       "property",
+       []
+      ],
+      "sweep": [
+       "property",
+       []
+      ]
+     }
+    },
+    "impl:T-haiku-2": {
+     "verdict": "INCOMPLETE",
+     "seconds": 6.3,
+     "actions": {
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {}
+    },
+    "impl:T-haiku-4": {
+     "verdict": "INCOMPLETE",
+     "seconds": 6.5,
+     "actions": {
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {}
+    },
+    "impl:T-sonnet-1": {
+     "verdict": "PROVEN",
+     "seconds": 25.2,
+     "actions": {
+      "tryLock": [
+       "PROVEN",
+       []
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {}
+    },
+    "impl:T-sonnet-3": {
+     "verdict": "INCOMPLETE",
+     "seconds": 8.2,
+     "actions": {
+      "sweep": [
+       "PROVEN",
+       []
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ],
+      "unLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {}
+    },
+    "impl:T-sonnet-4": {
+     "verdict": "PROVEN",
+     "seconds": 25.0,
+     "actions": {
+      "tryLock": [
+       "PROVEN",
+       []
+      ],
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe PROVEN"
+     ],
+     "pass2": {}
+    },
+    "impl:T-opus-1": {
+     "verdict": "INCOMPLETE",
+     "seconds": 5.5,
+     "actions": {
+      "sweep": [
+       "PROVEN",
+       []
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ],
+      "unLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {}
+    },
+    "impl:T-opus-2": {
+     "verdict": "INCOMPLETE",
+     "seconds": 5.5,
+     "actions": {
+      "unLock": [
+       "PROVEN",
+       []
+      ],
+      "sweep": [
+       "PROVEN",
+       []
+      ],
+      "tryLock": [
+       "UNSUPPORTED",
+       []
+      ]
+     },
+     "others": [
+      "init PROVEN",
+      "lemma lemma_one_backed_holder_per_key PROVEN",
+      "probe UNSUPPORTED"
+     ],
+     "pass2": {}
+    }
+   }
+  }
+ },
+ "roots": [
+  "reference",
+  "dm:D1-both",
+  "dm:D2-expired-unlock-false",
+  "dm:D4-no-takeover",
+  "dm:D9-sweep-never",
+  "dm:D3-cap-null",
+  "impl:T-haiku-2",
+  "impl:T-haiku-4",
+  "impl:T-sonnet-1",
+  "impl:T-sonnet-3",
+  "impl:T-sonnet-4",
+  "impl:T-opus-1",
+  "impl:T-opus-2"
+ ],
+ "seconds": 161.2
+}

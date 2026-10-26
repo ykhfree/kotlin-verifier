@@ -1,0 +1,154 @@
+{
+ "mode": "a",
+ "drafts": [
+  "opus"
+ ],
+ "rule1": "the author answered open or assumed",
+ "questions": [
+  {
+   "cell": "C04",
+   "formal_cell": "C04",
+   "rules": [
+    1,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "cell": "C05",
+   "formal_cell": "C05",
+   "rules": [
+    1,
+    3
+   ]
+  },
+  {
+   "cell": "C09",
+   "formal_cell": "C08",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "C12",
+   "formal_cell": "C12",
+   "rules": [
+    1
+   ]
+  },
+  {
+   "cell": "C15",
+   "formal_cell": "C15",
+   "rules": [
+    1,
+    4,
+    5
+   ]
+  },
+  {
+   "cell": "C19",
+   "formal_cell": "C19",
+   "rules": [
+    1,
+    3
+   ]
+  }
+ ],
+ "group_errors": [],
+ "groups": [
+  {
+   "id": "D1",
+   "title": "Expiry boundary",
+   "question": "At exactly the lease end (clock = lease), is a lock that nobody released still held?",
+   "cells": [
+    "C04",
+    "C15"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "C04": "null",
+      "C15": "stays"
+     },
+     "who": [
+      "reference"
+     ]
+    },
+    {
+     "letter": "B",
+     "cells": {
+      "C04": "token",
+      "C15": "dropped"
+     },
+     "who": [
+      "draft opus"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "D4",
+   "title": "Takeover of an expired lock",
+   "question": "Does tryLock take over an expired lock before the cleanup monitor drops it?",
+   "cells": [
+    "C05",
+    "C19"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "C05": "token",
+      "C19": "backed"
+     },
+     "who": [
+      "reference",
+      "draft opus"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "D2",
+   "title": "unLock by the holder after expiry",
+   "question": "Can the holder still release its lock after the lease ended, if nobody took it over?",
+   "cells": [
+    "C09"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "C09": "true"
+     },
+     "who": [
+      "reference",
+      "draft opus"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "D5",
+   "title": "unLock of a token no entry backs",
+   "question": "Does unLock release a permit that no map entry backs?",
+   "cells": [
+    "C12"
+   ],
+   "options": [
+    {
+     "letter": "A",
+     "cells": {
+      "C12": "false"
+     },
+     "who": [
+      "reference",
+      "draft opus"
+     ]
+    }
+   ]
+  }
+ ]
+}
