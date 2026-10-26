@@ -67,6 +67,7 @@ import kv.sidecar.Selector
 import kv.sidecar.TrustedDecl
 import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.contracts.description.LogicOperationKind
+import org.jetbrains.kotlin.descriptors.Modality
 import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.fir.FirElement
 import org.jetbrains.kotlin.fir.declarations.FirAnonymousFunction
@@ -81,6 +82,7 @@ import org.jetbrains.kotlin.fir.expressions.FirAnonymousFunctionExpression
 import org.jetbrains.kotlin.fir.expressions.FirBlock
 import org.jetbrains.kotlin.fir.expressions.FirBooleanOperatorExpression
 import org.jetbrains.kotlin.fir.expressions.FirCheckNotNullCall
+import org.jetbrains.kotlin.fir.expressions.FirCheckedSafeCallSubject
 import org.jetbrains.kotlin.fir.expressions.FirComparisonExpression
 import org.jetbrains.kotlin.fir.expressions.FirDoWhileLoop
 import org.jetbrains.kotlin.fir.expressions.impl.FirElseIfTrueCondition
@@ -503,6 +505,7 @@ internal class ActionLowering(
     ): List<Stmt> {
         val done = mutableListOf<Stmt>()
         for ((i, s) in stmts.withIndex()) {
+            aliasWhen(s)?.let { w -> return done + aliasSplit(s as FirProperty, w, stmts.subList(i + 1, stmts.size), resultLast) }
             val last = i == stmts.lastIndex
             val lowered = collect { if (last && resultLast) result(s) else statement(s) }
             if (last) {
@@ -552,6 +555,51 @@ internal class ActionLowering(
 
     private fun hasExit(s: Stmt): Boolean = s is Exit || s is If && (s.then.any(::hasExit) || s.els.any(::hasExit))
 
+    // ---- A3: a local alias of the entry or of a new object (AI-CODE.md 14.1) ----
+
+    /** The object [v] names if it is the entry or an object this action created; null otherwise. */
+    private fun aliasTarget(v: Expr): Local? = (v as? Var)?.local?.takeIf { it == entry || it in owned }
+
+    /** The if or when of `val e = if (...) X else Y` for an object type, if [s] is one with an else branch. */
+    private fun aliasWhen(s: FirStatement): FirWhenExpression? {
+        val p = s as? FirProperty ?: return null
+        if (!p.isVal || p.delegate != null || ctx.classOfType(ctx.typeOf(p)) == null) return null
+        val w = unwrap(p.initializer) as? FirWhenExpression ?: return null
+        return w.takeIf { it.subjectVariable == null && it.branches.any { b -> b.condition is FirElseIfTrueCondition } }
+    }
+
+    /**
+     * `val e = if (c) X else Y` where each branch value is the entry or an object this action created (A3). The
+     * statements after it in its block ([rest]) are lowered once per branch, with e bound to that branch's object, so
+     * that each access through e goes to the object itself (W6). A branch that exits ends there. [resultLast] as in [seq].
+     */
+    private fun aliasSplit(
+        p: FirProperty,
+        w: FirWhenExpression,
+        rest: List<FirStatement>,
+        resultLast: Boolean,
+    ): List<Stmt> {
+        mark(p)
+        mark(w)
+        val type = ktype(ctx.typeOf(p), p.symbol, p) ?: return emptyList()
+        return chain(w, 0) { block ->
+            collect {
+                locals.remove(p.symbol)
+                out += seq(block.statements.dropLast(1), resultLast = false)
+                val last = block.statements.lastOrNull()
+                if (last !is FirExpression || last is FirReturnExpression || last is FirThrowExpression) {
+                    last?.let(::statement)
+                    return@collect
+                }
+                val v = expr(last, type)
+                val target = v?.let(::aliasTarget)
+                if (target != null) locals[p.symbol] = target else if (v != null) unsupported("local alias ${p.name}", ALIAS_REASON, last)
+                // After an unsupported value the rest is lowered only to report what else it holds (1.5).
+                out += seq(rest, resultLast)
+            }
+        }
+    }
+
     private fun statement(s: FirStatement) {
         if (section) return sectionStatement(s)
         when (s) {
@@ -567,6 +615,7 @@ internal class ActionLowering(
             is FirTryExpression -> unsupported("try expression", "exception paths inside an action are not modeled in v0", s)
             is FirThrowExpression -> unsupported("throw", "exception paths inside an action are not modeled in v0", s)
             is FirFunctionCall -> call(s, valueUsed = false)
+            is FirSafeCallExpression -> safeCall(s, valueUsed = false)
             is FirExpression -> expr(s)
             else -> unsupported(s::class.simpleName ?: "statement", "this FIR node is not translated in v0", s)
         }
@@ -601,6 +650,19 @@ internal class ActionLowering(
                 val els = collect { result(s.rhs, exitAt) }
                 out += If(Cmp(CmpOp.NE, a, NullLit(nullable(a.type) ?: a.type, a.pos), ctx.posOf(s)), then, els, ctx.posOf(s))
             }
+            // A4: `a?.s` as the lambda's result: s in result position if a is not null, else null.
+            s is FirSafeCallExpression -> {
+                mark(s)
+                val pos = ctx.posOf(s)
+                val a = expr(s.receiver)
+                subjects[s.checkedSubjectRef.value] = a
+                val then = collect { result(s.selector, exitAt ?: pos) }
+                if (a == null) return
+                if (!canBeNull(a)) return run { out += then }
+                val els = collect { exitNull(exitAt ?: pos) }
+                out += If(notNull(a, pos), then, els, pos)
+            }
+            s is FirFunctionCall && scopeName(s) in TAKE_IF -> takeIf(s, exitAt)
             s is FirExpression -> exit(s, exitAt ?: ctx.posOf(s))
             else -> statement(s)
         }
@@ -637,7 +699,7 @@ internal class ActionLowering(
         when {
             value is FirLiteralExpression && value.kind == ConstantValueKind.Null -> {
                 mark(value)
-                out += Exit(if (kind == ActionKind.COMPUTE_IF_ABSENT) ExitResult.Keep else ExitResult.Remove, pos)
+                exitNull(pos)
             }
             value is FirPropertyAccessExpression && ctx.calleeOf(value) == entryParam -> {
                 mark(value)
@@ -645,6 +707,8 @@ internal class ActionLowering(
             }
             else -> {
                 val v = lowered ?: expr(e, KType.RefT(map.valueClass, true)) ?: return
+                // The entry under another name (A3, A4) keeps it, as the value parameter does.
+                if (kind == ActionKind.COMPUTE && v is Var && v.local == entry) return run { out += Exit(ExitResult.Keep, pos) }
                 if (kind == ActionKind.COMPUTE_IF_ABSENT && !nonNull && (v.type as? KType.RefT)?.nullable != false) {
                     unsupported("nullable result of computeIfAbsent's function", "computeIfAbsent maps only a non-null result; a value that may be null is not modeled (DESIGN-B.md 2.3)", e)
                     return
@@ -652,6 +716,92 @@ internal class ActionLowering(
                 out += Exit(ExitResult.Put(v), pos)
             }
         }
+    }
+
+    /** The Exit of a null result: compute removes the key; computeIfAbsent leaves it unmapped (DESIGN-B.md 5.3 rule 3). */
+    private fun exitNull(pos: Pos) {
+        out += Exit(if (kind == ActionKind.COMPUTE_IF_ABSENT) ExitResult.Keep else ExitResult.Remove, pos)
+    }
+
+    // ---- A4: safe calls and takeIf (AI-CODE.md 14.1) ----
+
+    /** The value each safe-call subject stands for: the lowered receiver, or null after an unsupported one. */
+    private val subjects = IdentityHashMap<FirCheckedSafeCallSubject, Expr?>()
+
+    /** True if [a] has a type with null: an object or an abstract String type marked nullable. */
+    private fun canBeNull(a: Expr): Boolean = (a.type as? KType.RefT)?.nullable ?: (a.type as? KType.Abs)?.nullable ?: false
+
+    /**
+     * `a?.s` outside result position: s with a as its receiver if a is not null. As a statement it is `if (a != null)
+     * s`. As a value of a nullable Token or Key type it is a local that is null unless s gives it a value. An object
+     * value is translated only as the lambda result ([result]).
+     */
+    private fun safeCall(
+        e: FirSafeCallExpression,
+        valueUsed: Boolean,
+    ): Expr? {
+        mark(e)
+        val pos = ctx.posOf(e)
+        val type = if (valueUsed) ktype(e.resolvedType, ctx.slotOf(e), e) ?: return null else null
+        if (type != null && type !is KType.Abs) {
+            unsupported("safe call ?. with a value of type $type", "a safe call is translated as a statement, as a Token? or Key? value, or as the lambda result (AI-CODE.md 14.1 A4)", e)
+            return null
+        }
+        val a = expr(e.receiver)
+        subjects[e.checkedSubjectRef.value] = a
+        var v: Expr? = null
+        // After an unsupported receiver the selector is lowered only to report what else it holds (1.5).
+        val then = collect { if (type != null) v = expr(e.selector as FirExpression, type) else statement(e.selector) }
+        if (a == null) return null
+        if (type == null) {
+            out += if (canBeNull(a)) listOf(If(notNull(a, pos), then, emptyList(), pos)) else then
+            return null
+        }
+        val value = v ?: return null
+        val t = temp("value", type, pos)
+        out += Let(t, NullLit(type, pos), true, pos)
+        val assigned = then + Assign(t, value, pos)
+        out += if (canBeNull(a)) listOf(If(notNull(a, pos), assigned, emptyList(), pos)) else assigned
+        return Var(t, pos)
+    }
+
+    private fun notNull(
+        a: Expr,
+        pos: Pos,
+    ): Expr = Cmp(CmpOp.NE, a, NullLit(nullable(a.type)!!, pos), pos)
+
+    /** The name of a call of a stdlib scope function (`let`, `takeIf`, ...); null for any other call. */
+    private fun scopeName(c: FirFunctionCall): String? = ctx.calleeOf(c)?.callableId?.takeIf { it.classId == null && it.packageName.asString() == "kotlin" }?.callableName?.asString()
+
+    /**
+     * `x.takeIf { p }` as the lambda's result: x if p holds, else null; `takeUnless` negates p. The lambda runs
+     * exactly once, with `it` bound to x.
+     */
+    private fun takeIf(
+        c: FirFunctionCall,
+        exitAt: Pos?,
+    ) {
+        mark(c)
+        val name = scopeName(c)!!
+        val pos = exitAt ?: ctx.posOf(c)
+        val arg = c.arguments.singleOrNull() as? FirAnonymousFunctionExpression
+        val lam = arg?.anonymousFunction?.takeIf { it.invocationKind == EventOccurrencesRange.EXACTLY_ONCE }
+            ?: return run { unsupported("$name argument", "v0 translates $name with a lambda literal that runs exactly once", c) }
+        mark(arg)
+        mark(lam)
+        mark(lam.body)
+        val receiver = c.extensionReceiver ?: return run { unsupported("$name receiver", "the call has no receiver", c) }
+        val x = expr(receiver)
+        // `it` is the receiver: an object keeps its local, another value gets one.
+        val it = lam.valueParameters.firstOrNull()
+        it?.let(::mark)
+        if (x != null && it != null) locals[it.symbol] = (x as? Var)?.local ?: temp("it", x.type, pos).also { t -> out += Let(t, x, false, pos) }
+        val p = lambdaValue(lam) ?: return
+        if (x == null) return
+        if (p.type != KType.BoolT) return run { unsupported("$name predicate", "the predicate is not a Boolean", lam) }
+        val keep = collect { exit(receiver, pos, x, nonNull = true) }
+        val drop = collect { exitNull(pos) }
+        out += If(if (name == "takeIf") p else Not(p, p.pos), keep, drop, ctx.posOf(c))
     }
 
     /** [e] without its smart casts, each marked; null if one is unstable. */
@@ -704,6 +854,58 @@ internal class ActionLowering(
             if (c != null) out += If(c, then, els, if (i == 0) ctx.posOf(w) else ctx.posOf(b.condition))
         }
 
+    /**
+     * An if or when used as a value (AI-CODE.md 14.1 A2): a mutable local that each branch assigns after its
+     * statements. The value is a Long, Int or Boolean, or a nullable Token or Key; the local starts as 0, false or
+     * null, and every branch overwrites it, since a value if or when has an else branch. An object value is a local
+     * alias (A3) or the lambda result.
+     */
+    private fun whenValue(w: FirWhenExpression): Expr? {
+        mark(w)
+        val pos = ctx.posOf(w)
+        val type = ktype(w.resolvedType, ctx.slotOf(w), w)
+        val initial =
+            when (type) {
+                KType.IntT -> IntLit(0, pos)
+                KType.BoolT -> BoolLit(false, pos)
+                is KType.Abs -> NullLit(type, pos).takeIf { type.nullable }
+                else -> null
+            }
+        val problem =
+            when {
+                type == null -> null
+                type is KType.RefT -> "an object-valued if or when is translated as the value of a local val (AI-CODE.md 14.1 A3) or as the lambda result"
+                initial == null -> "a non-null ${(type as KType.Abs).name} value has no initial value for the branches to overwrite"
+                w.subjectVariable != null -> "v0 translates `if` and `when` without subject"
+                w.branches.none { it.condition is FirElseIfTrueCondition } -> "the if or when has no else branch"
+                else -> null
+            }
+        if (type == null || initial == null || problem != null) {
+            problem?.let { unsupported("if/when used as a value", it, w) }
+            // The branches are lowered only to report what else they hold (1.5).
+            w.branches.forEach { b ->
+                if (w.subjectVariable == null && b.condition !is FirElseIfTrueCondition) expr(b.condition)
+                collect { seq(b.result.statements, resultLast = false) }
+            }
+            return null
+        }
+        val t = temp("value", type, pos)
+        out += Let(t, initial, true, pos)
+        out +=
+            chain(w, 0) { block ->
+                collect {
+                    out += seq(block.statements.dropLast(1), resultLast = false)
+                    when (val last = block.statements.lastOrNull()) {
+                        null -> unsupported("if/when used as a value", "a branch has no value", block)
+                        is FirReturnExpression, is FirThrowExpression -> statement(last)
+                        is FirExpression -> expr(last, type)?.let { out += Assign(t, it, ctx.posOf(last)) }
+                        else -> statement(last)
+                    }
+                }
+            }
+        return Var(t, pos)
+    }
+
     private fun localVal(p: FirProperty) {
         mark(p)
         val init = p.initializer
@@ -717,9 +919,16 @@ internal class ActionLowering(
             newObject(init, cls) { type -> declare(p.symbol, p.name.asString(), type, pos) }
             return
         }
+        ctx.madeLocal(p.symbol)?.let { (field, made) -> return madeLocalVal(p, field, made) }
         val type = ktype(ctx.typeOf(p), p.symbol, p)
+        if (type is KType.RefT && p.isVal && !isNullLiteral(init)) {
+            // A3: a val of the entry or of an object this action created is that object; [seq] splits an if or when.
+            val v = expr(init, type) ?: return
+            aliasTarget(v)?.let { locals[p.symbol] = it } ?: unsupported("local alias ${p.name}", ALIAS_REASON, p)
+            return
+        }
         if (type == null || type is KType.RefT) {
-            if (type != null) unsupported("local alias ${p.name}", "a second name for a module object is not modeled; use the entry or the new object directly", p)
+            if (type != null) unsupported("local alias ${p.name}", ALIAS_REASON, p)
             // The value is lowered only to report what else it holds (1.5).
             if (!isNullLiteral(init)) expr(init, type)
             return
@@ -780,13 +989,18 @@ internal class ActionLowering(
             is FirEqualityOperatorCall -> equality(e)
             is FirBooleanOperatorExpression -> logic(e)
             is FirStringConcatenationCall -> template(e)
-            is FirSafeCallExpression -> unsupported("safe call ?.", "not translated inside an action in v0", e)
+            is FirSafeCallExpression -> if (section) unsupported("safe call ?.", "not translated inside an action in v0", e) else safeCall(e, valueUsed = true)
+            is FirCheckedSafeCallSubject -> {
+                mark(e)
+                // Null after an unsupported receiver, which is reported already.
+                if (e in subjects) subjects[e] else unsupported("safe call subject", "the safe call of this subject was not translated", e)
+            }
             is FirElvisExpression -> if (section) sectionElvis(e) else unsupported("elvis ?:", "not translated inside an action in v0", e)
             is FirCheckNotNullCall -> if (section) sectionNotNull(e) else unsupported("!!", "not translated inside an action in v0", e)
             is FirThisReceiverExpression -> thisValue(e)
             is FirTypeOperatorCall -> unsupported("${e.operation.operator} check", "is/as are not translated inside an action in v0", e)
             is FirAnonymousFunctionExpression -> unsupported("nested lambda", "lambdas inside an action are not translated in v0", e)
-            is FirWhenExpression -> unsupported("if/when used as a value", "v0 translates an if or when as a statement or as the lambda result", e)
+            is FirWhenExpression -> if (section) unsupported("if/when used as a value", "v0 translates an if or when as a statement or as the lambda result", e) else whenValue(e)
             is FirTryExpression -> unsupported("try expression", "exception paths inside an action are not modeled in v0", e)
             is FirThrowExpression -> unsupported("throw", "exceptions are modeled for throws calls and !! only (DESIGN-B.md 2.7)", e)
             else -> unsupported(e::class.simpleName ?: "expression", "this FIR node is not translated in v0", e)
@@ -1053,6 +1267,8 @@ internal class ActionLowering(
         val values = linkedMapOf<String, Expr>()
         // The fields the call gives an argument, also an unsupported one: those take no default.
         val given = mutableSetOf<String>()
+        // The model operations that prepare a passed object (A1), by field, in source order.
+        val prepared = mutableListOf<Pair<kv.kvir.ObjField, FirFunctionCall>>()
         var ok = true
         // Arguments in source order: Kotlin evaluates them so. An argument for no sidecar field is evaluated for its effects.
         for ((arg, param) in c.resolvedArgumentMapping.orEmpty()) {
@@ -1061,7 +1277,7 @@ internal class ActionLowering(
             val v =
                 when {
                     field == null -> expr(arg)
-                    field.model != null -> flattenedInit(arg, field)
+                    field.model != null -> flattenedInit(arg, c, field, prepared)
                     else -> expr(arg, field.type)
                 }
             if (v == null) ok = false else if (field != null) values[field.name] = v
@@ -1083,22 +1299,48 @@ internal class ActionLowering(
         if (!ok) return null
         val v = local(KType.RefT(cls.name, false))
         out += New(v, cls, values, ctx.posOf(c))
+        owned += v
+        // A1: nothing else reaches a prepared object, so its operations may run after the construction.
+        for ((field, op) in prepared) {
+            val entry = ctx.entriesOf(op).first { it.model == field.model && it.role == Role.OP }
+            if (useCheck(entry, op)) modelOp(entry, FieldTarget(Var(v, ctx.posOf(c)), field), emptyList(), op)
+        }
         return Var(v, ctx.posOf(c))
     }
 
     /** Every reason why [field] is not flattened (ModuleContext.flattenProblems), with its position; null for a valid field. */
     private fun flattenReason(field: kv.kvir.ObjField): String? = ctx.flattenProblems(field).takeIf { it.isNotEmpty() }?.joinToString("; ") { "${it.reason} at ${where(it.pos)}" }
 
-    /** The initial value of flattened [field]: the argument of a new model object, e.g. `Semaphore(1)` is 1. */
+    /**
+     * The initial value of flattened [field], which construction [c] gives [arg]: the argument of a new model
+     * object, e.g. `Semaphore(1)` is 1. The model operations that prepare the object before the pass (AI-CODE.md
+     * 14.1 A1, ModuleContext.madeObject) go to [prepared].
+     */
     private fun flattenedInit(
         arg: FirExpression,
+        c: FirFunctionCall,
         field: kv.kvir.ObjField,
+        prepared: MutableList<Pair<kv.kvir.ObjField, FirFunctionCall>>,
     ): Expr? {
         flattenReason(field)?.let { return unsupported("flattened field ${field.kotlin}", it, arg) }
-        val ctor = arg as? FirFunctionCall
-        if (ctor == null || ctx.entriesOf(ctor).none { it.model == field.model && it.role == Role.CTOR }) {
-            return unsupported("flattened field ${field.kotlin}", "the argument is not a new ${field.model} object", arg)
+        // The flattening check found no problem, so every construction passes a new object.
+        val made = ctx.madeObject(arg, c, field) as Made.New
+        made.ops.forEach { prepared += field to it }
+        val local = made.local ?: run {
+            // The apply or also call with its lambda; its operations run after the construction (newObject).
+            if (made.ops.isNotEmpty()) markAll(arg)
+            return initialCount(made.ctor, field)
         }
+        mark(arg)
+        // Null if the declaration was not lowered; that is reported there.
+        return madeCounts[local.symbol]
+    }
+
+    /** The available permits that model constructor [ctor] of [field] gives, e.g. `Semaphore(1)` is 1. */
+    private fun initialCount(
+        ctor: FirFunctionCall,
+        field: kv.kvir.ObjField,
+    ): Expr? {
         mark(ctor)
         if (field.model == TrustedModels.KOTLINX_SEMAPHORE_MODEL) {
             // Literal arguments, checked with the field's other constructions (ModuleContext.semaphoreMaximum).
@@ -1108,6 +1350,34 @@ internal class ActionLowering(
         }
         return expr(ctor.arguments.single(), field.type)
     }
+
+    /**
+     * A1: a local `val s = Semaphore(...)` that a construction passes ([ModuleContext.madeLocal]). It gets no
+     * statement: its operations run on the new entry's field (newObject). An initial count that is not a literal is
+     * kept in a local here, so that the construction reads the value of this point.
+     */
+    private fun madeLocalVal(
+        p: FirProperty,
+        field: kv.kvir.ObjField,
+        made: Made.New,
+    ) {
+        markAll(p)
+        val init = initialCount(made.ctor, field) ?: return
+        if (init is IntLit) {
+            madeCounts[p.symbol] = init
+            return
+        }
+        val pos = ctx.posOf(p)
+        val t = temp("permits", KType.IntT, pos)
+        out += Let(t, init, false, pos)
+        madeCounts[p.symbol] = Var(t, pos)
+    }
+
+    /** The initial count of each local that holds a new model object (A1), by symbol. */
+    private val madeCounts = IdentityHashMap<FirBasedSymbol<*>, Expr>()
+
+    /** The objects this action created: New and Fresh locals. With the entry, the targets of a local alias (A3). */
+    private val owned = mutableSetOf<Local>()
 
     private fun useCheck(
         entry: Entry,
@@ -1195,6 +1465,11 @@ internal class ActionLowering(
         val receiver = c.dispatchReceiver?.let { stripSmartCasts(it) } ?: return null
         val read = receiver as? FirPropertyAccessExpression ?: return unsupported("${entries.first().name} on ${sourceText(receiver)}", "the receiver is not a flattened field, the module counter or a cell", c)
         val sym = ctx.calleeOf(read)
+        if (sym != null && sym in madeCounts) {
+            // AI-CODE.md 14.1 A1: the operation runs on the new entry's field right after the construction (newObject).
+            markAll(c)
+            return null
+        }
         val field = ctx.fieldOf(sym)
         val state = ctx.stateOf(sym)
         val isLocal = sym is FirPropertySymbol && sym.isLocal && sym !in locals
@@ -1222,6 +1497,17 @@ internal class ActionLowering(
         val args = (c as? FirFunctionCall)?.arguments.orEmpty().map { expr(it) ?: return null }.toMutableList()
         // kotlinx release: its proof obligation `count < maximum` reads the field's maximum (TrustedModels).
         if (entry.model == TrustedModels.KOTLINX_SEMAPHORE_MODEL && entry.name == "release") args += IntLit(ctx.semaphoreMax(field!!)!!, pos)
+        return modelOp(entry, target, args, c)
+    }
+
+    /** The ModelOp of [entry] at call [c]; its value is a new local for a Bool or Long result. */
+    private fun modelOp(
+        entry: Entry,
+        target: kv.kvir.Target,
+        args: List<Expr>,
+        c: FirQualifiedAccessExpression,
+    ): Expr? {
+        val pos = ctx.posOf(c)
         val result =
             when (entry.returns) {
                 Returns.BOOL -> temp("cond", KType.BoolT, pos)
@@ -1344,6 +1630,7 @@ internal class ActionLowering(
         if (cls != null) {
             val r = temp("r", KType.RefT(cls.name, false), pos)
             out += Fresh(r, cls, t.shortName, pos)
+            owned += r
             if (section) freshSeen = true
             return Var(r, pos)
         }
@@ -1379,9 +1666,66 @@ internal class ActionLowering(
         if (fn.visibility == Visibilities.Local) return unsupported("call to local function ${fn.name}", "v0 inlines only member and top-level helpers", c)
         val receiver = c.dispatchReceiver
         if (receiver != null && receiver !is FirThisReceiverExpression && receiver !is FirResolvedQualifier) {
-            return unsupported("helper call on ${sourceText(receiver)}", "v0 inlines helpers of this object or class only", c)
+            val owner = (ctx.index.parent(fn) as? FirRegularClass)?.takeIf { ctx.classOf(it.symbol) != null }
+                ?: return unsupported("helper call on ${sourceText(receiver)}", "v0 inlines helpers of this object or class, and pure member functions of a module class (AI-CODE.md 14.1 A5)", c)
+            return memberHelper(c, fn, owner, receiver, valueUsed)
         }
         markAll(receiver)
+        return inlineBody(c, fn, valueUsed)
+    }
+
+    /**
+     * A member function of a sidecar class, called on the entry or on an object this action created (AI-CODE.md
+     * 14.1 A5): inlined with `this` bound to that object. It must be final, so the call runs this body, and pure:
+     * the inlined statements only declare locals and compute values; no field write, model operation, new object
+     * or non-deterministic call.
+     */
+    private fun memberHelper(
+        c: FirFunctionCall,
+        fn: FirNamedFunction,
+        owner: FirRegularClass,
+        receiver: FirExpression,
+        valueUsed: Boolean,
+    ): Expr? {
+        if (fn.status.modality != Modality.FINAL) return unsupported("open member helper ${fn.name}", "an override of ${fn.name} may run instead of this body", c)
+        val r = expr(receiver) ?: return null
+        val target = aliasTarget(r) ?: return unsupported("helper call on ${sourceText(receiver)}", "the receiver is neither the entry nor an object the action created (W6)", c)
+        val saved = thisBindings.put(owner.symbol, target)
+        var v: Expr? = null
+        val body =
+            try {
+                collect { v = inlineBody(c, fn, valueUsed) }
+            } finally {
+                if (saved == null) thisBindings.remove(owner.symbol) else thisBindings[owner.symbol] = saved
+            }
+        if (!pure(body, mutableSetOf())) return unsupported("member helper ${fn.name} with effects", "v0 inlines a member function of a module class only if it is pure: it reads fields and computes a value (AI-CODE.md 14.1 A5)", c)
+        out += body
+        return v
+    }
+
+    /** True if [stmts] only compute values: lets, ifs, and assignments of locals they declare ([declared]). */
+    private fun pure(
+        stmts: List<Stmt>,
+        declared: MutableSet<Local>,
+    ): Boolean =
+        stmts.all { s ->
+            when (s) {
+                is Let -> {
+                    declared += s.v
+                    true
+                }
+                is Assign -> s.v in declared
+                is If -> pure(s.then, declared) && pure(s.els, declared)
+                else -> false
+            }
+        }
+
+    /** The body of helper [fn] at call [c], inlined: its parameters become locals, except that an object parameter is the object it gets. */
+    private fun inlineBody(
+        c: FirFunctionCall,
+        fn: FirNamedFunction,
+        valueUsed: Boolean,
+    ): Expr? {
         helpers += fn
         mark(fn)
         val mapping = c.resolvedArgumentMapping.orEmpty()
@@ -1931,10 +2275,10 @@ internal class ActionLowering(
         ran = ran || before
     }
 
-    /** The value of an inline lambda of the section: its statements, then its last expression. */
+    /** The value of an inline lambda (of the section, or of takeIf in an action): its statements, then its last expression. */
     private fun lambdaValue(lam: FirAnonymousFunction): Expr? {
         val stmts = lam.body?.statements.orEmpty()
-        stmts.dropLast(1).forEach(::sectionStatement)
+        stmts.dropLast(1).forEach(::statement)
         val last = stmts.lastOrNull() ?: return unsupported("empty lambda", "the lambda has no value", lam)
         val value = if (last is FirReturnExpression && last.target.labeledElement === lam) last.also(::mark).result else last as? FirExpression
         return value?.let { expr(it) } ?: unsupported("lambda value", "the lambda does not end with a value", last)
@@ -2155,6 +2499,12 @@ internal class ActionLowering(
 
         /** The stdlib scope functions the section inlines (DESIGN-B.md 2.6 rule 2). */
         val SCOPE_FUNCTIONS = setOf("let", "also", "run", "apply")
+
+        /** Why a local alias of a module object is unsupported (AI-CODE.md 14.1 A3). */
+        const val ALIAS_REASON = "a second name for a module object is modeled only as a val whose every value is the entry or an object this action created (AI-CODE.md 14.1 A3)"
+
+        /** The stdlib calls that keep or drop their receiver by a predicate lambda (AI-CODE.md 14.1 A4). */
+        val TAKE_IF = setOf("takeIf", "takeUnless")
 
         /** Long and Int operators that throw on a zero divisor. */
         val DIVISIONS = setOf("div", "rem", "mod", "floorDiv")
