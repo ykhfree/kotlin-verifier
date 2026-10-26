@@ -1,0 +1,10 @@
+{
+ "format": "kv-decisions/1",
+ "from": "the decisions of the pilot (DESIGN-C.md 3.4 signed choices; pilot-c/aligned/opus.kv follows them): D1 strict, D4 takeover, D2 true, D5 false. Not a signature",
+ "decisions": [
+  {"group": "D1", "option": "A", "note": "strict: at exactly the lease end the lock is still held (signed choice, AI-CODE.md 11)"},
+  {"group": "D4", "cells": {"C05": "token", "C19": "backed"}, "note": "tryLock takes an expired lock over at once"},
+  {"group": "D2", "cells": {"C09": "true"}, "note": "the holder can release after expiry if nobody took the lock over"},
+  {"group": "D5", "cells": {"C12": "false"}, "note": "unLock of a token no entry backs returns false"}
+ ]
+}

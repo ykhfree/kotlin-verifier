@@ -279,12 +279,12 @@ val mechanicalMutants by tasks.registering(Exec::class) {
 }
 
 // `./gradlew aicodeEnv`: the AI-written-code measurement of ../AI-CODE.md. Writes build/kv/aicode-env.json, which
-// scripts/aicode.py reads: the installed kv, the req-shield checkout, the KeyLocalLock compile classpath and flags, the
+// scripts/aicode.py reads (and scripts/spec.py, DESIGN-C.md C5, when it creates a run): the installed kv, the req-shield checkout, the KeyLocalLock compile classpath and flags, the
 // compiler's own classpath (for the sandbox compile.sh), the specs, AI-CODE.md, the results directory (../aicode) and
 // the work directory for sandboxes and copies (-PaicodeWork=DIR, default build/kv/aicode-work).
 val aicodeEnv by tasks.registering {
     group = "kv"
-    description = "Writes build/kv/aicode-env.json for scripts/aicode.py (AI-CODE.md)."
+    description = "Writes build/kv/aicode-env.json for scripts/aicode.py (AI-CODE.md) and scripts/spec.py (DESIGN-C.md)."
     dependsOn(tasks.installDist)
     val env = layout.buildDirectory.file("kv/aicode-env.json")
     val work = providers.gradleProperty("aicodeWork").getOrElse(layout.buildDirectory.dir("kv/aicode-work").get().asFile.path)

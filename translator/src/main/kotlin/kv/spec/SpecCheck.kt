@@ -360,12 +360,15 @@ private fun isolation(
     )
 }
 
+/** The first line of a report on a draft (DESIGN-C.md 9.2 JC6): `kv spec check --draft` and `kv verify --draft`. */
+const val DRAFT_LINE = "DRAFT: not signed; the verdict counts for nothing"
+
 /** The report as text. With a draft, the first line says that the verdict counts for nothing (DESIGN-C.md 9.2 JC6). */
 fun SpecCheckReport.render(): String {
     val sb = StringBuilder()
 
     fun line(s: String = "") = sb.append(s).append('\n')
-    if (options.draft) line("DRAFT: not signed; the verdict counts for nothing")
+    if (options.draft) line(DRAFT_LINE)
     line("kv spec check: ${options.sidecar.name}${module?.let { " (module $it)" } ?: ""}")
     if (errors.isEmpty()) line("Grammar and types: OK") else line("Errors: ${errors.size}")
     errors.forEach { line("  $it") }

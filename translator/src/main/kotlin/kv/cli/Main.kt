@@ -21,6 +21,7 @@ import kv.sidecar.SidecarException
 import kv.sidecar.SidecarLoader
 import kv.sidecar.checkHoleEdit
 import kv.sidecar.holeSkeleton
+import kv.spec.DRAFT_LINE
 import kv.spec.SOURCES_JSON
 import kv.spec.SnapshotException
 import kv.spec.SnapshotInput
@@ -53,11 +54,12 @@ private const val USAGE = """usage:
       As lower, then writes the Viper program (to stdout without --out). With --out, also writes the position
       table to FILE.vpr.positions. Exit 1 if a rule is broken or the sidecar cannot be emitted.
   kv verify --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] [--viper-home DIR]
-            [--assert-timeout MS] [--wall-seconds N] SIDECAR.kv
+            [--assert-timeout MS] [--wall-seconds N] [--draft] SIDECAR.kv
       As emit, then runs Silicon once and prints the report (DESIGN-v0.md 5.8). If a FAILED action fails only at
       hole conjuncts (MI_INV_i), a second Silicon run checks its other ensures without them (the property check):
-      the action is FAILED (property) or FAILED (invariant only). VIPER_HOME or --viper-home names a
-      Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
+      the action is FAILED (property) or FAILED (invariant only). With --draft (a DESIGN-C.md draft), an intent
+      clause without a 'reviewed' note is no error, and the report starts with DRAFT. VIPER_HOME or --viper-home
+      names a Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
       --wall-seconds (default 300). Exit 0 PROVEN, 1 FAILED, 2 usage error, 3 INCOMPLETE, 4 ERROR (a compile
       error, a sidecar error, a W1-W16 violation, a missing Silicon or an abnormal Silicon run).
   kv mutation-sites --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
@@ -114,9 +116,11 @@ fun runCli(
     val command = args.firstOrNull()
     if (command == "hole") return hole(args.drop(1), out, err)
     if (command == "spec") return spec(args.drop(1), out, err)
+    // `kv verify --draft` (DESIGN-C.md 9.2 JC6): the sidecar is checked as not signed yet.
+    val draft = command == "verify" && "--draft" in args
     val options =
         try {
-            Options.parse(args.drop(1))
+            Options.parse(args.drop(1).filterNot { draft && it == "--draft" })
         } catch (e: UsageError) {
             err.println("kv: ${e.message}")
             err.println(USAGE)
@@ -127,7 +131,7 @@ fun runCli(
         "resolve" -> resolve(options, out, err)
         "lower" -> lower(options, out, err)
         "emit" -> emit(options, out, err)
-        "verify" -> verify(options, out, err)
+        "verify" -> verify(options, out, err, draft)
         "mutation-sites" -> mutationSites(options, out, err)
         else -> {
             err.println(USAGE)
@@ -163,6 +167,7 @@ private fun resolved(
     command: String,
     options: Options,
     err: PrintStream,
+    draft: Boolean = false,
     onLowered: ((LoweredFir) -> Unit)? = null,
 ): Pair<ResolveOutcome?, Int> {
     val root = options.root
@@ -170,7 +175,7 @@ private fun resolved(
         err.println("kv: $command needs --root DIR and one sidecar file")
         return null to 2
     }
-    val outcome = Frontend.resolve(options.files.single(), root, options.classpath, options.kotlincArgs, onLowered = onLowered)
+    val outcome = Frontend.resolve(options.files.single(), root, options.classpath, options.kotlincArgs, draft = draft, onLowered = onLowered)
     outcome.compileMessages?.let {
         err.print(it)
         err.println("kv: compilation failed")
@@ -269,8 +274,9 @@ private fun verify(
     options: Options,
     out: PrintStream,
     err: PrintStream,
+    draft: Boolean,
 ): Int {
-    val (outcome, code) = resolved("verify", options, err)
+    val (outcome, code) = resolved("verify", options, err, draft = draft)
     // A compile error or a sidecar error is ERROR; only a usage error keeps its own code.
     val module = outcome?.module ?: return if (code == 2) 2 else verdictExit(ModuleVerdict.ERROR)
     val vpr = options.out ?: File.createTempFile("kv-", ".vpr")
@@ -282,6 +288,7 @@ private fun verify(
             err.println("kv: ${e.message}")
             return verdictExit(ModuleVerdict.ERROR)
         }
+    if (draft) out.println(DRAFT_LINE)
     out.print(report.render())
     out.println("Viper program: ${vpr.path}")
     return verdictExit(report.verdict)
