@@ -246,8 +246,9 @@ SUITES = {
 # `kv verify` exit codes (DESIGN-v0.md 8.3, Q7).
 VERDICTS = {0: "PROVEN", 1: "FAILED", 3: "INCOMPLETE", 4: "ERROR"}
 
-# A FAILED action row ends with its sub-status in parentheses: property, invariant only, ...
-ROW = re.compile(r"^  (?:action (\S+)|(stray action \S+))\s+\S+\s+(PROVEN|FAILED|UNSUPPORTED|ERROR)(?: \(([^()]+)\))?$")
+# A FAILED action row ends with its sub-status in parentheses: property, invariant only, ... A reserve step (DESIGN-D.md
+# 6.7) has a row like an action's: `step reserve OPERATION`.
+ROW = re.compile(r"^  (?:action (\S+)|(stray action \S+|step reserve \S+))\s+\S+\s+(PROVEN|FAILED|UNSUPPORTED|ERROR)(?: \(([^()]+)\))?$")
 OTHERS = re.compile(r"^  ((?:init|lemma \S+|probe) (?:PROVEN|FAILED|UNSUPPORTED|ERROR)(?: · |$))+")
 # A generated obligation is named by what the tool generated (e.g. MI_OWN), without Silicon's reason in parentheses.
 FINDING = re.compile(r"^      (?P<msg>[^:]+): (?:sidecar (?P<id>.+?) [\w./-]+\.kv:\d+:\d+|generated (?P<gen>[^()]+?)(?: \(.*\))?$|(?P<other>kotlin .+|no source range .+))")

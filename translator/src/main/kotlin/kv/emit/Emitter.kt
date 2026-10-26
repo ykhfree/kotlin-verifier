@@ -9,7 +9,9 @@ import kv.kvir.NondetCall
 import kv.kvir.Origin
 import kv.kvir.RacyRead
 import kv.kvir.Reservation
+import kv.kvir.Reserve
 import kv.kvir.Ite
+import kv.kvir.Reserved
 import kv.kvir.StateVar
 import kv.kvir.And
 import kv.kvir.Arith
@@ -171,6 +173,13 @@ const val FACT_ISSUE = "tool fact ISSUE"
 const val FACT_WITNESS = "tool fact WITNESS"
 const val FACT_ISSUE_ONLY = "tool fact ISSUE_ONLY"
 
+/** The report's names of the tool facts of reserve steps (DESIGN-D.md 2.1, 6.6). */
+const val FACT_MI_PEND = "tool fact MI_PEND"
+const val FACT_PEND = "tool fact PEND"
+
+/** The note of a reserve step's fresh asserts (DESIGN-D.md 6.6 item 5): like a hole conjunct, they rest on MI only. */
+const val RESERVE_FRESH = "reserve: the next counter value may be issued or reserved; the hole must show that it is fresh"
+
 /** Writes text and records which source each range comes from. */
 private class VprWriter {
     private val sb = StringBuilder()
@@ -295,6 +304,14 @@ private class Emitter(
         }
     }
 
+    /**
+     * The counter of the module's reserve steps whose actions are emitted (DESIGN-D.md 6.6); null without one. Only
+     * then does the program have `gPend`, MI_PEND, the PEND facts and the reserve methods, so that a module without a
+     * reserve step emits the same program as before.
+     */
+    private val pendCounter: String? by lazy { m.operations.firstNotNullOfOrNull { op -> op.reserve?.takeIf { op.action.status == Status.Supported }?.counter?.name } }
+    private val pend get() = pendCounter != null
+
     fun run(): Emitted {
         if (b) {
             listOf(map, cls, hole)
@@ -312,6 +329,8 @@ private class Emitter(
         macros()
         if (!reach) init()
         m.operations.filter { it.action.status == Status.Supported }.forEach { op ->
+            // DESIGN-D.md 6.6: the reserve step's method before the action's; it has no branch to probe (6.9 item 5).
+            if (!reach) op.reserve?.let { reserveStep(op, it) }
             action(op.action, op, s.operations.single { it.name.text == op.name })
         }
         if (contract == null) m.strayActions.filter { it.status == Status.Supported }.forEach(::stray)
@@ -408,6 +427,7 @@ private class Emitter(
             ghost.fields.forEach { f ->
                 w.line("field ${f.name.text}: ${stype(f.type.text)}", Source.Sidecar(f.name.pos, "ghost field ${f.name.text}"), comment = f.kind.name.lowercase().replace('_', '-'))
             }
+            if (pend) w.line("field gPend: Bool", Source.Generated(FACT_PEND), comment = "tool ghost (DESIGN-D.md 2.1): reserved by a reserve step, not consumed by its action yet")
             w.put("\n")
         }
         w.comment("---- ${cls.name}, flattened (sidecar: class ${cls.name}) ----")
@@ -428,7 +448,7 @@ private class Emitter(
             val index = stype(ghost.index.text)
             w.line("define GHOST_PERMS (", Source.Generated("GHOST_PERMS"))
             w.line("forall qt: $index :: { $g(qt) }", indent = 2)
-            w.line(ghost.fields.joinToString(" && ") { "acc($g(qt).${it.name.text})" }, indent = 4)
+            w.line((ghost.fields.map { it.name.text } + listOfNotNull("gPend".takeIf { pend })).joinToString(" && ") { "acc($g(qt).$it)" }, indent = 4)
             w.line(")")
             w.put("\n")
         }
@@ -451,6 +471,7 @@ private class Emitter(
         w.line(")")
         w.put("\n")
         if (witnessFact) witnessDefine()
+        if (pend) pendDefine()
         setOnce.forEach { d ->
             val src = Source.Sidecar(d.pos, d.id.text)
             w.comment("---- Sidecar: set-once ${d.id.text}: ${d.map.text}. A mapped key keeps its value (every action, DESIGN-B.md 2.4) ----")
@@ -507,9 +528,28 @@ private class Emitter(
         w.put("\n")
     }
 
-    /** `requires MI_WITNESS(S)` after `requires MI(S)` of an action or a stray action, if the module has WITNESS. */
+    /**
+     * `requires MI_WITNESS(S)` after `requires MI(S)` of an action, a stray action or a reserve step, if the module has
+     * WITNESS; then `requires MI_PEND(S)` if it has a reserve step ([requiresPend]).
+     */
     private fun requiresWitness() {
         if (witnessFact) w.line("requires MI_WITNESS(S)", Source.Generated(FACT_WITNESS), 2, "$FACT_WITNESS")
+        requiresPend()
+    }
+
+    /** DESIGN-D.md 6.6 MI_PEND: a reserved token is not issued, and the counter has passed it. R, B and END keep it. */
+    private fun pendDefine() {
+        val index = stype(ghost.index.text)
+        w.comment("Tool fact MI_PEND (DESIGN-D.md 2.1): a reserved token is not issued, and the counter has passed it.")
+        w.line("define MI_PEND(S) (", Source.Generated(FACT_MI_PEND))
+        w.line("forall qt: $index :: { $g(qt).gPend } $g(qt).gPend ==> !$g(qt).$issued && 0 <= qt && qt <= S.$pendCounter", indent = 2)
+        w.line(")")
+        w.put("\n")
+    }
+
+    /** `requires MI_PEND(S)` right after the WITNESS line, if the module has a reserve step (DESIGN-D.md 6.6 item 1). */
+    private fun requiresPend() {
+        if (pend) w.line("requires MI_PEND(S)", Source.Generated(FACT_MI_PEND), 2, FACT_MI_PEND)
     }
 
     /** HIST (DESIGN-v0.md 5.3 item 4): from the ghost field kinds, in declaration order. */
@@ -560,6 +600,7 @@ private class Emitter(
             w.line("method init() returns (S: Ref)")
             w.line("ensures MI(S)", Source.Generated("MI"), 2)
             if (witnessFact) w.line("ensures MI_WITNESS(S)", Source.Generated(FACT_WITNESS), 2, "$FACT_WITNESS: no token is issued yet")
+            if (pend) w.line("ensures MI_PEND(S)", Source.Generated(FACT_MI_PEND), 2, "$FACT_MI_PEND: no token is reserved yet")
             if (contract != null) {
                 // No body: a cell assumes MI and an empty map. A counter's value is not stated (ContractOnly).
                 m.state.filterIsInstance<MapVar>().forEach { w.line("ensures S.${it.name} == ${initial(it)}", Source.Kotlin(it.pos), 2) }
@@ -575,7 +616,8 @@ private class Emitter(
             w.line("S.created := Set[Ref]()", indent = 2)
             if (!b) {
                 w.comment("Ghost allocation: one record per ${ghost.index.text} value, none issued yet (trusted: an inhale).", 2)
-                w.line("inhale GHOST_PERMS && (forall qt: ${stype(ghost.index.text)} :: { $g(qt) } !$g(qt).$issued)", Source.Generated("init inhale"), 2)
+                val reserved = if (pend) " && !$g(qt).gPend" else ""
+                w.line("inhale GHOST_PERMS && (forall qt: ${stype(ghost.index.text)} :: { $g(qt) } !$g(qt).$issued$reserved)", Source.Generated("init inhale"), 2)
             }
             w.put("}")
         }
@@ -601,16 +643,17 @@ private class Emitter(
         } else {
             w.comment("Action ${op.name}: ${map.kotlin}.${a.kind.method} ${at(a.pos)}, operation ${op.kotlin} ${at(op.pos)}")
             w.comment("  ${origin(a.key)}")
-            a.free.forEach { w.comment("  ${origin(it)}${if (it.sidecarName == null) ", unnamed: arbitrary" else ""}") }
+            a.free.forEach { w.comment("  ${origin(it)}${if (it.sidecarName == null && it.origin !is Reservation) ", unnamed: arbitrary" else ""}") }
         }
         method(op.name, MethodKind.ACTION, op.name, a.pos) {
-            val params = (listOf("S: Ref") + (listOf(a.key) + named).map { "${it.local.name}: ${vtype(it.local.type)}" }).joinToString()
+            // DESIGN-D.md 6.6: the reserved val is the last parameter.
+            val params = (listOf("S: Ref") + (listOf(a.key) + named + reservedOf(op)).map { "${it.local.name}: ${vtype(it.local.type)}" }).joinToString()
             val outs = listOfNotNull(op.result?.let { "${it.name}: ${vtype(it.type)}" }, "exc: Bool".takeIf { exc })
             val returns = if (outs.isEmpty()) "" else " returns (${outs.joinToString()})"
             w.line("method ${op.name}($params)$returns")
             requires(a, op)
             if (!reach) {
-                ensuresInvariant(a, op.name)
+                ensuresInvariant(a, op.name, op.reserve)
                 clauseNo = 0
                 if (!b) allowances(decl, op, op.name)
                 decl.items.filterIsInstance<EnsuresItem>().forEach { e ->
@@ -661,6 +704,9 @@ private class Emitter(
 
     private fun origin(fv: FreeValue): String = "${fv.local.name} <- ${fv.kotlin} ${at(fv.origin.pos)} (${fv.origin.kind()})"
 
+    /** The free value of the reserved val of [op]'s reserve step (DESIGN-D.md 6.2), as a list; empty without a step. */
+    private fun reservedOf(op: Operation): List<FreeValue> = if (op.reserve == null) emptyList() else op.action.free.filter { it.origin is Reservation }
+
     /** `requires`: MI, the trusted contracts of named Nondet values, the type facts of named values (5.2). */
     private fun requires(
         a: Action,
@@ -675,6 +721,10 @@ private class Emitter(
         }
         named.filter { (it.local.type as? KType.Abs)?.let { t -> !t.nullable && t.name in templates } == true }.forEach {
             w.line("requires ${it.local.name} != NULL", Source.Kotlin(it.local.pos), 2, "type fact: ${it.kotlin} is a non-null ${(it.local.type as KType.Abs).name}")
+        }
+        // DESIGN-D.md 6.6: the thread holds the reservation of its reserve step; J.2 of 3.1 gives it at the action's start.
+        op?.reserve?.let { r ->
+            w.line("requires $g(${r.local.name}).gPend", Source.Kotlin(r.pos), 2, "the thread holds the reservation of step reserve_${op.name} (DESIGN-D.md 2.1)")
         }
     }
 
@@ -713,12 +763,13 @@ private class Emitter(
     private fun ensuresInvariant(
         a: Action,
         label: String,
+        reserve: Reserve? = null,
     ) {
         w.line("ensures MI_PERMS(S)", Source.Generated("MI_PERMS"), 2)
-        frameFact(a)
+        frameFact(a.key.local.name)
         w.line("ensures MI_OWN(S)", Source.Generated("MI_OWN"), 2)
-        if (witnessFact) w.line("ensures MI_WITNESS(S)", Source.Generated(FACT_WITNESS), 2, "$FACT_WITNESS: a held backed token is carried by its key's entry")
-        if (AssumedFact.FIELD_FRAME in assumed) fieldFrame(a)
+        ensuresWitnessPend()
+        if (AssumedFact.FIELD_FRAME in assumed) fieldFrame(a.key.local.name)
         // DESIGN-B.md 5.4 rule 1 (JB1): each set-once line right after MI_OWN.
         setOnce.forEach { d -> w.line("ensures ${d.id.text}(S)", Source.Sidecar(d.pos, d.id.text), 2) }
         invariants.forEach { p -> w.line("ensures ${p.id.text}(S)", Source.Sidecar(p.expr.pos, p.id.text), 2) }
@@ -732,7 +783,28 @@ private class Emitter(
             endFacts(a)
             issueFact(a)
             issueOnlyFact(a)
+            pendFact(reserve?.let { "&& qt != ${it.local.name}" }, "only its own reservation is consumed")
         }
+    }
+
+    /** MI_WITNESS and, right after it, MI_PEND (DESIGN-D.md 6.6 item 1) as ensures, for the modules that have them. */
+    private fun ensuresWitnessPend() {
+        if (witnessFact) w.line("ensures MI_WITNESS(S)", Source.Generated(FACT_WITNESS), 2, "$FACT_WITNESS: a held backed token is carried by its key's entry")
+        if (pend) w.line("ensures MI_PEND(S)", Source.Generated(FACT_MI_PEND), 2, FACT_MI_PEND)
+    }
+
+    /**
+     * DESIGN-D.md 6.6 PEND, right after ISSUE_ONLY: how the method changes the reservations. [change] is the text after
+     * `old(gPend)`, null for no change; [why] its comment. Only a module with a reserve step has it.
+     */
+    private fun pendFact(
+        change: String?,
+        why: String,
+    ) {
+        if (!pend) return
+        val index = stype(ghost.index.text)
+        val rhs = if (change == null) "old($g(qt).gPend)" else "(old($g(qt).gPend) $change)"
+        w.line("ensures forall qt: $index :: { $g(qt).gPend } $g(qt).gPend == $rhs", Source.Generated(FACT_PEND), 2, "$FACT_PEND: ${if (change == null) "no reservation is made or consumed" else why}")
     }
 
     // ---- DESIGN-C.md 7.3: tool facts in the contract, proven with the body ----
@@ -743,26 +815,26 @@ private class Emitter(
      * FRAME: the action maps every other key as before. It follows MI_PERMS, which gives the permission to read the
      * map in the post-state. It says nothing about other state variables or object fields.
      */
-    private fun frameFact(a: Action) {
-        val k = a.key.local.name
+    private fun frameFact(k: String?) {
         val ms = map.name
         val triggers = if (AssumedFact.FRAME_DOMAIN in assumed) "{ qk in domain(S.$ms) } { S.$ms[qk] }" else "{ S.$ms[qk] }"
+        // A reserve step ([k] null) changes no key (DESIGN-D.md 6.6).
+        val premise = k?.let { "qk != $it ==> " } ?: ""
         w.line(
-            "ensures forall qk: $keyType :: $triggers qk != $k ==> (has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.$ms[qk] == old(S.$ms[qk]))",
+            "ensures forall qk: $keyType :: $triggers $premise(has(S, qk) == old(has(S, qk))) && (has(S, qk) ==> S.$ms[qk] == old(S.$ms[qk]))",
             Source.Generated(FACT_FRAME),
             2,
-            "$FACT_FRAME: the action changes the map only at its key",
+            if (k == null) "$FACT_FRAME: the step does not change the map" else "$FACT_FRAME: the action changes the map only at its key",
         )
     }
 
     /** Every field of another key's entry is as it was: assumed for a measurement (DESIGN-C.md 10.2 O2), not proven. */
-    private fun fieldFrame(a: Action) {
-        val k = a.key.local.name
+    private fun fieldFrame(k: String?) {
         val ms = map.name
         val same = objectFields.joinToString(" && ") { "S.$ms[qk].$it == old(S.$ms[qk].$it)" }
         w.line(
             // has(S, qk) in the premise makes `S.m[qk]` well-defined; FRAME gives it for every other key mapped before.
-            "ensures forall qk: $keyType :: { S.$ms[qk] } qk != $k && old(has(S, qk)) && has(S, qk) ==> $same",
+            "ensures forall qk: $keyType :: { S.$ms[qk] } ${k?.let { "qk != $it && " } ?: ""}old(has(S, qk)) && has(S, qk) ==> $same",
             Source.Generated("FIELD_FRAME"),
             2,
             "assumed for a measurement (DESIGN-C.md 10.2 O2): the fields of other keys' entries are unchanged",
@@ -913,6 +985,54 @@ private class Emitter(
         }
     }
 
+    /**
+     * The method of the reserve step [r] of [op] (DESIGN-D.md 6.6): the counter step, its fresh asserts and the new
+     * reservation. Its contract is the invariant block of an action without a key, and the facts that it ends and
+     * issues nothing and adds exactly its own reservation (PEND). It has no sidecar clause.
+     */
+    private fun reserveStep(
+        op: Operation,
+        r: Reserve,
+    ) {
+        val name = Reserved.RESERVE_PREFIX + op.name
+        val label = "reserve ${op.name}"
+        val x = r.local.name
+        val index = stype(ghost.index.text)
+        val src = Source.Kotlin(r.pos)
+        w.comment("Reserve step of ${op.name}: ${r.kotlin} ${at(r.pos)} before the action (DESIGN-D.md 2.1); its value is $x [ASSUME ${r.assumption}]")
+        method(name, MethodKind.RESERVE, label, r.pos) {
+            w.line("method $name(S: Ref) returns ($x: Int)")
+            w.line("requires MI(S)", Source.Generated("MI"), 2)
+            requiresWitness()
+            w.line("ensures MI_PERMS(S)", Source.Generated("MI_PERMS"), 2)
+            frameFact(null)
+            w.line("ensures MI_OWN(S)", Source.Generated("MI_OWN"), 2)
+            ensuresWitnessPend()
+            if (AssumedFact.FIELD_FRAME in assumed) fieldFrame(null)
+            invariants.forEach { p -> w.line("ensures ${p.id.text}(S)", Source.Sidecar(p.expr.pos, p.id.text), 2) }
+            if (label in withoutHole) {
+                w.comment("property check (pass 2): the hole ensures MI_INV_i are left out", 2)
+            } else {
+                hole.forEachIndexed { i, c -> w.line("ensures MI_INV_${i + 1}(S)", Source.Sidecar(c.expr.pos, "MI_INV_${i + 1}", c.name), 2) }
+            }
+            w.line("ensures HIST", Source.Generated("HIST"), 2)
+            w.line("ensures forall qt: $index :: { $g(qt).$held } $g(qt).$held == old($g(qt).$held)", Source.Generated(FACT_END), 2, "$FACT_END: the step ends nothing")
+            w.line("ensures forall qt: $index :: { $g(qt).$issued } $g(qt).$issued == old($g(qt).$issued)", Source.Generated(FACT_ISSUE_ONLY), 2, "$FACT_ISSUE_ONLY: the step issues nothing")
+            pendFact("|| qt == $x", "the step reserves exactly its own value")
+            if (contract != null) return@method
+            val n = "n_${r.pos.line}_${r.pos.col}"
+            w.line("{")
+            w.line("S.${r.counter.name} := S.${r.counter.name} + 1", src, 2, "${r.kotlin} ${at(r.pos)}")
+            w.line("var $n: Int := S.${r.counter.name}", src, 2)
+            w.line("assert 0 <= $n", src, 2, "the reserved value is not the null sentinel")
+            w.line("$x := $n", src, 2)
+            w.line("assert !$g($x).$issued", Source.Kotlin(r.pos, RESERVE_FRESH), 2, "reserve: never issued")
+            w.line("assert !$g($x).gPend", Source.Kotlin(r.pos, RESERVE_FRESH), 2, "reserve: no thread holds it")
+            w.line("$g($x).gPend := true", src, 2)
+            w.put("}")
+        }
+    }
+
     /** In the reachability clone, the `refute false` that opens branch [what] of the construct at [pos] of action [label]. */
     private fun branchProbe(
         label: String,
@@ -954,7 +1074,8 @@ private class Emitter(
                 declare(c.local.name)
                 w.line("var ${c.local.name}: ${vtype(c.local.type)} := ${expr(c.init)}", Source.Kotlin(c.pos), 2, "cell ${at(c.pos)}")
             }
-            a.free.filter { it.sidecarName == null }.forEach { fv ->
+            // The reserved val is a parameter (DESIGN-D.md 6.6), not an arbitrary local.
+            a.free.filter { it.sidecarName == null && it.origin !is Reservation }.forEach { fv ->
                 declare(fv.local.name)
                 w.line("var ${fv.local.name}: ${vtype(fv.local.type)}", Source.Kotlin(fv.local.pos), 2, "unnamed free value: arbitrary")
             }
@@ -963,9 +1084,13 @@ private class Emitter(
             commit(op)
         }
 
-        /** The commit point (DESIGN-v0.md 5.2): END, then the set-once check and ISSUE. */
+        /**
+         * The commit point (DESIGN-v0.md 5.2): END, then the consumption of the operation's reservation (DESIGN-D.md
+         * 6.6), then the set-once check, the reservation check and ISSUE.
+         */
         private fun commit(op: Operation?) {
-            if (a.commit.isEmpty()) return
+            val reserve = op?.reserve
+            if (a.commit.isEmpty() && reserve == null) return
             w.comment("---- commit point: effect-bound ghost rules ----", 2)
             a.commit.filterIsInstance<EndIfNotCarried>().forEach {
                 w.comment("END (sidecar: witness ${witnessDecl.cls.text}.${it.witness.name}): the pre-state token of the key is no longer carried.", 2)
@@ -973,6 +1098,7 @@ private class Emitter(
                 w.line("$g(pre_tok).$held := false", witnessSource, 4)
                 w.line("}", indent = 2)
             }
+            reserve?.let { r -> w.line("$g(${r.local.name}).gPend := false", Source.Kotlin(r.pos), 2, "consume the reservation of step reserve_${op.name} (DESIGN-D.md 2.1)") }
             val issue = a.commit.filterIsInstance<Issue>().singleOrNull() ?: return
             val item = s.operations.single { it.name.text == op!!.name }.items.filterIsInstance<IssueItem>().single()
             val src = Source.Sidecar(item.pos, "issue ${op!!.name}")
@@ -981,6 +1107,8 @@ private class Emitter(
             w.line("if ($t != NULL) {", src, 2)
             a.commit.filterIsInstance<AssertFresh>().forEach {
                 w.line("assert !$g(${expr(it.token)}).$issued", Source.Sidecar(item.pos, "issue ${op.name}: set-once $issued"), 4, "set-once $issued: a new acquisition gets a fresh token")
+                // DESIGN-D.md 6.6 rule 3: no issue of a token that another thread reserved.
+                if (pend) w.line("assert !$g(${expr(it.token)}).gPend", Source.Sidecar(item.pos, "issue ${op.name}: the token is reserved by another thread"), 4, "DESIGN-D.md 2.1: not a token another thread reserved")
             }
             issueWrites(issue).forEach { (f, v) -> w.line("$g($t).$f := ${expr(v)}", src, 4) }
             w.line("}", indent = 2)
@@ -1379,6 +1507,7 @@ private class Emitter(
         w.comment("Sidecar: probe scenario. MI is satisfiable from init, and the actions are reachable and not inert.")
         w.comment("init and probe do not check inductiveness; the action methods do.")
         method(p.method, MethodKind.PROBE, p.label, null) {
+            scenarioNames(p.params.map { it.name.text } + p.steps.filterIsInstance<ProbeCall>().flatMap { c -> c.outs.map { it.text } })
             w.line("method ${p.method}(${p.params.joinToString { "${it.name.text}: ${stype(it.type.text)}" }})", Source.Sidecar(p.pos, p.label))
             p.requires?.let {
                 w.put("  requires ")
@@ -1417,10 +1546,34 @@ private class Emitter(
         }
         val byName = step.args.filter { it.name != null }.associateBy { it.name!!.text }
         val args = listOf(step.args.first().value.text) + op.action.free.filter { it.sidecarName != null }.map { byName.getValue(it.sidecarName!!).value.text }
+        // DESIGN-D.md 6.6: an operation with a reserve step runs the step right before its action.
+        val reserved =
+            op.reserve?.let {
+                val r = reserveName()
+                w.line("var $r: Int", indent = 2)
+                w.line("$r := ${Reserved.RESERVE_PREFIX}${op.name}(S)", Source.Sidecar(step.pos, "$label call ${Reserved.RESERVE_PREFIX}${op.name}"), 2)
+                r
+            }
         step.outs.zip(types).forEach { (out, type) -> w.line("var ${out.text}: $type", indent = 2) }
         // DESIGN-C.md 7.2: without outs, the call of an operation without a result.
         val targets = if (step.outs.isEmpty()) "" else "${step.outs.joinToString { it.text }} := "
-        w.line("$targets${op.name}(S, ${args.joinToString()})", Source.Sidecar(step.pos, "$label call ${op.name}"), 2)
+        w.line("$targets${op.name}(S, ${(args + listOfNotNull(reserved)).joinToString()})", Source.Sidecar(step.pos, "$label call ${op.name}"), 2)
+    }
+
+    /** The names of the scenario method being written (probe or cell), and how many reserve calls it made. */
+    private var scenarioTaken: Set<String> = emptySet()
+    private var reserveCalls = 0
+
+    private fun scenarioNames(names: List<String>) {
+        scenarioTaken = names.toSet()
+        reserveCalls = 0
+    }
+
+    /** A new local for the value of a reserve call in the scenario method: `r_<i>`, made unique against its names. */
+    private fun reserveName(): String {
+        var r = "r_${++reserveCalls}"
+        while (r in scenarioTaken) r += "_"
+        return r
     }
 
     // ---- DESIGN-C.md 3.2: scenario cells of the contract-only model ----
@@ -1437,6 +1590,7 @@ private class Emitter(
         (c.outcomes.map { it.name.text to it } + (null to null)).forEach { (name, outcome) ->
             val method = cellMethod(c.id.text, name)
             method(method, MethodKind.CELL, if (name == null) "$label reach" else "$label outcome $name", null) {
+                scenarioNames(c.params.map { it.name.text } + c.steps.filterIsInstance<ProbeCall>().flatMap { s -> s.outs.map { it.text } })
                 w.line("method $method(${c.params.joinToString { "${it.name.text}: ${stype(it.type.text)}" }})", Source.Sidecar(c.pos, label))
                 w.line("{")
                 w.line("var S: Ref", indent = 2)

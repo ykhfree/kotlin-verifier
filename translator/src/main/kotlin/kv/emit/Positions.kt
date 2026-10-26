@@ -57,7 +57,8 @@ data class Mapped(
     val source: Source,
 )
 
-enum class MethodKind { ACTION, STRAY, INIT, LEMMA, PROBE, CELL }
+/** The kinds of emitted methods; [RESERVE] is the reserve step of an operation (DESIGN-D.md 6.6). */
+enum class MethodKind { ACTION, STRAY, INIT, LEMMA, PROBE, CELL, RESERVE }
 
 /**
  * One emitted Viper method. [label] is the name in reports (operation name, stray action id, `init`, `lemma P3c`,
