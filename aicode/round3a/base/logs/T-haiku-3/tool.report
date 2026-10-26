@@ -1,0 +1,26 @@
+com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion (keylocallock.coroutine.kv)    module: INCOMPLETE (Silicon 2.53 s)
+  action tryLock  KeyLocalLock.kt:25:9   UNSUPPORTED
+      UNSUPPORTED flattened field semaphore in action tryLock#25 at KeyLocalLock.kt:38:33: a construction of semaphore does not pass a new jdk.Semaphore object at KeyLocalLock.kt:38:33
+  action unLock   KeyLocalLock.kt:57:9   UNSUPPORTED
+      UNSUPPORTED flattened field semaphore in action unLock#57 at KeyLocalLock.kt:59:17: a construction of semaphore does not pass a new jdk.Semaphore object at KeyLocalLock.kt:38:33
+  action sweep    KeyLocalLock.kt:94:17   UNSUPPORTED
+      UNSUPPORTED safe call ?. in action sweep#94 at KeyLocalLock.kt:94:55: not translated inside an action in v0
+  init PROVEN · lemma P3c PROVEN · probe UNSUPPORTED
+      probe: probe not emitted: it calls tryLock, unLock, which are not emitted
+Spec to review: ends_only_if tryLock P3a, unLock P3a, sweep P3a; unbacked_only_if tryLock P3b; issue tryLock
+Assumptions (not checked by Silicon):
+  Long unbounded: KeyLocalLock.kt:88:44, KeyLocalLock.kt:39:33
+  Free values:
+    tryLock: k <- mapKey 22:9 (action key), now <- now 23:9 (captured), timeout <- this.lockTimeoutMillis 39:39 (instance val lockTimeoutMillis), rej <- LocalLockLimit.rejectsNewEntry(...) 29:44 (trusted call LocalLockLimit.rejectsNewEntry), limit <- LocalLockLimit.rejectsNewEntry(...) 29:44 (trusted call LocalLockLimit.rejectsNewEntry)
+    unLock: k <- mapKey 54:9 (action key), t <- token 52:9 (captured), now__55 <- now 55:9 (captured, unnamed)
+    sweep: k <- key 92:18 (action key), now <- now 93:17 (captured)
+  Trusted models: jdk.ConcurrentHashMap.compute, jdk.ConcurrentHashMap.mappingCount, jdk.ConcurrentHashMap.racyRead, jdk.Semaphore, jdk.AtomicBoolean, jdk.AtomicLong, jdk.AtomicCell, jdk.System.currentTimeMillis, slf4j.Logger
+  Trusted project functions: nowToEpochTime (reviewed: ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()), rejectsNewEntry (reviewed: ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit)
+  Init: the ghost records are allocated by an inhale with no record issued (trusted)
+Racy reads (modeled as arbitrary values): lockMap.keys 92:25
+Not modeled (no module-state access): class KeyLocalLock 16:1, constructor of KeyLocalLock 16:19, fun tryLock 18:5, fun unLock 49:5, constructor of Companion 70:5, init 75:9, fun dropExpiredEntries 91:9
+Unsupported: tryLock KeyLocalLock.kt:25:9; unLock KeyLocalLock.kt:57:9; sweep KeyLocalLock.kt:94:17; probe
+Branch reachability (INFO, not part of any verdict; DESIGN-v0.md 5.4): 0 branch(es) probed, 0 unreachable
+Warning: probe not emitted: it calls tryLock, unLock, which are not emitted
+Note: init and probe do not check inductiveness; the action methods do (DESIGN-v0.md 5.4).
+Viper program: out/model.vpr
