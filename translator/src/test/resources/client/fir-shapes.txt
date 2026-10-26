@@ -1,0 +1,42 @@
+## 1 ?.let { ...; return it } ?: run { return ... } (non-local return)
+fun run: {val cur = config.get.Function1.invoke(key); elvis(safe(cur, subject.let(λ[Inline,EXACTLY_ONCE]{return->fun run(it)})), run(λ[Inline,EXACTLY_ONCE]{return->fun run(Data.Data(callable.Callable.call(); 0))}))}
+## 2 if as an expression
+fun run: {val token = when[value](==(config.mode; ONLY_UPDATE) -> {null} | else -> {config.lock.Lock.tryLock(key; CREATE)}); when[stmt](!=(token; null) -> {config.lock.Lock.unLock(key; CREATE; token)}); return->fun run(Data.Data(callable.Callable.call(); 0))}
+## 3 try with a return and a finally
+fun run: {val token = config.lock.Lock.tryLock(key; CREATE); when[stmt](!=(token; null) -> {var done = false; try{val cached = config.get.Function1.invoke(key); when[stmt](!=(cached; null) -> {return->fun run(cached)}); done := true} finally{when[stmt](done.Boolean.not() -> {config.lock.Lock.unLock(key; CREATE; token)})}; config.lock.Lock.unLock(key; CREATE; token)}); return->fun run(Data.Data(callable.Callable.call(); 0))}
+## 4 runCatching { }.getOrElse { }
+fun run: {val cur = Client.read(key); when[stmt](!=(cur; null) -> {return->fun run(cur)}); return->fun run(Data.Data(callable.Callable.call(); 0))}
+fun read: {return->fun read(runCatching(λ[Inline,UNKNOWN]{return->lambda(config.get.Function1.invoke(key))}).getOrElse(λ[Inline,AT_MOST_ONCE]{throw(ClientError.ClientError(GET; it))}))}
+## 5 try / catch (e: Exception) / finally
+fun run: {val token = config.lock.Lock.tryLock(key; UPDATE); val data = Data.Data(callable.Callable.call(); 0); Client.write(key; data; token); return->fun run(data)}
+fun write: {try{config.set.Function3.invoke(key; value; value.ttl)} catch(Exception){throw(ClientError.ClientError(SET; e))} finally{when[stmt](!=(token; null) -> {val unlocked = config.lock.Lock.unLock(key; UPDATE; token); when[stmt](unlocked.Boolean.not() -> {log.Logger.debug(already released for key '{}'; key)})})}}
+## 6 catch (e: RejectedExecutionException) with a nested try / catch (e: Exception)
+fun run: {val token = config.lock.Lock.tryLock(key; UPDATE); val data = Data.Data(callable.Callable.call(); 0); Client.background(key; token; λ[NoInline,null]{config.set.Function3.invoke(key; data; 0); when[stmt](!=(token; null) -> {config.lock.Lock.unLock(key; UPDATE; token)})}); return->fun run(data)}
+fun background: {try{CompletableFuture.runAsync(sam(task); config.executor).CompletableFuture.whenComplete(sam(λ[NoInline,null]{when[stmt](!=(e; null) -> {log.Logger.error(failed for key '{}'; key; e)})}))} catch(RejectedExecutionException){log.Logger.warn(rejected for key '{}'; key; e); when[stmt](!=(token; null) -> {try{config.lock.Lock.unLock(key; UPDATE; token)} catch(Exception){log.Logger.error(unlock failed for key '{}'; key; unlockError)}})}}
+## 7 while, break in a catch, return in a try
+fun run: {var attempts = 0; var failures = 0; while(<(attempts, config.maxAttempt)){{val <unary> = attempts; ? := <unary>.Int.inc(); <unary>}; try{val cached = config.get.Function1.invoke(key); when[stmt](!=(cached; null) -> {return->fun run(cached)}); failures := 0} catch(Exception){when[stmt](>=({? := failures.Int.inc(); DesugaredAssignmentValueReferenceExpression}, MAX_FAILURES) -> {break})}}; return->fun run(Data.Data(callable.Callable.call(); 0))}
+## 8 calls of function-typed values
+fun run: {val a = config.get.Function1.invoke(key); val b = config.get.Function1.invoke(key); val c = Client.fetch(config.get; key); when[stmt](!=(a; null) -> {return->fun run(a)}); when[stmt](!=(b; null) -> {return->fun run(b)}); when[stmt](!=(c; null) -> {return->fun run(c)}); return->fun run(Data.Data(callable.Callable.call(); 0))}
+fun fetch: {return->fun fetch(fn.Function1.invoke(key))}
+## 9 a lambda passed to a helper's function-typed parameter, then to runAsync (a task)
+fun run: {val data = Data.Data(callable.Callable.call(); 0); Client.spawn(λ[NoInline,null]{config.set.Function3.invoke(key; data; 0)}); return->fun run(data)}
+fun spawn: {CompletableFuture.runAsync(sam(task); config.executor)}
+## 10 .whenComplete { _, e -> ... } that only logs
+fun run: {val data = Data.Data(callable.Callable.call(); 0); CompletableFuture.runAsync(sam(λ[NoInline,null]{config.set.Function3.invoke(key; data; 0)}); config.executor).CompletableFuture.whenComplete(sam(λ[NoInline,null]{when[stmt](!=(e; null) -> {Client.report(key; e)})})); return->fun run(data)}
+fun report: {log.Logger.error(task failed for key '{}'; key; throwable)}
+## 11 Thread.sleep and Thread.currentThread().interrupt()
+fun run: {Client.pause(key); return->fun run(Data.Data(callable.Callable.call(); 0))}
+fun pause: {try{Thread.sleep(INTERVAL)} catch(InterruptedException){Thread.currentThread().Thread.interrupt(); log.Logger.warn(interrupted for key '{}'; key); throw(ClientError.ClientError(GET; e))}}
+## 12 a data class built by its secondary constructor
+fun run: {return->fun run(Client.build(callable.Callable.call(); 0))}
+fun build: {return->fun build(Data.Data(value; ttl))}
+## 13 enum comparisons
+fun run: {val onlyCreate = ==(config.mode; ONLY_CREATE); val kind = UPDATE; val token = when[value](onlyCreate -> {null} | else -> {config.lock.Lock.tryLock(key; kind)}); when[stmt](!=(token; null) -> {config.lock.Lock.unLock(key; kind; token)}); return->fun run(Data.Data(callable.Callable.call(); 0))}
+## 14 throw ClientError(Code.X, cause = ...)
+fun run: {return->fun run(Data.Data(Client.call(callable; key; CREATE; null); 0))}
+fun call: {return->fun call(runCatching(λ[Inline,UNKNOWN]{return->lambda(callable.Callable.call())}).getOrElse(λ[Inline,AT_MOST_ONCE]{when[stmt](&&(!=(token; null), !=(kind; null)) -> {config.lock.Lock.unLock(key; kind; token)}); throw(ClientError.ClientError(SUP; it))}))}
+## 15 a null check of a nullable enum value
+fun run: {val token = config.lock.Lock.tryLock(key; CREATE); Client.release(key; when[value](==(token; null) -> {null} | else -> {CREATE}); token); return->fun run(Data.Data(callable.Callable.call(); 0))}
+fun release: {when[stmt](&&(!=(token; null), !=(kind; null)) -> {config.lock.Lock.unLock(key; kind; token)})}
+## 16 slf4j logging
+fun run: {log.Logger.info(run for key '{}'; key); return->fun run(Data.Data(callable.Callable.call(); 0))}

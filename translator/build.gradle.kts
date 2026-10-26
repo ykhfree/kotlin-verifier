@@ -31,6 +31,8 @@ dependencies {
     runtimeOnly("org.jetbrains.kotlin:kotlin-compiler-embeddable:$kotlinCompilerVersion")
 
     testImplementation(kotlin("test"))
+    // The FIR shape fixtures of DESIGN-E 6.10 E0 read FIR in tests; the runtime already has the compiler.
+    testCompileOnly("org.jetbrains.kotlin:kotlin-compiler-embeddable:$kotlinCompilerVersion")
 
     reqShieldClasspath("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
     reqShieldClasspath("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.8.1")
@@ -198,6 +200,13 @@ for ((module, dir, spec) in listOf(
     lowerAspect { dependsOn(lower) }
     emitAspect { dependsOn(emit) }
     verifyAspect { dependsOn(verify) }
+}
+
+// `./gradlew discoverClient`: DESIGN-E 6.10 E0. `kv discover --client` on req-shield's core module: the client module
+// candidates (ReqShield), their entries and their tasks. The core module compiles with the KeyLocalLock classpath.
+val discoverClient by tasks.registering(JavaExec::class) {
+    description = "Lists the client module candidates of req-shield's core module (DESIGN-E)."
+    kv("discover", "--client", "$reqShieldDir/core/src/main/kotlin")
 }
 
 // `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of the three

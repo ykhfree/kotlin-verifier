@@ -34,6 +34,8 @@ data class FrontendResult(
     val sidecarErrors: List<SidecarError>,
     /** The module in KVIR; null without a resolution or with sidecar errors. */
     val module: Module?,
+    /** Client module candidates (DESIGN-E 6.10 E0), in file and source order; found only when the run asks for them. */
+    val clients: List<ClientSite> = emptyList(),
 )
 
 /**
@@ -62,8 +64,11 @@ class FrontendSession(
     private val onFile: ((FirFile) -> Unit)? = null,
     /** Called once after the module is lowered without errors, while the FIR is valid. */
     private val onLowered: ((LoweredFir) -> Unit)? = null,
+    /** True to look for client module candidates ([findClients]) too. */
+    private val clientDiscovery: Boolean = false,
 ) {
     private val sites = Collections.synchronizedList(mutableListOf<ActionSite>())
+    private val clients = Collections.synchronizedList(mutableListOf<ClientSite>())
     private val errors = Collections.synchronizedList(mutableListOf<SidecarError>())
 
     /** Each analyzed source file with its map action calls, in checker order. */
@@ -86,6 +91,7 @@ class FrontendSession(
         onFile?.invoke(file)
         val all = findActions(file)
         sites += all.map { it.site }
+        if (clientDiscovery) clients += findClients(file)
         if (sidecar == null) return
         val seen =
             synchronized(files) {
@@ -134,7 +140,8 @@ class FrontendSession(
                 }
             errors += SidecarError(module.fqn.pos, "unresolved", message)
         }
-        return FrontendResult(compiled, messages, sites.toList(), resolution, errors.toList(), kvir.takeIf { errors.isEmpty() })
+        val found = clients.sortedWith(compareBy({ it.pos.file }, { it.pos.line }, { it.pos.col }))
+        return FrontendResult(compiled, messages, sites.toList(), resolution, errors.toList(), kvir.takeIf { errors.isEmpty() }, found)
     }
 }
 
@@ -162,7 +169,7 @@ object Frontend {
      * [classpath] must hold a Kotlin stdlib: the compiler does not add one.
      * [kotlincArgs] are extra compiler flags, e.g. `-language-version 2.0`. [reviewRoot] is where the source of a
      * library trusted fun is found, to check its reviewed fingerprint (B6). [onFile] and [onLowered] read the FIR
-     * while it is valid (see [FrontendSession]).
+     * while it is valid (see [FrontendSession]). With [clients], the result lists the client module candidates.
      */
     fun run(
         sources: List<File>,
@@ -172,9 +179,10 @@ object Frontend {
         reviewRoot: File? = null,
         onFile: ((FirFile) -> Unit)? = null,
         onLowered: ((LoweredFir) -> Unit)? = null,
+        clients: Boolean = false,
     ): FrontendResult {
         val id = UUID.randomUUID().toString()
-        val session = FrontendSession(sidecar, sources.size, reviewRoot, onFile, onLowered)
+        val session = FrontendSession(sidecar, sources.size, reviewRoot, onFile, onLowered, clients)
         sessions[id] = session
         val classesDir = Files.createTempDirectory("kv-classes").toFile()
         try {
