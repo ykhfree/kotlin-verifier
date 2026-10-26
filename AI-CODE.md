@@ -452,3 +452,21 @@ S1, S2 수정의 확인 (메인 세션): 새 테스트 5개 중 결함 테스트
 - 모듈 판정: 12개 모두 FAILED. **12개 모두 sweep이 `ends_only_if P3a` 위반이고, 12개 모두 만료를 `now >= expiresAt` (또는 `expiresAt <= now`)로 썼다** (소스 grep). 1차·2차 12개와 합쳐 AI 구현 24개가 모두 같은 경계를 골랐다.
 - G-haiku-3 unLock은 FAILED (`progress_owner`): 만료된 entry의 unLock을 거부한다 (생성 보고서 4번). 서명된 결정 D2(만료 뒤 주인의 unLock = true, UC9)와 다르다.
 - 정답(블라인드 판정자)은 아직 없다. 그래서 놓침과 오경보는 아직 말할 수 없다 (14.3.4). 위 두 FAILED 이유는 메인 세션이 소스로 확인한 것이다.
+
+## 15. Part B: compute 밖 토큰 (DESIGN-D (a)), 결과 전 (2026-10-26)
+
+사용자 결정 (2026-10-26): DESIGN-D의 권고안 (a)를 구현한다 (예약 단계 R과 action B, 예약 ghost `gPend`).
+
+메인 세션 확인 (advisor 권고): (b)와 (c)의 반례는 실제 Kotlin 코드로 만들 수 있다. E6은 action 안에서 `counter.get()`을 읽어 다른 스레드의 예약 값을 발급하는 코드이고, E5는 예약 값을 entry의 값과 비교하는 코드다. (b)와 (c)는 "발급 순서 = 예약 순서"를 가정하므로 이 실행을 지운다. 그래서 (a)를 고른 근거가 유지된다.
+
+### 15.1 예측 (결과 전)
+
+1. 새로 판정되는 action은 정확히 7개다: 2차의 T-haiku-1, T-haiku-2, T-haiku-4 tryLock, 3g의 G-haiku-3, G-haiku-4, G-opus-1, G-sonnet-1 tryLock. 7개 모두 FAILED (`ends_only_if P3a`)다. 7개 모두 만료를 `>=`로 쓴다.
+   - G-sonnet-1은 helper 호출 모양이다 (`nextToken()`이 companion 함수 안에서 increment). T-haiku-4는 `return if (granted.get()) token else null` 모양이다. 두 모양 모두 수락 테스트에 있어야 한다.
+2. 그 밖의 action 행(3a와 3g)은 모두 그대로다.
+3. 참조 모듈 6개의 생성 Viper는 **바이트 단위로 같다** (DESIGN-D의 설계 규칙). 기계적 변이 집합은 `mechanical.py`가 기록하는 정규화 모델 해시로 비교한다.
+4. 손으로 고른 변이 63회는 불일치 0이다.
+5. 다음은 UNSUPPORTED로 남는다 (부정 테스트): counter 말고 다른 곳에서 온 토큰(`System.nanoTime()`, 파라미터, 난수), 모듈 상태에 저장되거나 두 번째 action에 넘겨진 예약 값, 한 연산 안의 compute 두 번. 수정 1의 오염 검사는 정확히 counter 예약 경우만 좁혀 푼다.
+6. 2차의 T-opus-2 tryLock(`Long.MAX_VALUE`)과 3g의 G-opus-2 tryLock(셀을 helper에 넘김)은 Part B 밖이므로 UNSUPPORTED 그대로다.
+
+결과: 2차 12개는 판정 32 → 35 (36개 중), 3g 12개는 31 → 35 (36개 중)로 예측한다.
