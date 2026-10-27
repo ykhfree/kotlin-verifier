@@ -800,3 +800,8 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 | `spike/reqshield/l3_client.vpr`, `mutants.report`, `spike/RESULTS.md` (Phase 0 L3) | 1.3절, UE2, UE6 |
 | `spike/protocol2/` (이번 작업) | 5절 |
 | `DESIGN-v0.md`, `DESIGN-B.md`, `DESIGN-C.md` 2.1절·10절, `DESIGN-D.md`, `HISTORY.md`, `PROTOCOL2.md` | 전체 |
+
+## 메인 세션 기록 (2026-10-27, 구현 뒤)
+
+- 3.4 part 1 (과제 전제의 의무): 구현은 "해제 호출이 이름 짓는 의무"가 아니라 "넘기는 쪽(spawn한 쪽)이 만든 의무"를 넘긴다. 그러지 않으면 M5·M6가 LD_own이 아니라 LD_transfer로 실패한다 (E3-E4 agent 측정). 이 문서의 뜻은 구현을 따른다.
+- 구현 결과와 예측 대조는 `PROTOCOL2.md` 6절에 있다.

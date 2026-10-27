@@ -350,3 +350,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 구현 예측 등록 (`PROTOCOL2.md` 5절), E0-E2 구현 시작 (feature-developer). 설계 agent 비용 합계: 약 74만 토큰.
 - E0-E2 완료 (`dc232ad`, `1e2d072`, `73e2cc4`): client 모듈 발견, client sidecar 문법과 초안 sidecar(`specs/reqshield/reqshield.core.kv`, 서명 없음), 함수 본문 lowering(예외, finally, 비지역 return, 람다, 반복문)과 과제 전제. 메인 세션 확인: 테스트 669개, 변이 63회 불일치 0, `lowerClient` 출력이 golden KVIR과 같음 (요약 줄 하나 차이). 비용: agent 약 89만 토큰, 약 3시간 15분 (대기 제외).
 - E3에 넘긴 결정: 이름만 다른 경우(예외 종류, enum 상수)는 메인 세션이 손 모델의 이름을 맞춘다; trace 뜻, 과제 전제의 mode·phase, hole 어휘는 손 모델의 뜻을 따른다; 어휘 승인 문법, `throws RTE`, UE5, JDK 함수 서명은 서명 때 사용자와 정한다.
+- E3-E4 완료 (`b9512f6`, `9d65182`; `PROTOCOL2.md` 6절; 메인 세션 확인: 테스트 683개, 변이 63회와 client 변이 42회 불일치 0): 도구가 원본 req-shield core에서 예측한 세 결함(RET_hit, RET_recheck, RET_supplier_error)을 보고하고, 고친 사본은 PROVEN이다 (메인 세션이 직접 돌림). 변이 42행 중 40행이 손 모델과 같고, 다른 2행은 손 변이의 guard 누락이다. 두 번째 프로토콜의 도입 비용: agent 약 255만 토큰, 약 7시간 반.
