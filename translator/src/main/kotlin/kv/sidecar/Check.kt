@@ -161,6 +161,7 @@ private class SidecarChecker(
         s.enums.forEach { global(it.name, "enum") }
         s.obligations.forEach { global(it.name, "obligation") }
         s.traces.flatMap { it.events }.forEach { global(it.name, "trace field") }
+        s.traces.flatMap { it.derived }.forEach { global(it.name, "derived value") }
         // DESIGN-D.md 6.6: the method of a reserve step is reserve_<operation>.
         s.operations.filter { it.name.text.startsWith(Reserved.RESERVE_PREFIX) }.forEach {
             err(it.name.pos, "name-clash", "operation '${it.name.text}' starts with '${Reserved.RESERVE_PREFIX}', the prefix of the tool's reserve step methods")

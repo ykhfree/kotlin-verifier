@@ -341,3 +341,15 @@ Differences, each a job of the E3 emitter:
 | CE5 | A task precondition has no mode range and no `phase`; target.vpr's `TASK69_PRE` has `(mode == CAU \|\| mode == OCC \|\| mode == OUC)` and `phase == UPDATE`. | The range follows from the enum type and `phase` from the trace (`PHASE`); both are E3's. |
 | CE6 | The fallback's `executeCallable(callable, key, null, null)` keeps its dead branch `if (null != null) && (null != null) { call KeyLock.unLock(k, null, null) }`; target.vpr (553-554) leaves it out. | The lowering does not fold constants; Viper prunes the branch. |
 | CE7 | Thrown kinds are `ClientException(GET_CACHE_ERROR)` and so on; target.vpr names them `CE_GET`, `CE_SET`, `CE_SUP`. | The kind is the class and its error code (DESIGN-E 3.5); E3 picks the Viper names. |
+
+### E3 (DESIGN-E 6.6, 6.10)
+
+1. The client emitter (`kv/emit/ClientEmitter.kt`) resolves CE1-CE7: the trace record, the event rules, the guards,
+   `NO_LEASES`, the ensures and the assumption switches come from the sidecar (CE1); exceptions become flags `e_...`
+   with the dispatch of DESIGN-E 3.5 (CE2); a return or break that is not the last step of its function or loop
+   becomes a flag `ret_<line>_<col>` or `brk_<line>_<col>` (CE3); the task precondition gets the enum range of its free
+   values and the path value `phase` its spawn site fixes (CE5); constants fold (CE6); a thrown kind is
+   `<class>_<code>`, e.g. `ClientException_GET_CACHE_ERROR` (CE7). CE4 (names) is the normalizer's.
+2. `ClientGateTest` compares the generated models with `spike/protocol2/target.vpr` and `fixed.vpr` through
+   `scripts/protocol2_gate.py`, which lists the rename table, the structural edits (each with its reason) and the
+   normalizer change E3 needs.

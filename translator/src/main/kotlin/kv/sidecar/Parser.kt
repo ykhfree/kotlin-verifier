@@ -578,19 +578,26 @@ private class SidecarParser(
         return Name(sb.toString(), first.pos)
     }
 
-    /** `trace { NAME = EVENT ... }` after the keyword (DESIGN-E 6.2). */
+    /** `trace { NAME = EVENT ... }` after the keyword (DESIGN-E 6.2), and its `derived NAME = VEXPR` lines (E3). */
     private fun trace(pos: SPos): TraceDecl {
         expect("{")
         val events = mutableListOf<TraceEvent>()
+        val derived = mutableListOf<DerivedDecl>()
         while (!accept("}")) {
             skipWs()
             val indent = indentOf(i)
             val n = name("a trace field name")
+            if (n.text == "derived" && peekWord() != null) {
+                val d = name("a derived value name")
+                expect("=")
+                derived += DerivedDecl(d, vexpr(indent))
+                continue
+            }
             expect("=")
             fun where(): Vexpr? = if (peekWord() == "where") name().let { vexpr(indent) } else null
             events +=
                 when (peekWord()) {
-                    "first", "count", "last" -> {
+                    "first", "count", "last", "hit" -> {
                         val word = name().text
                         val form = EventForm.entries.first { it.keyword == word }
                         val call = dotted("a trusted call")
@@ -609,7 +616,7 @@ private class SidecarParser(
                     }
                 }
         }
-        return TraceDecl(events, pos)
+        return TraceDecl(events, pos, derived)
     }
 
     /** `holds(NAME(ARG {, ARG}))`; an argument is a name, a constant or `_`. */

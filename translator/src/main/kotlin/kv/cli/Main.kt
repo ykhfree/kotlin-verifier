@@ -5,6 +5,7 @@ import kv.frontend.ClientSite
 import kv.frontend.Frontend
 import kv.emit.AssumedFact
 import kv.emit.Emitted
+import kv.emit.emitClient
 import kv.emit.emitViper
 import kv.frontend.LoweredFir
 import kv.frontend.ResolveOutcome
@@ -58,9 +59,10 @@ private const val USAGE = """usage:
   kv lower --root DIR [--classpath CP] [--kotlinc "ARGS"] [--draft] SIDECAR.kv
       As resolve, then prints the module in KVIR and checks W1-W16 (a client module: W1-W22, DESIGN-E 6.3). Exit 1
       if a rule is broken.
-  kv emit --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] SIDECAR.kv
+  kv emit --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] [--draft] SIDECAR.kv
       As lower, then writes the Viper program (to stdout without --out). With --out, also writes the position
-      table to FILE.vpr.positions. Exit 1 if a rule is broken or the sidecar cannot be emitted.
+      table to FILE.vpr.positions. A client module (DESIGN-E 6.6) gets its own emitter; --draft reads its sidecar as
+      not signed yet. Exit 1 if a rule is broken or the sidecar cannot be emitted.
   kv verify --root DIR [--classpath CP] [--kotlinc "ARGS"] [--out FILE.vpr] [--viper-home DIR]
             [--assert-timeout MS] [--wall-seconds N] [--draft] SIDECAR.kv
       As emit, then runs Silicon once and prints the report (DESIGN-v0.md 5.8). If a FAILED action fails only at
@@ -127,7 +129,7 @@ fun runCli(
     if (command == "spec") return spec(args.drop(1), out, err)
     // `kv verify --draft` (DESIGN-C.md 9.2 JC6): the sidecar is checked as not signed yet; also resolve and lower,
     // which read the draft client sidecar of DESIGN-E 6.10 E1.
-    val draft = command in setOf("verify", "resolve", "lower") && "--draft" in args
+    val draft = command in setOf("verify", "resolve", "lower", "emit") && "--draft" in args
     // `kv discover --client` (DESIGN-E 6.10 E0): client module candidates instead of map action calls.
     val client = command == "discover" && "--client" in args
     val options =
@@ -142,7 +144,7 @@ fun runCli(
         "discover" -> discover(options, out, err, client)
         "resolve" -> resolve(options, out, err, draft)
         "lower" -> lower(options, out, err, draft)
-        "emit" -> emit(options, out, err)
+        "emit" -> emit(options, out, err, draft)
         "verify" -> verify(options, out, err, draft)
         "mutation-sites" -> mutationSites(options, out, err)
         else -> {
@@ -249,13 +251,24 @@ private fun emitted(
     command: String,
     options: Options,
     err: PrintStream,
+    draft: Boolean,
 ): Pair<Emitted?, Int> {
-    val (outcome, code) = resolved(command, options, err)
+    val (outcome, code) = resolved(command, options, err, draft)
     val module = outcome?.module ?: return null to code
     val sidecar = outcome.sidecar!!
     if (sidecar.client) {
-        err.println("kv: ${options.files.single().path} is a client module; its Viper program comes with DESIGN-E E3")
-        return null to 1
+        // DESIGN-E 6.6: a client module has its own emitter; W1-W22 hold before it runs.
+        val violations = checkWellFormed(module)
+        if (violations.isNotEmpty()) {
+            violations.forEach { err.println("kv: $it") }
+            return null to 1
+        }
+        return try {
+            emitClient(module, sidecar) to 0
+        } catch (e: SidecarException) {
+            e.errors.forEach { err.println(it) }
+            null to 1
+        }
     }
     return try {
         val bound = bindGhosts(module, sidecar)
@@ -275,8 +288,9 @@ private fun emit(
     options: Options,
     out: PrintStream,
     err: PrintStream,
+    draft: Boolean,
 ): Int {
-    val (emitted, code) = emitted("emit", options, err)
+    val (emitted, code) = emitted("emit", options, err, draft)
     emitted ?: return code
     val file = options.out
     if (file == null) {
@@ -309,12 +323,12 @@ private fun verify(
     val (outcome, code) = resolved("verify", options, err, draft = draft)
     // A compile error or a sidecar error is ERROR; only a usage error keeps its own code.
     val module = outcome?.module ?: return if (code == 2) 2 else verdictExit(ModuleVerdict.ERROR)
-    if (outcome.sidecar?.client == true) {
-        err.println("kv: ${options.files.single().path} is a client module; its verification comes with DESIGN-E E3")
-        return verdictExit(ModuleVerdict.ERROR)
-    }
     val vpr = options.out ?: File.createTempFile("kv-", ".vpr")
     val budget = SiliconBudget(options.assertTimeoutMs ?: 20_000, options.assertTimeoutMs ?: 20_000, options.wallSeconds ?: 300)
+    if (outcome.sidecar?.client == true) {
+        err.println("kv: ${options.files.single().path} is a client module; its report comes with DESIGN-E E4")
+        return verdictExit(ModuleVerdict.ERROR)
+    }
     val report =
         try {
             verify(module, outcome.sidecar!!, vpr, options.viperHome ?: Silicon.defaultHome(), budget)

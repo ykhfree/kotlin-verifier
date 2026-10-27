@@ -57,8 +57,11 @@ data class Mapped(
     val source: Source,
 )
 
-/** The kinds of emitted methods; [RESERVE] is the reserve step of an operation (DESIGN-D.md 6.6). */
-enum class MethodKind { ACTION, STRAY, INIT, LEMMA, PROBE, CELL, RESERVE }
+/**
+ * The kinds of emitted methods; [RESERVE] is the reserve step of an operation (DESIGN-D.md 6.6). A client module
+ * (DESIGN-E 6.6) has [ENTRY], [TASK] and [MODEL] (a trusted model without a body) methods.
+ */
+enum class MethodKind { ACTION, STRAY, INIT, LEMMA, PROBE, CELL, RESERVE, ENTRY, TASK, MODEL }
 
 /**
  * One emitted Viper method. [label] is the name in reports (operation name, stray action id, `init`, `lemma P3c`,

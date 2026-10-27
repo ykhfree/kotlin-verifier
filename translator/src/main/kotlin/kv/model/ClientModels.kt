@@ -60,6 +60,13 @@ object ClientModels {
     /** Names a client sidecar may `use` besides the L1 models. */
     val builtIn: Set<String> = entries.map { it.model }.toSet()
 
+    /**
+     * The tool's model of a value the thread does not control (DESIGN-E E4): a read of a `var` property of the module
+     * class (another thread may write it any time, DESIGN-v0.md 2.12), and a `null` where the model's type has no null
+     * (a type parameter's value is an Int). The KVIR is a call of it without arguments; its result is arbitrary.
+     */
+    const val ARBITRARY = "kv.arbitrary"
+
     /** The model of the callable `owner.name`, or null. */
     fun lookup(
         owner: String,

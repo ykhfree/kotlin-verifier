@@ -2,6 +2,7 @@ package kv.client
 
 import kv.ReqShield
 import kv.frontend.Frontend
+import kv.frontend.ResolveOutcome
 import kv.kvir.Module
 import kv.kvir.Status
 import kv.kvir.checkWellFormed
@@ -20,13 +21,16 @@ import kotlin.test.fail
  */
 class ClientGoldenTest {
     companion object {
-        /** The lowered core module; one compile serves every test of the class. */
-        val core: Module by lazy {
-            val outcome = Frontend.resolve(File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv"), ReqShield.dir, ReqShield.classpath, ReqShield.kotlincArgs, draft = true)
-            assertNull(outcome.compileMessages)
-            assertEquals(emptyList(), outcome.errors)
-            outcome.module ?: fail("no module")
+        /** The resolved core sidecar and its module; one compile serves every client test that reads it. */
+        val outcome: ResolveOutcome by lazy {
+            val o = Frontend.resolve(File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv"), ReqShield.dir, ReqShield.classpath, ReqShield.kotlincArgs, draft = true)
+            assertNull(o.compileMessages)
+            assertEquals(emptyList(), o.errors)
+            o
         }
+
+        /** The lowered core module. */
+        val core: Module get() = outcome.module ?: fail("no module")
     }
 
     @Test

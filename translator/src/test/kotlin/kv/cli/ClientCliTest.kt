@@ -9,8 +9,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * DESIGN-E 6.10 E1 and E2: `kv resolve` and `kv lower` on the draft core ReqShield sidecar, with and without --draft;
- * `kv emit` and `kv verify` refuse a client module until E3.
+ * DESIGN-E 6.10 E1-E3: `kv resolve` and `kv lower` on the draft core ReqShield sidecar, with and without --draft;
+ * `kv emit` writes the client model with --draft only (ClientVerifyTest checks `kv verify`).
  */
 class ClientCliTest {
     private val sidecar = File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv")
@@ -48,13 +48,13 @@ class ClientCliTest {
     }
 
     @Test
-    fun `verify refuses a client module until E3, and emit the unsigned draft`() {
-        // kv emit takes no --draft: the draft's unsigned clauses stop it before the client check.
+    fun `emit refuses the unsigned draft, and with --draft writes the client model`() {
         val (emitExit, _, emitErr) = kv("emit", sidecar.path)
         assertEquals(1, emitExit)
         assertTrue("error[unreviewed]" in emitErr, emitErr)
-        val (verifyExit, _, verifyErr) = kv("verify", "--draft", sidecar.path)
-        assertEquals(4, verifyExit)
-        assertTrue("its verification comes with DESIGN-E E3" in verifyErr, verifyErr)
+        val (exit, out, err) = kv("emit", "--draft", sidecar.path)
+        assertEquals(0, exit, err)
+        assertTrue(out.lines().any { it.startsWith("method getAndSetReqShieldData(k: Key, mode: Int, maxAttempt: Int) returns (exc: Int, res: Ref, tr: Ref)") }, out)
+        assertTrue(out.lines().any { it.startsWith("method task_69(k: Key, mode: Int, phase: Int, lockType__62: Int, token__66: Int)") }, out)
     }
 }
