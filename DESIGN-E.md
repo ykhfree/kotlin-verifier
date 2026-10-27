@@ -494,7 +494,7 @@ decl      := ... v0, B, C ...
            | "obligation" NAME "(" TYPE { "," TYPE } ")"          // E: a linear obligation (abstract predicate)
            | "trusted" "value" KNAME tclause*                     // E: a function-typed property the code invokes
            | "trace" "{" { NAME "=" event } "}"                   // E: the event record
-           | "hole" "loop" KNAME "@" LINE TRIPLE_STRING           // E: the invariant of one loop
+           | "hole" "loop" KNAME "@" LINE TRIPLE_STRING           // E: the invariant of one loop (replaced by KNAME [#N], 12.5)
            | "assume" ID ":" ANAME                                // E: a named assumption of a built-in model (DESIGN-E 4)
 tclause   := ... v0, B ... | "creates" NAME "(" ARGS ")" [ "if" VEXPR ] | "consumes" NAME "(" ARGS ")"
            | "throws" KIND { "," KIND }                           // E: exception kinds (B's bare `throws` = Exception)
@@ -810,3 +810,485 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 
 - 3.4 part 1 (과제 전제의 의무): 구현은 "해제 호출이 이름 짓는 의무"가 아니라 "넘기는 쪽(spawn한 쪽)이 만든 의무"를 넘긴다. 그러지 않으면 M5·M6가 LD_own이 아니라 LD_transfer로 실패한다 (E3-E4 agent 측정). 이 문서의 뜻은 구현을 따른다.
 - 구현 결과와 예측 대조는 `PROTOCOL2.md` 6절에 있다.
+
+## 12. 프로토콜 2의 남은 틈 (2026-10-28 설계)
+
+날짜: 2026-10-28. 상태: 설계안. 이 작업은 도구 코드, 테스트, sidecar를 바꾸지 않았다.
+범위: `PROTOCOL2.md:103`(8절 6번)의 두 틈, 그리고 이 설계 중에 찾은 같은 종류의 틈 하나.
+기준: 저장소 `77e50da`(도구 소스는 `0a50f1c`와 같다), req-shield 고정 worktree `2e792d2`, 설치된 `translator/build/install/kv`(소스보다 새것).
+표시 규칙은 이 문서 머리와 같다: "측정"은 이번에 실행한 값, "추정"은 실행하지 않은 값, "판단"은 논증이다.
+경로 줄임: 코드는 `translator/src/main/kotlin/kv/` 아래, 테스트는 `translator/src/test/kotlin/kv/` 아래, 스크립트는 `translator/scripts/` 아래다.
+측정 사본과 출력은 이 세션의 scratchpad `/private/tmp/claude-501/-Users-ykhfree-AI/819151fd-848c-443c-98b0-c7f2397d5cfe/scratchpad/`의 `gap/`, `ref/`, `mutlines/`에 있다 (저장소 밖, 커밋하지 않음). 고친 곳은 아래 표에 모두 적었으므로 다시 만들 수 있다.
+
+### 12.1 요약
+
+| 틈 | 권고 | 근거 (측정) | 사용자에게 물을 것 |
+|---|---|---|---|
+| 1. 어휘 승인 칸이 없다 | **V-C**: `review vocabulary` 줄과 메모 하나. 지문은 어휘 선언 전부를 덮는다. 주석과 공백은 지문 밖이다 | 어휘 한 단어를 고쳐도 오류가 없다. `recheck`의 lease 종류를 바꾸면 원본 core의 RET_recheck 실패가 보고서에서 사라진다 | 덮는 텍스트의 확인, `class Data`를 넣는지, 메모 문구와 날짜 |
+| 1b. 신뢰 선언의 계약 텍스트에 지문이 없다 (새로 찾음) | **T-A**: `review intent` 아래에서 신뢰 선언 메모의 지문이 계약 텍스트도 덮는다 | `KeyLock` 두 줄의 `throws RTE`를 지우면 원본 core가 FAILED에서 PROVEN이 된다. 오류는 없다 | 지금 닫는지. 닫으면 서명된 지문 6개가 바뀐다 (메모 문구는 그대로) |
+| 2. `hole loop KNAME@LINE`이 줄 번호로 반복문을 고른다 | **L-B**: `hole loop KNAME`(함수의 유일한 반복문), 여럿이면 `KNAME#N`. `@LINE`은 없앤다 | client 변이 42회 중 26회에서 반복문이 181행 밖에 있다. 지금은 스크립트가 실행마다 sidecar 사본의 줄을 고친다 | 없음. hole은 서명 대상이 아니다. 메인 세션이 정한다 |
+
+1. 틈 1과 틈 1b는 같은 종류다: 서명된 sidecar의 텍스트가 증명의 뜻을 바꾸는데, 어느 지문도 그 텍스트를 덮지 않는다.
+2. 틈 2는 서명과 관계없다. 이름 풀기의 견고성 문제다.
+3. 세 권고는 판정과 생성 Viper를 바꾸지 않는다 (예측 12.8).
+
+### 12.2 지금 상태
+
+#### 12.2.1 지문이 덮지 않는 텍스트 (측정)
+
+`review intent` 아래에서 지문은 다음을 덮는다:
+1. 의도 절과 가정: 절 텍스트와 출처 줄이다 (`sidecar/Ast.kt:309-313`, `sidecar/Check.kt:87`, `307`).
+2. 신뢰 선언: Kotlin 쪽만 덮는다. 함수 선언의 텍스트, 신뢰 값의 선언, 또는 소스가 없는 JDK 함수의 시그니처다 (`frontend/Resolver.kt:638-670`, `323-339`, `647-651`).
+3. 인용 출처 줄: 블록 지문이 있어야 한다 (`sidecar/Check.kt:113-118`).
+
+다음 텍스트는 어느 지문에도 들지 않는다:
+1. 어휘 선언: `type`, `enum`, `class`, `obligation`, `trace`. L1 모듈이면 `ghost record`, `witness`도 그렇다.
+2. 신뢰 선언의 sidecar 쪽 텍스트: 매개변수와 결과, `ensures`, `effects`, `creates`, `consumes`, `throws` 종류. 이 절은 이것을 "계약 텍스트"라고 부른다.
+
+측정 방법: 서명된 sidecar의 사본을 한 곳씩 고쳤다. 그리고 `kv resolve`와 `kv verify`를 `--draft` 없이 돌렸다.
+
+| 사본 | 고친 곳 (`reqshield.core.kv`의 행) | `kv resolve` | `kv verify` (원본 core) |
+|---|---|---|---|
+| x0 | 없음 | exit 0 | FAILED: RET_hit, RET_recheck, RET_supplier_error (18 s) |
+| x1 | 41행: `derived GAVE_UP = true` | exit 0 | 재지 않음 |
+| x2 | 31행: `recheck`의 `Lease(k, CREATE, _)` → `Lease(k, UPDATE, _)` | exit 0 | FAILED: RET_hit, RET_supplier_error. RET_recheck는 PROVEN이 된다 |
+| x4 | 19행: `value: Int = value` → `value: Int = timeToLiveMillis` | exit 0 | FAILED: RET_hit, RET_recheck, RET_supplier, RET_supplier_error |
+| x3 | 47행과 49행: `throws RTE`를 지움 | exit 0 | **PROVEN** (4 s) |
+
+1. x2: 어휘 한 단어가 서명된 절 RET_recheck의 뜻을 바꾼다. 그래서 도구가 찾은 실제 결함 하나가 보고서에서 사라진다.
+2. x1: `GAVE_UP`이 늘 참이면 LD_supplier의 CREATE 쪽 조건(`... ==> holds(...) || GAVE_UP`, `reqshield.core.kv:98`)도 늘 참이다. 그러면 lock 없는 supplier 호출도 통과한다 (판단).
+3. x4: `kv resolve`는 필드의 타입만 본다. sidecar `Int`는 Kotlin `Long`도 대신한다 (`frontend/Resolver.kt:230`). 그래서 다른 속성에 묶어도 오류가 없다.
+4. x3: 계약 텍스트를 고치면, 서명하지 않은 A2("lock 호출은 던지지 않음")를 켠 것과 같다. 그래서 사용자 결정 UE3(2.3절)이 서명 없이 되돌려진다.
+
+#### 12.2.2 반복문 이름 (측정)
+
+1. `hole loop KNAME@LINE`은 함수 KNAME 안에서 시작 줄이 LINE인 `FirWhileLoop`이나 `FirDoWhileLoop`을 찾는다 (`frontend/Resolver.kt:398-411`). 그런 반복문이 없으면 `no-loop`이다 (`frontend/Resolver.kt:412`).
+2. 찾기는 처음 맞는 반복문에서 멈춘다 (`frontend/Resolver.kt:407-408`). 그래서 한 줄에서 두 반복문이 시작하면 도구는 바깥 것을 고르고 알리지 않는다 (판단).
+3. 이름표 `KNAME@LINE`은 세 곳에서 따로 만든다: KVIR의 `While.hole`(`lower/ClientLowering.kt:218`), emitter의 hole 찾기(`emit/ClientEmitter.kt:2014`), 보고서의 행(`verify/ClientReport.kt:230`). 중복 검사는 `(함수, 줄)`을 열쇠로 쓴다 (`sidecar/ClientCheck.kt:158-164`).
+4. hole은 지문 대상이 아니다. 그래서 줄이 움직여도 서명은 깨지지 않는다. 대신 이름 풀기가 `no-loop`으로 깨진다. 고친 브랜치는 줄을 187로 고친 사본으로 검증했다 (`PROTOCOL2.md:92`).
+5. `./gradlew mutantsClient`(`translator/build.gradle.kts:276-300`)는 줄 이동을 이렇게 견딘다:
+   1. 실행마다 편집한 `ReqShield.kt`에서 반복문 머리 줄의 글자(`scripts/mutants.py:394`)를 찾는다.
+   2. sidecar 사본의 `@181`을 찾은 줄로 바꾼다 (`scripts/mutants.py:528-547`).
+   3. 머리 줄이 정확히 한 번 나오지 않으면 스크립트 오류다 (`scripts/mutants.py:540-541`). 그래서 머리 줄을 고치는 변이는 지금 돌 수 없다.
+6. 테스트의 고친 사본도 같은 방법을 쓴다 (`client/Protocol2.kt:19-31`, 테스트 경로).
+7. 측정: `mutants.py`의 `make_root`로 client 변이 42개의 사본을 만들고 머리 줄을 셌다.
+   - 42회 중 26회에서 반복문이 181행 밖에 있다. 줄은 173-191행 사이의 10가지다. 고친 기준의 21회는 모두 181행 밖이다.
+   - 모든 사본에서 반복문 문장은 하나다.
+   - 변이 편집 글자와 `fixed-core.patch`에는 `while`, `for`, `do` 반복문 글자가 없다.
+
+`@LINE` 형식을 쓰는 곳 (전체, grep으로 측정):
+
+| 종류 | 곳 |
+|---|---|
+| sidecar | `specs/reqshield/reqshield.core.kv:150` |
+| 코드 | `sidecar/Parser.kt:406-424`, `sidecar/Ast.kt:395-411`, `frontend/Resolver.kt:398-415`, `sidecar/ClientCheck.kt:158-164`, `lower/ClientLowering.kt:218`, `emit/ClientEmitter.kt:2014`, `verify/ClientReport.kt:229-230` |
+| 스크립트 | `scripts/mutants.py:393-394`, `528-547` |
+| 테스트 | `cli/ClientCliTest.kt:43`, `client/ClientResolveTest.kt:64`, `72`, `78`, `85-90`, `client/ClientVerifyTest.kt:32`, `client/Protocol2.kt:18-31`, `scripts/MutantScriptTest.kt:223`, `241-243`, `sidecar/ClientGrammarTest.kt:54`, `88`, `228`, `client/ClientEmitterTest.kt:203` |
+| 테스트 자료 | `translator/src/test/resources/golden/client/reqshield.core.kvir:96`, `translator/src/test/resources/golden/README.md:327` |
+| 문서 | `DESIGN-E.md:497`, `548`, `README.md:107`, `PROTOCOL2.md:82`, `92`, `103`, `HISTORY.md:366` |
+
+### 12.3 틈 1: 어휘 승인 칸
+
+#### 12.3.1 어휘 선언
+
+| 종류 | 파서 | 어휘로 보는 근거 |
+|---|---|---|
+| `type` | `sidecar/Parser.kt:291-303` | `DESIGN-C.md:61` (층 3) |
+| `enum` | `sidecar/Parser.kt:348-352` | 서명 때의 머리 주석이 승인한 어휘를 "types, enums, obligation, trace"로 적었다 (`reqshield.core.kv:5`) |
+| `class` | `sidecar/Parser.kt:331-346` | x4가 뜻을 바꾼다. 단, `DESIGN-C.md:59`는 class의 필드 묶기를 층 1에 둔다. 그래서 사용자가 정한다 (12.3.7 질문 2) |
+| `obligation` | `sidecar/Parser.kt:353-362` | DESIGN-E 2.5 3번(`DESIGN-E.md:183`), 3.6(`DESIGN-E.md:277`) |
+| `trace` (사건 필드와 `derived`) | `sidecar/Parser.kt:582-620` | 같은 곳의 "사건 기록 규칙, PHASE, GAVE_UP" |
+| `ghost record` | `sidecar/Parser.kt:374-389` | `DESIGN-C.md:61` (L1 모듈의 층 3) |
+| `witness` | `sidecar/Parser.kt:390-395` | `DESIGN-C.md:61` |
+
+어휘가 아닌 선언과 그 이유:
+1. `module`, `source`, `include`, `use`, `state`, 연산 선택자, `free`, `result`는 층 1이다. `kv resolve`가 코드와 맞춘다 (`DESIGN-C.md:59`).
+2. 의도 절과 `assume`은 자기 메모가 있다.
+3. 신뢰 선언은 자기 메모가 있다. 계약 텍스트는 12.4절에서 다룬다.
+4. `hole`은 층 5다. Silicon이 검사한다.
+5. `set-once`(L1)는 성질 ID를 가진 절이다. 지금 메모를 받지 않는다. L1 sidecar가 `review intent`로 옮길 때 정한다 (12.10 JG5).
+6. `review intent`는 정책 표시다.
+
+규칙은 모듈 종류가 아니라 `review intent`에 묶는다. 이유는 둘이다:
+1. 층 3은 L1 모듈에도 있다 (`DESIGN-C.md:61`).
+2. 지금 `review intent`를 쓰는 sidecar는 `reqshield.core.kv` 하나다 (측정: `specs/`, `pilot-c/`, `specdraft/`, `translator/scripts/`를 grep). 그래서 여섯 기존 모듈은 이 규칙의 영향을 받지 않는다. 그 모듈들은 UC4의 이동 때 따른다 (`DESIGN-C.md:628`).
+
+#### 12.3.2 지문 단위 (세 선택지에 공통)
+
+1. 어휘 텍스트는 불러온 sidecar의 어휘 선언을 `Sidecar.decls` 순서로 이은 것이다. `include`한 파일의 선언도 그 자리에서 든다 (`sidecar/Parser.kt:7-22`).
+2. 선언 하나는 첫 키워드부터 마지막 토큰까지다. `class`, `trace`, `ghost record`는 닫는 `}`까지다.
+3. 선언마다 `//` 주석을 줄 끝까지 지운다. 단, 문자열 `"..."` 안의 `//`는 지우지 않는다.
+4. 선언 사이에 줄바꿈 하나를 넣는다.
+5. 그 뒤 기존 지문 규칙을 쓴다: 공백 묶음은 공백 하나로, 양 끝은 자르고, UTF-8 SHA-256의 앞 16자리를 쓴다 (`sidecar/Fingerprint.kt:5-17`).
+
+| 고침 | 지문 |
+|---|---|
+| 공백, 줄바꿈, 들여쓰기 | 그대로 |
+| `//` 주석을 더하거나 고치거나 지움 | 그대로 |
+| 토큰 하나를 바꿈 (이름, 연산자, 사건 형태, 패턴, 묶은 Kotlin 이름) | 바뀜 |
+| 어휘 선언을 더하거나 지움 | 바뀜 |
+| 어휘 선언끼리 순서를 바꿈 | 바뀜 |
+| 어휘 선언을 다른 종류의 선언 너머로 옮김 (어휘끼리 순서는 그대로) | 그대로 |
+
+주석을 지문 밖에 두는 이유:
+1. 도구는 주석을 읽지 않는다. 그래서 주석을 고쳐도 증명의 뜻은 바뀌지 않는다.
+2. 서명된 `trace` 블록 안에는 줄 끝 주석이 6개 있다 (`reqshield.core.kv:30-32`, `39-41`). 주석을 지문에 넣으면, 주석을 손볼 때마다 다시 서명해야 한다.
+3. 의도 절의 단위는 여러 줄 식 안의 주석 줄을 포함한다 (`sidecar/Parser.kt:207-213`, `702`). 이 설계는 그 규칙을 바꾸지 않는다. 바꾸면 기존 지문의 뜻이 바뀐다.
+
+참값 (측정, 이 규칙을 따른 참조 스크립트 `ref/vocab_fp.py`):
+1. 지금 서명된 sidecar의 어휘 선언은 7개다 (15-19행, 22행, 29-42행). 지문은 `92a6a3bbf1f4b44b`다.
+2. `class Data`를 빼면 지문은 `61a0636ba3629c85`다.
+3. 줄 끝 주석 하나와 들여쓰기 하나를 고친 사본(`ref/cmt.kv`)의 지문도 `92a6a3bbf1f4b44b`다.
+4. x1, x2, x4의 지문은 각각 `edea1c3703f16826`, `d28491c19f519c8a`, `7c8e6a6b957599bb`다.
+
+#### 12.3.3 선택지
+
+**V-A: 어휘 블록**
+
+```text
+decl  := ... | "vocabulary" "{" { vdecl } "}" [ "reviewed" STRING [ "sha256" STRING ] ]
+vdecl := type | enum | class | obligation | trace | ghost-record | witness   // the declarations of 12.3.1
+```
+
+1. 지문 단위: 블록 안의 선언이다 (12.3.2 규칙).
+2. `review intent` 아래에서 블록 밖의 어휘 선언은 `unreviewed`다. 이 규칙이 없으면, 선언을 블록 밖으로 옮겨 지문을 피할 수 있다.
+3. 서명된 sidecar: 15-42행을 블록 안으로 옮긴다.
+
+**V-B: 선언마다 메모**
+
+```text
+type Key = opaque
+  reviewed "<note>" sha256 "<hex>"
+obligation Lease(Key, LockType, Token)
+  reviewed "<note>" sha256 "<hex>"
+trace { ... }
+  reviewed "<note>" sha256 "<hex>"
+```
+
+1. 지문 단위: 그 선언 하나다 (12.3.2 규칙).
+2. `review intent` 아래에서 메모 없는 어휘 선언은 `unreviewed`다.
+3. 서명된 sidecar: 메모 7개가 생긴다.
+4. 지금 문법은 `type` 뒤의 `reviewed`를 문법 오류로 본다 (`sidecar/Parser.kt:430`, 테스트 `sidecar/ProbeGrammarTest.kt:98`). V-B는 이 규칙을 바꾼다.
+
+**V-C: `review vocabulary` 줄 하나 (권고)**
+
+```text
+decl := ... | "review" "intent"
+           | "review" "vocabulary" [ "reviewed" STRING [ "sha256" STRING ] ]   // DESIGN-E 12: the vocabulary note
+```
+
+1. 지문 단위: 불러온 sidecar의 어휘 선언 전부다 (12.3.2). 도구는 위치가 아니라 종류로 고른다.
+2. 파서: `review intent`의 가지(`sidecar/Parser.kt:426-429`)에 `vocabulary`를 더한다. 메모는 기존 `topReview()`(`sidecar/Parser.kt:828-833`)로 읽는다.
+3. 서명된 sidecar: `trace` 블록 바로 뒤에 3줄을 더한다 (관례).
+
+```text
+// The vocabulary note covers every type, enum, class, obligation and trace declaration of this sidecar (DESIGN-E 12.3).
+review vocabulary
+  reviewed "<note the user approves>" sha256 "92a6a3bbf1f4b44b"
+```
+
+#### 12.3.4 검사 규칙 (V-C)
+
+검사는 `checkSidecar`(FIR 전, `sidecar/Check.kt:65-91`)에서 돈다. 그래서 서명 흐름의 첫 단계에서 의도 절 지문과 함께 나온다.
+
+| 조건 | 오류 코드 | 위치 | `--draft`이면 |
+|---|---|---|---|
+| `review intent`가 있고, 어휘 선언이 있고, `review vocabulary`가 없다 | `unreviewed` | 첫 어휘 선언 | 오류 아님 |
+| `review intent`가 있고, `review vocabulary`에 메모가 없다 | `unreviewed` | `review vocabulary` | 오류 아님 |
+| 메모에 지문이 없다 | `missing-fingerprint` (메시지에 지금 지문) | `reviewed` | 오류 아님 |
+| 지문이 다르다 | `stale-review` (메시지에 적힌 값, 지금 값, 덮는 선언의 이름 전부) | `reviewed` | 오류 |
+| `review vocabulary`가 둘 이상 | `duplicate-decl` | 둘째 것 | 오류 |
+
+1. `review intent`가 없으면 도구는 어휘 메모를 요구하지 않는다. 메모가 있으면 지문은 검사한다. 이것은 의도 절의 규칙과 같다 (`sidecar/ProbeGrammarTest.kt:139-149`가 고정한 동작).
+2. `--draft`의 뜻은 지금과 같다: 메모와 지문이 없어도 되지만, 적힌 지문이 틀리면 오류다 (`sidecar/Check.kt:14-16`).
+3. 어휘 종류는 sealed `Decl`(`sidecar/Ast.kt:54-56`)에 대한 `when` 하나로 고른다. 그 `when`에는 `else` 가지를 두지 않는다. 그러면 새 선언 종류를 더할 때 컴파일러가 분류를 요구한다. 그래서 새 종류가 조용히 지문 밖에 남지 않는다.
+4. 지문 비교는 `sidecar/Check.kt:316-329`의 `fingerprint`를 다시 쓴다. 지금 그 함수는 `IntentClause`를 받는다. 메모, 지문, 위치, 단위 텍스트를 받도록 넓힌다.
+5. `stale-review` 메시지의 예: `the vocabulary changed after its review: the note records sha256 "…", the vocabulary (type Key, type Token, enum LockType, enum Mode, class Data, obligation Lease, trace) now has sha256 "…"; a person must review it again`.
+
+#### 12.3.5 기존 sidecar와 테스트에 미치는 영향
+
+1. `reqshield.core.kv`: 규칙이 들어가면, 메모가 생길 때까지 `unreviewed` 하나로 깨진다. 그동안 `kv resolve`는 exit 1, `kv verify`는 ERROR, `mutantsClient`는 실패다. 그래서 규칙과 메모는 한 커밋에 넣는다. 메모는 사용자 승인 뒤에 쓴다.
+2. 여섯 기존 모듈의 sidecar 파일 8개에는 `review intent`가 없다 (측정). 그래서 새 오류가 없고, 출력도 그대로다 (예측 12.8의 6).
+3. 기대값이 바뀌는 테스트 (회귀가 아니다):
+   - `cli/ClientCliTest.kt:26`, `51`: 메모 수가 22에서 23이 된다.
+   - `sidecar/ClientGrammarTest.kt:113-117`: `unreviewed`가 22개에서 23개가 된다 (신뢰 선언 6, 어휘 1).
+   - `sidecar/ProbeGrammarTest.kt:125`, `151`, `161`의 `--draft` 없는 검사: 고정 자료 `intent()`(`sidecar/ProbeGrammarTest.kt:105-122`)에 `type`과 `class`가 있다. 그래서 `unreviewed`가 하나 더 나온다. 고정 자료에 서명된 어휘 메모를 넣는다.
+   - `sidecar/ProbeGrammarTest.kt:99`(`review intents`의 문법 오류)는 그대로 통과한다. 새 메시지도 `'intent'`를 담는다.
+   - `sidecar/ClientGrammarTest.kt:163`(가정의 출처 줄)은 그대로 통과한다. `--draft`이면 어휘 오류가 없고, `--draft` 없는 단언은 오류 코드의 집합(`unsourced`, `unreviewed`)을 비교한다.
+
+#### 12.3.6 권고: V-C
+
+1. V-C와 V-A는 가깝다. 두 선택지의 보장은 같다. V-A도 블록 밖의 어휘를 막는 규칙이 필요하고, 그 규칙은 V-C의 "종류로 고르기"와 같다.
+2. V-A가 더하는 것은 눈에 보이는 블록 하나다. 그 값으로 V-A는 중첩 파싱, 서명된 sidecar 28줄의 이동, `include` 파일마다의 블록을 치른다. 블록을 빼도 동작이 같다. 그래서 블록을 뺀다.
+3. V-B는 승인 1번(`DESIGN-E.md:183`)을 메모 7개로 나눈다. 메모마다 세션이 승인을 풀어 쓴다. 그래서 사용자가 보지 않은 메모 문구(`PROTOCOL2.md:100`)가 1개가 아니라 7개 생긴다. V-B는 기존 문법 규칙 하나도 바꾼다.
+4. V-B의 장점은 `stale-review`가 고친 선언을 바로 가리킨다는 것이다. 메인 세션은 무엇을 고쳤는지 알기 때문에 이 장점은 작다 (판단).
+5. V-C의 약점은 메모가 덮는 텍스트가 파일에서 바로 보이지 않는다는 것이다. 완화: 오류 메시지가 덮는 선언의 이름을 모두 싣는다. sidecar에는 주석 한 줄을 둔다.
+
+#### 12.3.7 메인 세션이 사용자에게 물을 것
+
+사용자는 2026-10-27에 묶음 4("신뢰 선언 6개와 어휘")를 승인했다 (`PROTOCOL2.md:98`). 그러나 어휘 메모의 문구와 지문은 새 서명 내용이다. 그래서 메인 세션은 다음을 한 질문으로 묻는다:
+1. 덮는 텍스트: 12.3.2의 7개 선언(주석 뺌)을 보여 준다. 사용자가 10-27에 본 것은 한국어 설명과 절 미리보기였다 (`PROTOCOL2.md:100`). 그래서 텍스트나 그 한국어 설명을 보여 주고 "10-27에 승인한 어휘가 이것인가"를 묻는다. 메인 세션은 묻기 전에 `git log -p specs/reqshield/reqshield.core.kv`로 이 텍스트가 서명 커밋 `0a50f1c` 뒤에 바뀌지 않았음을 확인한다.
+2. `class Data`(필드 묶기)를 어휘에 넣는가. 권고는 넣는 것이다 (x4). 넣지 않으면 지문은 `61a0636ba3629c85`이고, 필드 묶기는 지금처럼 지문 밖에 남는다.
+3. 메모 문구와 날짜. 승인은 10-27이고 기록은 10-28이다. 예: `"ykhfree 2026-10-27 (recorded 2026-10-28): the vocabulary of the lock-discipline protocol: types, enums, the Data binding, obligation Lease, the trace rules with PHASE and GAVE_UP (DESIGN-E 3.1, 3.2)"`.
+4. 틈 1b(12.4절)를 같은 라운드에 닫는가. 닫으면(T-A) 신뢰 선언 6개의 계약 텍스트(`reqshield.core.kv:47`, `49`, `51`, `53`, `55`, `65`)도 보여 주고 승인을 받는다. 메모 문구는 그대로이고 지문만 바뀐다.
+
+### 12.4 틈 1b (새로 찾음): 신뢰 선언의 계약 텍스트
+
+1. 신뢰 선언 메모의 지문은 Kotlin 쪽만 덮는다 (12.2.1의 2). 정책의 글도 그렇다: "대상은 trusted fun이면 그 Kotlin 선언" (`DESIGN-v0.md:1127`).
+2. 그래서 서명 뒤에 계약 텍스트가 바뀌어도 도구는 알리지 않는다. x3이 그 예다: 원본 core가 PROVEN이 된다.
+3. 이 길은 가정의 서명 정책을 비켜 간다. `review intent`는 `assume`마다 메모를 요구한다 (`sidecar/Check.kt:105-120`). 그러나 `throws RTE`를 지우면 A2를 서명 없이 켠 것과 같다.
+
+| 선택지 | 내용 | 좋은 점 | 나쁜 점 |
+|---|---|---|---|
+| T-A (권고) | `review intent` 아래에서 신뢰 선언 메모의 지문 단위 = 계약 텍스트(주석 뺌, `reviewed` 절 뺌) + 줄바꿈 + 지금의 Kotlin 단위 | `stale-review`가 그 선언을 가리킨다. 메모 수는 그대로다. 메모 하나가 선언 하나를 지킨다 | 서명된 지문 6개가 바뀐다 (메모 문구는 그대로). 단위가 `review intent`에 따라 다르다 |
+| T-B | 계약 텍스트를 어휘 텍스트(12.3.2)에 넣는다 | 기존 지문 6개가 그대로다 | 신뢰 선언 하나를 메모 둘이 지킨다. 계약을 고쳐도 `stale-review`는 어휘 메모를 가리킨다. "어휘"라는 이름이 맞지 않는다 |
+| T-C | 지금 닫지 않고 기록만 한다 | 비용이 없다 | x3의 길이 열려 있다 |
+
+1. T-A를 `review intent` 밖에도 쓰면 L1 sidecar의 신뢰 메모 5개가 `stale-review`가 된다 (`keylocallock.common.kv:36`, `42`, `aspect.core-spring.kv:13`, `aspect.coroutine.kv:13`, `aspect.webflux.kv:13`). 그러면 여섯 모듈의 판정이 ERROR가 된다. 그래서 T-A는 `review intent` 아래로 한정한다.
+2. T-A의 검사 위치: resolver가 FIR 뒤에 신뢰 선언 지문을 검사한다 (`frontend/Resolver.kt:672-685`). 그래서 서명 흐름의 두 번째 단계에서 새 지문 6개가 나온다.
+3. 단위의 경계: `trusted()`는 절의 순서를 고정하지 않는다 (`sidecar/Parser.kt:488-560`). 그래서 단위는 "선언 전체에서 `reviewed` 절을 뺀 것"으로 정한다.
+
+### 12.5 틈 2: 반복문 이름
+
+#### 12.5.1 선택지
+
+세 선택지에서 "함수의 반복문"은 함수 KNAME의 FIR 안에 있는 `FirWhileLoop`과 `FirDoWhileLoop`이다. 함수 안의 람다도 지금처럼 포함한다 (`frontend/Resolver.kt:404-411`). 순서는 전위 순서다: 바깥 반복문이 그 안의 반복문보다 앞이다. Kotlin `for`는 FIR에서 `while`로 바뀐다고 본다 (판단, 12.7 D8에서 확인).
+
+**L-A: 순번만**
+
+```text
+| "hole" "loop" KNAME "#" N TRIPLE_STRING          // the N-th loop of fun KNAME, from 1, in source pre-order
+```
+
+**L-B: 유일한 반복문, 여럿이면 순번 (권고)**
+
+```text
+| "hole" "loop" KNAME [ "#" N ] TRIPLE_STRING      // without #N: the only loop of fun KNAME
+```
+
+**L-C: 조건 글자**
+
+```text
+| "hole" "loop" KNAME "while" STRING TRIPLE_STRING // the loop whose condition text, spaces normalized, is STRING
+```
+
+일찍 뺀 것:
+1. Kotlin label(`poll@ while ...`): req-shield 코드를 고쳐야 한다. AI가 쓴 구현에는 label이 없다.
+2. 함수 첫 줄부터 센 줄 번호: 함수 안에서 반복문 위를 고치면 깨진다.
+
+#### 12.5.2 무엇이 그대로인가
+
+| 고침 | 지금 `@LINE` | L-A | L-B | L-C |
+|---|---|---|---|---|
+| 함수 밖, 반복문 위 (`fixed-core.patch`, M2, M5, M12, C2, C3) | 깨짐 (`no-loop`) | 그대로 | 그대로 | 그대로 |
+| 함수 안, 반복문 위의 문장 | 깨짐 | 그대로 | 그대로 | 그대로 |
+| 반복문 몸체 (M11) | 그대로 | 그대로 | 그대로 | 그대로 |
+| 반복문 조건 (예: 기계적 변이 ROR의 `<` → `<=`) | 그대로 | 그대로 | 그대로 | 깨짐 (`no-loop`) |
+| 같은 함수에 반복문 하나를 대상 앞에 더함 | 깨지거나 다른 반복문에 묶임 | 다른 반복문에 묶임 (알림 없음) | `ambiguous` | 그대로 (조건이 다르면) |
+| 같은 함수에 반복문 하나를 대상 뒤에 더함 | 그대로 | 그대로 | `ambiguous` | 그대로 (조건이 다르면) |
+| client 변이 42회 (12.2.2의 7) | 26회 깨짐. 스크립트가 줄을 고친다 | 42회 그대로 | 42회 그대로 | 42회 그대로 |
+| 다른 구현(AI 코드)의 같은 함수 | 줄이 다르면 깨짐 | 반복문이 하나면 그대로 | 반복문이 하나면 그대로 | 조건 글자가 같을 때만 그대로 |
+
+1. 잘못 묶여도 거짓 PROVEN은 나오지 않는다 (판단). hole은 반복문 불변식이고, Silicon이 처음과 유지를 검사한다. 그래서 잘못 묶이면 HOLE FAILED나 이름 오류(ERROR)가 난다.
+2. 그래도 잘못 묶이면 원인을 찾기 어렵다. 그래서 L-B는 그 경우를 `ambiguous`로 바로 알린다.
+
+#### 12.5.3 오류와 옛 형식 (L-B)
+
+| 경우 | 오류 코드 | 메시지 (예) |
+|---|---|---|
+| 함수가 없거나 overload가 여럿 | `unresolved` (지금과 같음, `frontend/Resolver.kt:401`) | `no single function 'C.f'` |
+| `KNAME`, 반복문 0개 | `no-loop` | `hole loop C.f: fun f has no loop` |
+| `KNAME`, 반복문 2개 이상 | `ambiguous` (기존 코드, `sidecar/Check.kt:342`, `frontend/Resolver.kt:349`) | `hole loop C.f: fun f has 2 loops (lines 14, 20); name one: C.f#1 or C.f#2` |
+| `KNAME#N`, N이 반복문 수보다 큼 | `no-loop` | `hole loop C.f#3: fun f has 2 loop(s), so #3 names none` |
+| 두 hole이 한 반복문에 묶임 (`C.f`와 `C.f#1`) | `duplicate-decl` (resolver) | `hole loop C.f#1 names the loop of hole loop C.f at <pos>` |
+| 같은 글자의 hole 둘 (`C.f#1` 두 번) | `duplicate-decl` (`sidecar/ClientCheck.kt:158-164`, 열쇠만 바꿈) | 지금 메시지와 같은 모양 |
+| `KNAME@LINE` | `syntax` | `hole loop names a loop by its function: write 'hole loop KNAME' (its only loop) or 'hole loop KNAME#N' (its N-th loop); a line number moves with every edit above the loop` |
+| `#0`, `#` 뒤에 숫자 없음, `#`와 숫자 사이 공백 | `syntax` | `expected a loop number from 1 after '#'` |
+
+옛 `@LINE` 형식은 받지 않는다 (권고). 이유:
+1. 이 형식을 쓰는 sidecar는 하나다 (`reqshield.core.kv:150`). hole은 지문 대상이 아니다. 그래서 고쳐도 서명 비용이 없다.
+2. 두 형식을 두면 이름 풀기 길이 둘이 되고, 테스트도 두 벌이 된다.
+3. 줄 정보는 `kv resolve`의 묶음 줄과 보고서의 위치 열에 남는다 (예: `@ReqShield.kt:181:9`).
+
+#### 12.5.4 권고: L-B
+
+1. L-A와 L-B는 가깝다. 차이는 함수에 반복문이 하나 더 생길 때뿐이다. 새 반복문이 대상 앞이면 L-A는 알리지 않고 다른 반복문에 묶는다. L-B는 새 반복문이 앞이든 뒤든 `ambiguous`로 멈춘다.
+2. L-C는 반복문 조건을 고치면 깨진다. 기계적 변이(ROR)를 client 모듈에 쓰면 조건 변이마다 ERROR가 된다 (판단; 지금 `scripts/mechanical.py:52-59`는 client 모듈을 돌리지 않는다). L-C는 다른 구현에도 약하다.
+3. `PROTOCOL2.md:82`는 "함수 안 순서로 묶는 방식"을 뒤로 미룬 안으로 적었다. L-B는 그 안에 "유일하면 순번 생략"을 더한 것이다.
+4. 이름표: `LoopRef.label` 하나가 `KNAME` 또는 `KNAME#N`을 낸다. 12.2.2 3번의 세 문자열 틀을 이것으로 바꾼다.
+5. 지금 sidecar의 새 머리 줄은 `hole loop ReqShield.handleLockFailure """`이다.
+6. 생성 Viper는 바뀌지 않는다. 이름표는 Viper에 나오지 않는다 (측정: x0의 Viper에서 hole 줄의 주석은 `// hole`뿐이다). 변수 이름 `brk_181_9`는 Kotlin 위치에서 온다.
+
+#### 12.5.5 바꿀 곳 (L-B)
+
+1. `sidecar/Parser.kt:406-424`: `@LINE` 대신 `[#N]`을 읽는다. 옛 형식에는 안내 오류를 낸다.
+2. `sidecar/Ast.kt:395-399`: `LoopRef(fn, ordinal: Int?)`와 `label`.
+3. `frontend/Resolver.kt:398-415`: 함수의 반복문을 전위 순서로 모두 모은 뒤 고른다. 같은 반복문에 묶인 hole 둘은 `duplicate-decl`이다.
+4. `sidecar/ClientCheck.kt:158-164`: 열쇠를 `(함수, 순번)`으로 바꾼다.
+5. `lower/ClientLowering.kt:218`, `emit/ClientEmitter.kt:2014`, `verify/ClientReport.kt:230`: `label`을 쓴다.
+6. `scripts/mutants.py:393-394`, `528-547`: 줄 바꿔 쓰기를 지운다. 가정 토글의 편집은 남긴다.
+7. `client/Protocol2.kt:18-31`(테스트): `sidecarFor`를 지운다. 고친 사본도 서명된 sidecar를 그대로 쓴다.
+8. 테스트, golden, 문서: 12.2.2의 표.
+
+### 12.6 구현 순서
+
+1. 메인 세션이 12.3.7의 질문을 사용자에게 묻는다 (틈 1b 포함). 답 전에는 틈 1과 틈 1b의 규칙을 커밋하지 않는다.
+2. 고치기 전의 출력을 저장한다: 여섯 모듈의 `kv discover`, `resolve`, `lower`, `emit` 출력과 두 core 사본의 생성 Viper.
+3. 틈 2(L-B)를 구현한다. 서명은 필요 없다. 12.7의 D 묶음과 R 묶음을 돌린다.
+4. 틈 1(V-C)의 문법, 지문 단위, 검사를 구현한다.
+5. 사용자가 고르면 틈 1b(T-A)를 구현한다.
+6. 서명된 sidecar에 `review vocabulary`와 메모를 넣는다. 지문은 `0000000000000000`으로 둔다.
+7. `kv resolve`를 `--draft` 없이 돌린다. 첫 단계에서 어휘 지문이 `stale-review`로 나온다. 그 값을 메모에 옮긴다.
+8. 다시 돌린다. 두 번째 단계에서 신뢰 선언 지문 6개가 나온다 (T-A일 때). 그 값을 옮긴다.
+9. 어휘 지문이 12.3.2의 참값과 같은지 본다. 다르면 구현이 12.3.2 규칙과 다르다. 원인을 찾은 뒤에 다음으로 간다.
+10. 테스트 전체, `mutantsReqShield`, `mutantsAspect`, `mutantsClient`를 돌린다.
+11. 12.7 R6의 고의 고장을 하나씩 넣고, 지정한 테스트가 실패하는지 본다.
+12. `HISTORY.md`, `PROTOCOL2.md` 8절, 이 절에 결과를 적는다.
+
+### 12.7 테스트 목록
+
+"**실패**"는 오류가 나야 하는 경우다.
+
+**A. 어휘 문법과 검사 (FIR 없음)**
+
+| # | 입력 | 기대 |
+|---|---|---|
+| A1 | `review vocabulary` 다음 줄 `reviewed "n" sha256 "h"` | 선언 1개, 메모 `n`, 지문 `h` |
+| A2 | 메모 없는 `review vocabulary` | 메모 없는 선언 1개 |
+| A3 | `review vocab` | **실패**: 문법 오류, "expected 'intent' or 'vocabulary'" |
+| A4 | `type Key = opaque` 다음 줄 `reviewed "a"` | **실패**: 지금과 같은 문법 오류 "'reviewed' must follow" |
+| A5 | `review intent`, 어휘 있음, `review vocabulary` 없음, `--draft` 없음 | **실패**: `unreviewed` 1개. 위치는 첫 어휘 선언. 메시지에 덮는 선언의 이름 전부 |
+| A6 | A5와 같고 `--draft` | 오류 없음 |
+| A7 | 메모 없는 `review vocabulary` | `--draft` 없이 **실패** (`unreviewed`). `--draft`이면 오류 없음 |
+| A8 | 지문 없는 메모 | `--draft` 없이 **실패** (`missing-fingerprint`, 메시지의 값 = 참조 스크립트의 값). `--draft`이면 오류 없음 |
+| A9 | 맞는 지문 | 오류 없음 |
+| A10 | 틀린 지문 | **실패**: `stale-review`. `--draft`에서도 **실패** |
+| A11 | 종류마다 토큰 하나를 고침: `type` 이름, `enum` 클래스, `class` 필드 묶기, `obligation` 인자 타입, 사건 형태(`count` → `last`), `where` 식, `derived` 식 | 7개 모두 **실패**: `stale-review` |
+| A12 | 주석만 고침(`trace` 줄 끝 주석, `type` 뒤의 새 주석), 들여쓰기만 고침 | 오류 없음 |
+| A13 | 어휘 선언 둘의 순서를 바꿈 | **실패**: `stale-review` |
+| A14 | 어휘 선언 하나를 `use` 줄 아래로 옮김 (어휘끼리 순서는 그대로) | 오류 없음 |
+| A15 | `trace` 필드 하나를 더함 | **실패**: `stale-review` |
+| A16 | `type T = template "a//${Long}"`에서 `//` 뒤의 글자를 고침 | **실패**: `stale-review` (문자열 안의 `//`는 주석이 아니다) |
+| A17 | `review intent` 없음, 어휘 있음, 메모 없음 | 오류 없음 (기존 L1 sidecar의 동작) |
+| A18 | `review intent` 없음, `review vocabulary`에 틀린 지문 | **실패**: `stale-review` |
+| A19 | `review vocabulary` 두 번 | **실패**: `duplicate-decl` |
+| A20 | 어휘는 `include`한 파일에, 메모는 루트 파일에 있다. 포함 파일의 어휘를 고침 | **실패**: `stale-review` |
+| A21 | `review intent` 아래의 L1 고정 자료: `ghost record` 필드 종류 `ends` → `frozen`, `witness` 대상 바꿈 | 둘 다 **실패**: `stale-review` |
+
+**B. 서명된 sidecar**
+
+| # | 입력 | 기대 |
+|---|---|---|
+| B1 | 서명된 `reqshield.core.kv`(어휘 메모 포함), `checkSidecar`, `--draft` 없음 | 오류 없음. 의도 절은 16개 그대로 |
+| B2 | B1에서 `reviewed "`로 시작하는 줄을 지운 사본 | `--draft`이면 오류 없음. `--draft` 없으면 `unreviewed` 23개 (신뢰 선언 6, 어휘 1) |
+| B3 | CLI `kv resolve`, B2의 사본 | exit 1, `error[unreviewed]` 23줄. `--draft`이면 exit 0 |
+| B4 | 측정 사본 x1, x2, x4에 B1의 메모를 더함 | 셋 다 **실패**: exit 1, `stale-review` 1개, 위치는 어휘 메모. 지금은 셋 다 exit 0 (측정) |
+| B5 | 주석과 들여쓰기만 고친 사본 (`ref/cmt.kv`의 고침) | exit 0 |
+
+**C. 틈 1b (T-A를 고를 때)**
+
+| # | 입력 | 기대 |
+|---|---|---|
+| C1 | x3 (두 `throws RTE`를 지움) | **실패**: exit 1, `stale-review` 2개 (tryLock과 unLock의 메모). 지금은 exit 0이고 verify는 PROVEN (측정) |
+| C2 | 신뢰 선언의 계약 텍스트에서 주석만 고침 | 오류 없음 |
+| C3 | 신뢰 선언의 `reviewed` 절을 `throws` 앞으로 옮김 | 오류 없음 (단위에서 `reviewed` 절을 뺀다) |
+| C4 | `review intent`가 없는 L1 sidecar 8개 | 신뢰 메모 5개의 지문이 그대로다. 오류 없음 |
+| C5 | 신뢰 함수의 Kotlin 본문을 고친 사본 | **실패**: `stale-review` (지금 동작 그대로) |
+
+**D. 반복문 이름 (L-B)**
+
+| # | 입력 | 기대 |
+|---|---|---|
+| D1 | `hole loop C.f """…"""`, `hole loop C.f#2 """…"""` | `LoopRef(C.f, null)`, `LoopRef(C.f, 2)` |
+| D2 | `hole loop C.f@14`, `C.f#0`, `C.f#x`, `C.f# 2` | 넷 다 **실패**: 문법 오류. 첫째의 메시지는 두 새 형식을 안내한다 |
+| D3 | 반복문 하나인 함수, `C.f` | 묶인다. 묶음 줄은 `hole loop C.f -> loop of fun … @C.kt:L:C` |
+| D4 | 반복문 없는 함수, `C.f`와 `C.f#1` | 둘 다 **실패**: `no-loop` |
+| D5 | 반복문 둘인 함수: `C.f`, `C.f#2`, `C.f#3` | **실패** `ambiguous` (두 줄 번호와 `#1`, `#2` 안내), 둘째 반복문, **실패** `no-loop` |
+| D6 | 중첩 반복문: `#1`, `#2` | 바깥, 안쪽 (전위 순서) |
+| D7 | 함수 안 람다 속의 반복문 | 센다 (지금 `@LINE`과 같은 범위) |
+| D8 | `for` 다음에 `while`이 있는 함수: `#2` | `while` 반복문 (FIR 고정 자료로 확인한다. 다르면 12.5.1의 판단을 고친다) |
+| D9 | `C.f`와 `C.f#1`이 한 반복문을 가리킴. `C.f#1`이 두 번 나옴 | **실패** `duplicate-decl` (resolver). **실패** `duplicate-decl` (sidecar 검사) |
+| D10 | 함수 위에 6줄을 더한 사본. 함수 안 반복문 위에 `val` 줄을 더한 사본 | 같은 반복문에 묶인다. 위치 열만 바뀐다 |
+| D11 | golden KVIR | 96행이 `[hole ReqShield.handleLockFailure]`가 된다. 다른 줄은 그대로다 |
+| D12 | 보고서 행: 원본, 그리고 서명된 sidecar를 그대로 쓴 고친 사본 | `loop ReqShield.handleLockFailure … ReqShield.kt:181:9 PROVEN`, `…:187:9 PROVEN` |
+| D13 | 변이 스크립트 테스트 (`scripts/MutantScriptTest.kt:223`) | 토글이 아닌 실행의 sidecar 사본이 서명된 sidecar와 바이트 단위로 같다. `@187` 단언은 지운다 |
+
+**R. 회귀 (모두 필수)**
+
+| # | 확인 | 기대 |
+|---|---|---|
+| R1 | 테스트 전체 | 모두 통과 (마지막 기록 687개에 새 테스트를 더함) |
+| R2 | `mutantsReqShield`, `mutantsAspect`, `mutantsClient` | 33회, 30회, 42회. 불일치 0 |
+| R3 | 원본 core, 고친 사본 (`client/ClientVerifyTest.kt`) | 원본은 FAILED이고 실패 성질은 정확히 RET_hit, RET_recheck, RET_supplier_error다. 고친 사본은 sidecar 사본 없이 PROVEN이다 |
+| R4 | 여섯 기존 모듈의 `kv discover`, `resolve`, `lower`, `emit` 출력 | 12.6의 2에서 저장한 출력과 바이트 단위로 같다 |
+| R5 | 원본 core와 고친 사본의 생성 Viper | 저장한 출력과 바이트 단위로 같다 |
+| R6 | 고의 고장 (하나씩 넣고 되돌림) | a. 어휘 규칙을 끔 → A5, A10, B4가 실패한다. b. 주석 지우기를 뺌 → A12, B5가 실패한다. c. 문자열을 무시하고 `//`를 지움 → A16이 실패한다. d. 어휘 종류에서 `trace`를 뺌 → A11의 사건 3개와 B4의 x1, x2가 실패한다. e. 반복문을 후위 순서로 셈 → D6이 실패한다. f. 반복문이 여럿일 때 `KNAME`이 첫 것을 고름 → D5가 실패한다. g. T-A를 `review intent` 밖에도 씀 → C4, R4가 실패한다. h. T-A 단위에 주석을 남김 → C2가 실패한다 |
+
+### 12.8 구현 전 예측 (결과 전에 등록)
+
+1. 어휘 지문: 도구가 지금 서명된 텍스트에서 계산한 값은 `92a6a3bbf1f4b44b`다 (`class Data` 포함). `class Data`를 빼면 `61a0636ba3629c85`다.
+2. x1, x2, x4(어휘 메모를 더한 사본): `kv resolve`가 exit 1이다. `stale-review`는 정확히 1개이고, 위치는 어휘 메모다. 지금은 셋 다 exit 0이다 (측정).
+3. x3: T-A이면 `stale-review`가 정확히 2개(tryLock, unLock)다. T-C이면 exit 0 그대로다.
+4. 주석과 들여쓰기만 고친 사본: exit 0.
+5. 판정 불변: 원본 core는 FAILED이고, 실패 성질은 정확히 RET_hit, RET_recheck, RET_supplier_error다. 고친 사본은 PROVEN이다. 변이 33·30·42회의 불일치는 0이다.
+6. 여섯 기존 모듈의 `kv discover`, `resolve`, `lower`, `emit` 출력은 바이트 단위로 같다.
+7. 두 core 사본의 생성 Viper는 바이트 단위로 같다.
+8. `mutantsClient`에서 토글이 아닌 실행 32회는 서명된 sidecar와 바이트 단위로 같은 내용을 읽는다. 토글 실행 10회의 sidecar는 토글의 `assume` 편집만 다르다. 지금은 42회 중 26회가 줄을 고친 사본을 읽는다 (측정, 12.2.2의 7).
+9. 사용자 서명: 새 메모 1개가 생긴다. T-A이면 지문 6개도 바뀐다 (메모 문구는 그대로). 사용자 질문은 1번이다.
+10. 실제 크기는 12.9 추정의 0.5-1.5배 안이다.
+
+### 12.9 크기 (추정)
+
+| 부분 | 코드 | 테스트 |
+|---|---|---|
+| 틈 1 (V-C) | 약 100줄: Ast 약 55 (새 선언, 종류 `when`, 단위 텍스트, 주석 지우기), Parser 약 17, Check 약 30 | 약 150줄 (A, B 묶음) |
+| 틈 1b (T-A) | 약 25줄 (Parser 약 10, Resolver 약 15) | 약 40줄 (C 묶음) |
+| 틈 2 (L-B) | 약 +50줄, −20줄. `mutants.py` 약 −15줄. `Protocol2.kt` 약 −12줄 | 약 100줄 (D 묶음, 기존 단언 약 12개의 고침 포함) |
+| 합 | 약 +175줄, −50줄 | 약 290줄 |
+
+비교: 서명 라운드의 도구 보완은 코드와 테스트를 합쳐 약 250줄이었다 (`PROTOCOL2.md:104`).
+
+### 12.10 열린 질문
+
+사용자가 정할 것: 12.3.7의 1-4.
+
+메인 세션이 정할 것:
+
+| ID | 질문 | 이 절의 의견 |
+|---|---|---|
+| JG1 | 옛 `@LINE` 형식을 없애는가, 한동안 받는가 | 없앤다 (12.5.3) |
+| JG2 | 어휘 메모의 위치 관례 | `trace` 블록 바로 뒤. 문법은 위치를 따지지 않는다 |
+| JG3 | 보고서의 "Spec to review" 줄에 어휘 메모를 싣는가 | 싣지 않는다. 범위를 좁힌다 |
+| JG4 | 층 1 묶기의 같은 위험: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`는 타입만 본다 (`frontend/Resolver.kt:381-393`) | 이 설계는 다루지 않는다. 측정하지 않았다 |
+| JG5 | L1 sidecar가 `review intent`로 옮길 때 `set-once`의 메모 | 그 이동 때 정한다 |
+| JG6 | 이 설계에 critic 검토를 받는가 | 틈 1의 V-A와 V-C가 가깝다. 다만 되돌리는 비용은 작다 (sidecar 3줄과 검사 하나). 메인 세션이 정한다 |
+
+### 12.11 이 agent의 기록
+
+1. advisor는 쓰지 않았다 (지시).
+2. 실행: `kv resolve` 5회(각 약 2 s), `kv verify` 4회(4-19 s), `make_root` 42회. 모두 scratchpad 사본에서 했다.
+3. 토큰과 시간은 재지 않았다.
+
+### 12.12 구현 결과 (2026-10-28, 메인 세션 기록)
+
+사용자 결정 (12.3.7): 덮는 텍스트를 승인했다. `class Data`를 넣는다. 제안 메모 문구를 쓴다. 틈 1b를 이번에 닫는다.
+구현: 틈 2(L-B)는 feature-developer, 틈 1(V-C)과 틈 1b(T-A)는 메인 세션이 했다.
+
+| 예측 (12.8) | 결과 (측정) |
+|---|---|
+| 1. 어휘 지문 `92a6a3bbf1f4b44b` | 맞음. 도구가 서명된 텍스트에서 같은 값을 냈다 |
+| 2. x1, x2, x4: exit 1, `stale-review` 1개 (어휘 메모) | 맞음 |
+| 3. x3: `stale-review` 2개 (tryLock, unLock) | 맞음 |
+| 4. 주석과 들여쓰기만 고친 사본: exit 0 | 맞음 |
+| 5. 판정 불변, 변이 33·30·42회 불일치 0 | 맞음. 원본 core는 RET_hit, RET_recheck, RET_supplier_error에서 FAILED, 고친 사본은 sidecar 사본 없이 PROVEN |
+| 6. 여섯 L1 모듈의 출력이 바이트 단위로 같음 | 맞음 |
+| 7. 두 core 사본의 Viper가 바이트 단위로 같음 | 맞음. 단, 위치표(`.vpr.positions`)의 sidecar 줄 번호는 바뀌었다. sidecar에 머리 주석 1줄과 어휘 메모 4줄이 더해졌기 때문이다. 예측은 위치표를 다루지 않았다 |
+| 8. `mutantsClient`의 토글 아닌 32회가 서명된 sidecar를 그대로 읽음 | 맞음 (L-B 구현 때 측정) |
+| 9. 새 메모 1개, 지문 6개 바뀜, 사용자 질문 1번 | 맞음 |
+| 10. 크기가 추정의 0.5-1.5배 | 일부 맞음. 코드는 +246/-63줄(추정 +175/-50의 약 1.4배)이다. 테스트는 약 +515줄(추정 290의 약 1.8배)이다 |
+
+1. 새 지문: 어휘 `92a6a3bbf1f4b44b`; 신뢰 선언 tryLock `edbefb5d3b80e3d3`, unLock `de7d774d8fb8971e`, getCacheFunction `26acb803f63d7e83`, setCacheFunction `6a8a9f3a7bdd1a04`, Callable.call `fefb2fd846c172ba`, decideToUpdateCache `a858dc2f51d5892c`. 메인 세션이 Callable.call의 값을 손으로 다시 계산했다 (계약 텍스트, 줄바꿈, 시그니처).
+2. 12.3.5 목록에 빠진 테스트: `frontend/ClientTrustedReviewTest.kt`의 3개는 옛 신뢰 지문을 글자로 적어 두었다. T-A 단위로 기대값을 다시 고정했다.
+3. 테스트 도우미 `rereviewed`(`Harness.kt`)가 어휘 메모도 다시 찍는다. 어휘가 주제가 아닌 테스트가 sidecar 사본을 고칠 때 쓴다.
+4. 고의 고장 R6 (하나씩 넣고 되돌림): a, b, c, e, f, g, h는 지정한 테스트가 잡았다. d(어휘 종류에서 `trace`를 뺌)는 `when`에서 가지를 지우면 컴파일 오류가 난다 (12.3.4 3번의 의도). `trace`를 null 쪽 가지로 옮긴 d2는 테스트 7개가 잡았다.
+5. 판단: `#01`은 `#1`로 받는다 (L-B 구현 agent).

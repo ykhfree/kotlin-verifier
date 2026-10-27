@@ -6,6 +6,36 @@ import java.security.MessageDigest
 fun normalizeWhitespace(text: String): String = text.replace(Regex("""\s+"""), " ").trim()
 
 /**
+ * [text] without its `//` comments (DESIGN-E 12.3.2 rule 3): each runs to the end of its line. A `//` inside a
+ * `"..."` string is no comment; a sidecar string never spans lines.
+ */
+fun stripComments(text: String): String {
+    val out = StringBuilder()
+    var inString = false
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        when {
+            inString -> {
+                if (c == '"' || c == '\n') inString = false
+                out.append(c)
+            }
+            c == '"' -> {
+                inString = true
+                out.append(c)
+            }
+            text.startsWith("//", i) -> {
+                while (i < text.length && text[i] != '\n') i++
+                continue
+            }
+            else -> out.append(c)
+        }
+        i++
+    }
+    return out.toString()
+}
+
+/**
  * The fingerprint of a reviewed text (DESIGN-v0.md 8.3 "reviewed 지문", DESIGN-B.md 9.3 UB3, milestone B6): CRLF
  * becomes LF, every whitespace run becomes one space, the ends are trimmed, and the fingerprint is the first 16 hex
  * characters of the SHA-256 of that text (UTF-8). A `reviewed` note records it as `sha256 "<hex>"`. A snapshot block

@@ -367,3 +367,24 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 도구는 req-shield 고정 worktree `~/IdeaProjects/req-shield-verifier-pin` (`2e792d2`)을 쓴다. 지우지 않는다.
 
 - 원격 저장소 (사용자 결정 2026-10-27): GitHub private `ykhfree/kotlin-verifier`에 `main`을 push했다 (`origin`). push 전 점검: 현재 파일과 전체 이력에 비밀 값 형태 없음, 크기 2.6 MB.
+
+## 진행 중: 프로토콜 2의 남은 틈 정리 (2026-10-28 ~)
+
+- 사용자 결정: 멈춘 항목 중 "어휘 승인 칸"과 "`hole loop @LINE`의 줄 이동"을 먼저 닫는다. 작업은 orchestration-policy로 나눈다.
+- 설계 (deep-reasoner, `DESIGN-E.md` 12절, 커밋 전):
+  - 틈 1 권고 V-C: `review vocabulary` 줄과 메모 하나. 지문은 어휘 선언(type, enum, class, obligation, trace) 전부를 덮고, `//` 주석과 공백은 지문 밖이다. 규칙은 `review intent` 아래에서만 적용한다 (지금은 `reqshield.core.kv` 하나).
+  - 틈 1b (새로 찾음) 권고 T-A: `review intent` 아래에서 신뢰 선언 메모의 지문이 sidecar 쪽 계약 텍스트도 덮는다. 지금은 Kotlin 쪽만 덮는다.
+  - 틈 2 권고 L-B: `hole loop KNAME`(함수의 유일한 반복문), 여럿이면 `KNAME#N`. `@LINE`은 없앤다. client 변이 42회 중 26회에서 반복문이 181행 밖에 있다 (측정).
+- 메인 세션 확인 (측정, 설치된 `kv`, 고정 worktree `2e792d2`):
+  - x3 (`KeyLock` 두 줄의 `throws RTE`를 지움): `kv resolve` exit 0, `kv verify` module PROVEN. 서명 없이 A2를 켠 것과 같다.
+  - x2 (`recheck`의 lease를 CREATE → UPDATE): `kv resolve` exit 0, RET_recheck가 PROVEN이 되어 실제 결함 하나가 보고서에서 사라진다.
+  - `reqshield.core.kv`는 서명 커밋 `0a50f1c` 뒤로 바뀌지 않았다. 참조 지문 스크립트는 문자열 안의 `//`를 지우지 않는다 (설계 12.3.2 규칙과 같음).
+- advisor 권고: V-C, L-B, T-A를 그대로 쓴다. 되돌리는 비용이 작아서 critic 단계는 생략한다. 틈 2는 서명이 필요 없으므로 사용자 답을 기다리는 동안 먼저 구현한다. JG4(`free` 값을 같은 타입의 다른 속성에 묶어도 통과)는 같은 종류의 틈이므로 남은 틈 목록에 적고, 이번에는 고치지 않는다.
+- 틈 2 구현 시작 (feature-developer): 고치기 전 출력(여섯 모듈과 두 core Viper)을 먼저 저장한다.
+- 사용자에게 물음: 어휘 메모가 덮는 텍스트, `class Data` 포함 여부, 메모 문구, 틈 1b를 이번에 닫는지.
+- 사용자 결정 (2026-10-28): 메인 세션이 보여 준 어휘 텍스트(7개 선언, 주석 뺌)가 10-27에 승인한 어휘와 같다고 확인했다. `class Data`를 어휘에 넣는다 (예측 지문 `92a6a3bbf1f4b44b`). 메모는 제안 문구를 쓴다. 틈 1b를 이번에 닫는다 (T-A, 보여 준 계약 텍스트 6개 승인, 메모 문구는 그대로).
+- 틈 2 구현 (feature-developer): `hole loop KNAME [#N]`. `@LINE`은 안내가 붙은 문법 오류다. `mutants.py`와 테스트의 줄 바꿔 쓰기를 지웠다. 메인 세션이 diff와 sidecar 상태를 확인했다.
+- 틈 1, 1b 구현 (메인 세션): `review vocabulary`와 어휘 지문 (`Ast.kt`, `Parser.kt`, `Check.kt`, `Fingerprint.kt`), 신뢰 선언 지문의 계약 텍스트 (`Resolver.kt`). 새 테스트 `VocabularyReviewTest` 13개와 `ClientCliTest` 2개.
+- 서명 (사용자 승인 2026-10-28): 어휘 메모 1개 (`92a6a3bbf1f4b44b`, 예측과 같음)와 신뢰 선언 지문 6개를 `reqshield.core.kv`에 적었다.
+- 결과 (측정, `DESIGN-E.md` 12.12): 예측 10개 중 9개 맞음, 1개(크기) 일부 맞음. 테스트 712개 (첫 실행에서 옛 지문을 적어 둔 3개가 실패해 기대값을 고침), 변이 33·30·42회 불일치 0, 여섯 L1 모듈과 두 core Viper 바이트 동일 (core 위치표는 sidecar 줄 번호만 다름), 고의 고장 R6 모두 잡힘.
+- 남은 일: JG4 (`free` 값 묶기의 같은 종류 틈). 멈춘 항목 중 C6, E5(UE6 필요), 미지원 구문, G-opus-1 pass 2는 그대로다.

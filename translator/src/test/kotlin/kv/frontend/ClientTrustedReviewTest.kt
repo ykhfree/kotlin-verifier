@@ -14,7 +14,9 @@ import kotlin.test.assertTrue
 /**
  * DESIGN-E 2.5: the `reviewed` notes of the trusted declarations of the signed core ReqShield sidecar. A trusted value
  * is bound to its declaration (here a constructor `val` parameter of ReqShieldConfiguration); a JDK function, which has
- * no source, to its signature. Copies of the core and support sources and of the sidecar; no Silicon run.
+ * no source, to its signature. Under `review intent` the note covers the sidecar contract too (DESIGN-E 12.4, T-A): the
+ * unit is the contract text without comments and its `reviewed` clause, then the Kotlin text. Copies of the core and
+ * support sources and of the sidecar; no Silicon run.
  */
 class ClientTrustedReviewTest {
     @TempDir
@@ -22,6 +24,10 @@ class ClientTrustedReviewTest {
 
     private val config = "core/src/main/kotlin/com/linecorp/cse/reqshield/config/ReqShieldConfiguration.kt"
     private val getter = "    val getCacheFunction: (String) -> ReqShieldData<T>?,\n"
+
+    /** The contract texts of the two notes below, whitespace normalized (DESIGN-E 12.4). */
+    private val getContract = "trusted value ReqShieldConfiguration.getCacheFunction(k: Key) returns d: Data? throws RTE, CHK"
+    private val callContract = "trusted fun java.util.concurrent.Callable.call() returns v: Int throws RTE, CHK, INTR"
 
     /** A copy of the core and support main sources, with [old] replaced (once) by [new] in ReqShieldConfiguration.kt. */
     private fun root(
@@ -64,9 +70,9 @@ class ClientTrustedReviewTest {
         val (exit, errors) = resolve(root(new = "    val getCacheFunction: (key: String) -> ReqShieldData<T>?,\n"), sidecar())
         assertEquals(1, exit)
         val e = errors.single()
-        val now = sha16("val getCacheFunction: (key: String) -> ReqShieldData<T>?")
-        assertTrue("error[stale-review]: trusted value getCacheFunction changed after its review" in e && "sha256 \"87e6f63305e3fe90\"" in e, e)
-        assertTrue("the declaration at ReqShieldConfiguration.kt:34 now has sha256 \"$now\"" in e, e)
+        val now = sha16("$getContract val getCacheFunction: (key: String) -> ReqShieldData<T>?")
+        assertTrue("error[stale-review]: trusted value getCacheFunction changed after its review" in e && "sha256 \"26acb803f63d7e83\"" in e, e)
+        assertTrue("the contract and the declaration at ReqShieldConfiguration.kt:34 now has sha256 \"$now\"" in e, e)
     }
 
     @Test
@@ -77,18 +83,19 @@ class ClientTrustedReviewTest {
 
     @Test
     fun `a trusted value note without a fingerprint names the fingerprint to record`() {
-        val (exit, errors) = resolve(root(), sidecar(" sha256 \"87e6f63305e3fe90\"", ""))
+        assertEquals("26acb803f63d7e83", sha16("$getContract val getCacheFunction: (String) -> ReqShieldData<T>?"))
+        val (exit, errors) = resolve(root(), sidecar(" sha256 \"26acb803f63d7e83\"", ""))
         assertEquals(1, exit)
         val e = errors.single()
-        assertTrue("error[missing-fingerprint]: the reviewed note of trusted value getCacheFunction" in e && "sha256 \"87e6f63305e3fe90\" (the declaration at ReqShieldConfiguration.kt:34)" in e, e)
+        assertTrue("error[missing-fingerprint]: the reviewed note of trusted value getCacheFunction" in e && "sha256 \"26acb803f63d7e83\" (the contract and the declaration at ReqShieldConfiguration.kt:34)" in e, e)
     }
 
     @Test
     fun `a JDK trusted fun is bound to its signature`() {
-        assertEquals("f6747f6649ac463f", sha16("java.util.concurrent.Callable.call(): V"))
-        val (exit, errors) = resolve(root(), sidecar(" sha256 \"f6747f6649ac463f\"", " sha256 \"0123456789abcdef\""))
+        assertEquals("fefb2fd846c172ba", sha16("$callContract java.util.concurrent.Callable.call(): V"))
+        val (exit, errors) = resolve(root(), sidecar(" sha256 \"fefb2fd846c172ba\"", " sha256 \"0123456789abcdef\""))
         assertEquals(1, exit)
         val e = errors.single()
-        assertTrue("error[stale-review]: trusted fun call changed after its review" in e && "the library signature java.util.concurrent.Callable.call(): V now has sha256 \"f6747f6649ac463f\"" in e, e)
+        assertTrue("error[stale-review]: trusted fun call changed after its review" in e && "the contract and the library signature java.util.concurrent.Callable.call(): V now has sha256 \"fefb2fd846c172ba\"" in e, e)
     }
 }

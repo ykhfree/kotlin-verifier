@@ -2,7 +2,8 @@
 // Format: kv-sidecar/0 with the E additions (DESIGN-E 6.2). `source` paths are relative to the req-shield checkout.
 //
 // Signed 2026-10-27 (DESIGN-E 2.5): 12 intent clauses, 4 assumptions and 6 trusted declarations carry a `reviewed`
-// note. The user also approved the vocabulary (types, enums, obligation, trace); the grammar has no slot for that note.
+// note. The user also approved the vocabulary on 2026-10-27; its note was recorded on 2026-10-28 (DESIGN-E 12.3).
+// On 2026-10-28 the 6 trusted fingerprints were re-recorded to cover the contract too (12.4, approved; notes unchanged).
 // Quoted sources are blocks of `kv spec snapshot` (specdraft/reqshield-core/snapshot) over README.md, CLAUDE.md and
 // the KDoc of ReqShield.kt, ReqShieldConfiguration.kt, KeyLock.kt and ClientException.kt. A `//` comment of
 // ReqShield.kt is no snapshot block, so a source that is such a comment is a `source none` line that names its line.
@@ -41,19 +42,23 @@ trace {
   derived GAVE_UP = npoll >= maxAttempt || consec >= 3                      // MAX_CONSECUTIVE_GET_CACHE_FAILURES = 3
 }
 
+// The vocabulary note covers every type, enum, class, obligation and trace declaration of this sidecar (DESIGN-E 12.3).
+review vocabulary
+  reviewed "ykhfree 2026-10-27 (recorded 2026-10-28): the vocabulary of the lock-discipline protocol: types, enums, the Data binding, obligation Lease, the trace rules with PHASE and GAVE_UP (DESIGN-E 3.1, 3.2)" sha256 "92a6a3bbf1f4b44b"
+
 // ---- Trust (layer 2): the KeyLock contract and the user functions (DESIGN-E 3.3) ----
 // The exception kinds are those of spike/protocol2/target.vpr: a KeyLock call throws a RuntimeException (UE3).
 // The Viper models are in this order (trusted and use lines): KeyLock, the user functions, the JDK calls, the clock.
 trusted fun KeyLock.tryLock(k: Key, lt: LockType) returns t: Token? creates Lease(k, lt, t) if t != null throws RTE
-  reviewed "ykhfree 2026-10-27: KeyLock.kt contract: a non-null token is one acquisition that the caller must release; the call may throw a RuntimeException" sha256 "4f59db86ad6a725e"
+  reviewed "ykhfree 2026-10-27: KeyLock.kt contract: a non-null token is one acquisition that the caller must release; the call may throw a RuntimeException" sha256 "edbefb5d3b80e3d3"
 trusted fun KeyLock.unLock(k: Key, lt: LockType, t: Token) returns released: Bool consumes Lease(k, lt, t) throws RTE
-  reviewed "ykhfree 2026-10-27: KeyLock.kt contract: unLock ends the acquisition of its token; the call may throw a RuntimeException" sha256 "b6d659be56be5d98"
+  reviewed "ykhfree 2026-10-27: KeyLock.kt contract: unLock ends the acquisition of its token; the call may throw a RuntimeException" sha256 "de7d774d8fb8971e"
 trusted value ReqShieldConfiguration.getCacheFunction(k: Key) returns d: Data? throws RTE, CHK
-  reviewed "ykhfree 2026-10-27: a user function: returns the cached data or null, and may throw" sha256 "87e6f63305e3fe90"
+  reviewed "ykhfree 2026-10-27: a user function: returns the cached data or null, and may throw" sha256 "26acb803f63d7e83"
 trusted value ReqShieldConfiguration.setCacheFunction(k: Key, d: Data, kotlin.Long) returns b: Bool throws RTE, CHK
-  reviewed "ykhfree 2026-10-27: a user function: writes the cache, and may throw" sha256 "49ed92eb1dfc68e6"
+  reviewed "ykhfree 2026-10-27: a user function: writes the cache, and may throw" sha256 "6a8a9f3a7bdd1a04"
 trusted fun java.util.concurrent.Callable.call() returns v: Int throws RTE, CHK, INTR
-  reviewed "ykhfree 2026-10-27: the user's supplier: returns a value, or throws a RuntimeException, a checked exception or an interrupt" sha256 "f6747f6649ac463f"
+  reviewed "ykhfree 2026-10-27: the user's supplier: returns a value, or throws a RuntimeException, a checked exception or an interrupt" sha256 "fefb2fd846c172ba"
 
 use jdk.CompletableFuture.runAsync
 use jdk.CompletableFuture.whenComplete
@@ -63,7 +68,7 @@ use kotlin.runCatching
 use slf4j.Logger
 
 trusted fun com.linecorp.cse.reqshield.support.utils.decideToUpdateCache(kotlin.Long, kotlin.Long, kotlin.Int) returns b: Bool
-  reviewed "ykhfree 2026-10-27: CommonUtils.kt:19-28 reads the clock and returns passedDuration >= ttl * pct / 100; it has no lock or cache effect, and the model leaves the result free" sha256 "ec165827409cb603"
+  reviewed "ykhfree 2026-10-27: CommonUtils.kt:19-28 reads the clock and returns passedDuration >= ttl * pct / 100; it has no lock or cache effect, and the model leaves the result free" sha256 "a858dc2f51d5892c"
 
 // ---- Assumptions of the trusted models (DESIGN-E 4); A2 is off (UE3) ----
 assume A1: errors-are-fatal

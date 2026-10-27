@@ -102,4 +102,10 @@ E0-E2 `dc232ad`, `1e2d072`, `73e2cc4`; E3-E4 `b9512f6`, `9d65182`.
 5. 판정 불변 확인: 서명 전과 후의 판정이 같다. 원본 core는 RET_hit, RET_recheck, RET_supplier_error에서 FAILED, 고친 사본은 PROVEN (`ClientVerifyTest`). 변이 33·30·42회 불일치 0.
 6. 남은 틈: 어휘 승인 칸이 없다. `hole loop @LINE`은 코드가 바뀌면 줄이 움직인다 (지문 대상이 아니라서 서명을 깨지는 않는다).
 7. 서명 비용: 사용자 질문 1번 (묶음 4개), 도구 보완 약 250줄 (코드와 테스트).
+8. 남은 틈 정리 (2026-10-28, `DESIGN-E.md` 12절): 6번의 두 틈을 닫았다.
+   - 어휘: `review vocabulary` 메모 하나가 어휘 선언 7개를 서명한다 (지문 `92a6a3bbf1f4b44b`).
+   - 반복문: `hole loop ReqShield.handleLockFailure`가 함수의 유일한 반복문을 가리킨다. 고친 사본도 서명된 sidecar를 그대로 쓴다.
+   - 새로 찾은 틈 1b도 닫았다: `review intent` 아래에서 신뢰 선언 메모가 sidecar 쪽 계약 텍스트도 덮는다. 전에는 `throws RTE`를 지운 사본이 오류 없이 PROVEN이 되었다 (서명 없는 A2).
+   - 서명 비용: 사용자 질문 1번 (질문 4개), 새 메모 1개, 바뀐 지문 6개 (메모 문구는 그대로).
+   - 남은 같은 종류의 틈: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`는 타입만 본다 (`DESIGN-E.md` 12.10 JG4). 고치지 않았다.
 
