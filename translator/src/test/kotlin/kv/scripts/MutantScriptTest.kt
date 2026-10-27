@@ -220,8 +220,8 @@ class MutantScriptTest {
         ).joinToString("\n")
 
     @Test
-    fun `the client suite patches the fixed base, moves the hole loop line, edits the sidecar for a toggle, and compares the failing properties`() {
-        File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv").copyTo(File(dir, "reqshield.core.kv"))
+    fun `the client suite patches the fixed base, keeps the signed sidecar but for a toggle, and compares the failing properties`() {
+        val signed = File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv").copyTo(File(dir, "reqshield.core.kv")).readText()
         val patch = File(System.getProperty("kv.spikeDir"), "protocol2/fixed-core.patch")
         val rows = "original  M3  FAILED  LD_own; RET_hit\nfixed  M3  FAILED  LD_own\noriginal  A1_off  FAILED  LD_noleak; RET_hit  # a comment\nfixed  A1_off  FAILED  LD_noleak\n"
         val responses =
@@ -238,11 +238,16 @@ class MutantScriptTest {
         val fixed = File(dir, "out/roots/fixed-M3/$rel").readText()
         assertTrue("private fun releaseQuietly(" in fixed && "                if (true) {" in fixed, "the fixed copy has the patch and the mutant")
         assertTrue("releaseQuietly" !in File(ReqShield.dir, rel).readText(), "req-shield is not touched")
-        // The fixed copy's loop is at 187; the toggle drops `assume A1` with its source and reviewed lines; each run
-        // reads its own signed sidecar, not as a draft.
-        assertTrue("hole loop ReqShield.handleLockFailure@187" in File(dir, "out/sidecars/fixed-M3.kv").readText())
+        // A run that is no toggle reads the signed sidecar byte for byte, though the patch moves the loop (DESIGN-E
+        // 12.5); the toggle drops `assume A1` with its source and reviewed lines and nothing else; each run reads its
+        // own signed sidecar, not as a draft.
+        assertEquals(signed, File(dir, "out/sidecars/fixed-M3.kv").readText())
+        assertEquals(signed, File(dir, "out/sidecars/original-M3.kv").readText())
         val a1Off = File(dir, "out/sidecars/original-A1_off.kv").readText()
         assertTrue("assume A1:" !in a1Off && "a java.lang.Error ends the process" !in a1Off && "assume A3:" in a1Off, a1Off)
+        val a1 = Regex("(?m)^assume A1:.*\n(?:  .*\n)*").findAll(signed).single().value
+        assertEquals(signed.replace(a1, ""), a1Off)
+        assertEquals(a1Off, File(dir, "out/sidecars/fixed-A1_off.kv").readText())
         val args = File(dir, "responses/original-A1_off.args").readLines()
         assertEquals(File(dir, "out/sidecars/original-A1_off.kv").path, args.last())
         assertTrue("--draft" !in args, args.toString())

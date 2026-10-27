@@ -147,7 +147,7 @@ operation getAndSet = fun ReqShield.getAndSetReqShieldData {
 // function by name, the trace fields as in ensures, exc and the exception kinds, the free values, and `returned` (a
 // return left the loop), `result` (the value it returns), `broke` (the loop's break ran). Each group of lines that ends
 // with `&&` is one loop invariant.
-hole loop ReqShield.handleLockFailure@181 """
+hole loop ReqShield.handleLockFailure """
   0 <= attempts && (maxAttempt < 0 ? attempts == 0 : attempts <= maxAttempt) &&
   npoll <= attempts && (exc == NONE ==> npoll == attempts) &&
   (exc == NONE && !returned ==> consec == consecutiveFailures) &&

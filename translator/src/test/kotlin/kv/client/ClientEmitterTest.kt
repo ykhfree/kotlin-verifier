@@ -200,7 +200,7 @@ class ClientEmitterTest {
         return Data(value = callable.call(), ttl = 0L)
         """
 
-    private fun hole(text: String) = "hole loop Client.run@19 \"\"\"\n$text\n\"\"\"\n"
+    private fun hole(text: String) = "hole loop Client.run \"\"\"\n$text\n\"\"\"\n"
 
     @Test
     fun `a loop with a return and a break - flags in the loop condition, the tool frame, and the hole vocabulary`() {

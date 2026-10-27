@@ -40,7 +40,7 @@ class ClientCliTest {
         val (exit, out, err) = kv("resolve", sidecar.path)
         assertEquals(0, exit, err)
         assertTrue(out.lines().any { it.startsWith("entry getAndSet -> fun com.linecorp.cse.reqshield.ReqShield.getAndSetReqShieldData") }, out)
-        assertTrue(out.lines().any { it.startsWith("hole loop ReqShield.handleLockFailure@181 -> loop of fun") && it.endsWith("@ReqShield.kt:181:9") }, out)
+        assertTrue(out.lines().any { it.startsWith("hole loop ReqShield.handleLockFailure -> loop of fun") && it.endsWith("@ReqShield.kt:181:9") }, out)
     }
 
     @Test

@@ -392,15 +392,21 @@ data class PropertyDecl(
 ) : Decl,
     IntentClause
 
-/** `KNAME@LINE` of `hole loop` (DESIGN-E 6.2): the loop at Kotlin line [line] of function [fn]. */
+/**
+ * `KNAME [#N]` of `hole loop` (DESIGN-E 12.5, L-B): a loop of function [fn]. Without [ordinal] it is the function's only
+ * loop; with it, the [ordinal]-th loop (from 1) in source pre-order, outer before inner.
+ */
 data class LoopRef(
     val fn: Name,
-    val line: Int,
-)
+    val ordinal: Int?,
+) {
+    /** `KNAME` or `KNAME#N`: the loop's name in the KVIR, the emitter's hole lookup and the report rows. */
+    val label: String get() = if (ordinal == null) fn.text else "${fn.text}#$ordinal"
+}
 
 /**
  * [text] is the hole body between the triple quotes; [textPos] is the position of its first character. [loop] is
- * set for `hole loop KNAME@LINE` (DESIGN-E 6.8): the invariant of that loop; [name] is then `loop`.
+ * set for `hole loop KNAME [#N]` (DESIGN-E 6.8, 12.5): the invariant of that loop; [name] is then `loop`.
  */
 data class HoleDecl(
     val name: Name,

@@ -51,7 +51,7 @@ class ClientGrammarTest {
                     }
                     assume A1: errors-are-fatal
                       source none "fixture decision"
-                    hole loop Client.run@14 ""${'"'}
+                    hole loop Client.run ""${'"'}
                       true
                     ""${'"'}
                     """.trimIndent(),
@@ -85,7 +85,7 @@ class ClientGrammarTest {
         assertEquals("!holds(Lease(k, CREATE, _))", events[2].where!!.text)
         assertEquals("reads", events[4].of!!.text)
         val hole = s.holes.single()
-        assertEquals("Client.run" to 14, hole.loop!!.fn.text to hole.loop!!.line)
+        assertEquals("Client.run" to null, hole.loop!!.fn.text to hole.loop!!.ordinal)
         val assume = s.assumes.single()
         assertEquals("A1" to "errors-are-fatal", assume.id.text to assume.name.text)
         assertEquals(listOf("source none \"fixture decision\""), assume.sources.map { it.text })
@@ -222,10 +222,44 @@ class ClientGrammarTest {
         assertEquals(listOf("client-item"), codes(errors), errors.joinToString("\n"))
     }
 
+    /** A `hole loop` declaration of [name] with body `true`. */
+    private fun loopHole(name: String) = "hole loop $name \"\"\"\n  true\n\"\"\"\n"
+
+    @Test
+    fun `hole loop names a loop by its function alone or with its number from 1 (DESIGN-E 12 D1)`() {
+        val holes = parse("module m client\n" + loopHole("C.f") + loopHole("C.f#2") + loopHole("C.f#12")).holes
+        assertEquals(listOf("C.f" to null, "C.f" to 2, "C.f" to 12), holes.map { it.loop!!.fn.text to it.loop!!.ordinal })
+        // One label for the KVIR, the emitter and the report.
+        assertEquals(listOf("C.f", "C.f#2", "C.f#12"), holes.map { it.loop!!.label })
+        assertEquals(listOf("true", "true", "true"), holes.map { it.text.trim() })
+    }
+
+    @Test
+    fun `hole loop takes no line number and no loop number below 1 (DESIGN-E 12 D2)`() {
+        fun syntax(name: String) = assertFailsWith<SidecarException> { parse("module m client\n" + loopHole(name)) }.errors.single()
+        val line = syntax("C.f@14")
+        assertEquals("syntax" to SPos("client.kv", 2, 14), line.code to line.pos)
+        assertTrue("write 'hole loop KNAME' (its only loop) or 'hole loop KNAME#N' (its N-th loop)" in line.message, line.message)
+        for (bad in listOf("C.f#0", "C.f#x", "C.f# 2")) {
+            val e = syntax(bad)
+            assertEquals(Triple("syntax", SPos("client.kv", 2, 15), "expected a loop number from 1 after '#'"), Triple(e.code, e.pos, e.message), bad)
+        }
+    }
+
+    @Test
+    fun `two holes with the same loop text are a duplicate, and two texts for one loop are left to the resolver (DESIGN-E 12 D9)`() {
+        val errors = check(ClientFixture.sidecar(extra = loopHole("Client.run#1") + loopHole("Client.run") + loopHole("Client.run#1")))
+        assertEquals(listOf("duplicate-decl"), codes(errors), errors.joinToString("\n"))
+        val e = errors.single()
+        assertTrue(e.message.startsWith("a second hole for the loop Client.run#1; the first is at client.kv:"), e.message)
+        // The third hole is the duplicate: its line follows the fixture and the two 3-line holes before it.
+        assertEquals(ClientFixture.sidecar().lines().size + 6, e.pos.line, e.toString())
+        assertEquals(emptyList(), check(ClientFixture.sidecar(extra = loopHole("Client.run") + loopHole("Client.run#1"))))
+    }
+
     @Test
     fun `malformed client syntax fails at its position`() {
         fun syntax(text: String) = assertFailsWith<SidecarException> { parse(text) }.errors.single()
-        assertTrue("expected '@LINE'" in syntax("module m client\nhole loop C.f \"\"\"x\"\"\"").message)
         assertTrue("a creation condition is `RESULT != null`" in syntax("trusted fun L.t(k: Key) returns t: Token? creates O(k, t) if t != nil").message)
         assertTrue("expected 'while'" in syntax("trace {\n  x = Config.get\n}").message)
         assertTrue("expected 'fun'" in syntax("trusted val X.y").message)

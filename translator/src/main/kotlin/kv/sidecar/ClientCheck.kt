@@ -156,10 +156,11 @@ internal class ClientChecks(
     }
 
     private fun loops() {
-        val seen = mutableMapOf<Pair<String, Int>, SPos>()
+        // The same text twice; two texts that name one loop (`C.f` and `C.f#1`) are a resolver error (DESIGN-E 12.5.3).
+        val seen = mutableMapOf<String, SPos>()
         for (h in s.holes) {
             val loop = h.loop ?: continue
-            seen.put(loop.fn.text to loop.line, h.pos)?.let { err(h.pos, "duplicate-decl", "a second hole for the loop ${loop.fn.text}@${loop.line}; the first is at $it") }
+            seen.put(loop.label, h.pos)?.let { err(h.pos, "duplicate-decl", "a second hole for the loop ${loop.label}; the first is at $it") }
         }
     }
 }

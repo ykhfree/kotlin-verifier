@@ -405,16 +405,24 @@ private class SidecarParser(
             }
             "hole" -> {
                 val n = name("MI_INV")
-                // DESIGN-E 6.2: `hole loop KNAME@LINE` is the invariant of one loop of a client module.
+                // DESIGN-E 6.2, 12.5: `hole loop KNAME [#N]` is the invariant of one loop of a client module.
                 val loop =
                     if (n.text == "loop") {
                         val fn = dotted("a Kotlin function name")
-                        if (!at("@")) fail(i, "expected '@LINE' after the function of hole loop")
-                        i++
-                        val digits = text.substring(i).takeWhile { it.isDigit() }
-                        if (digits.isEmpty()) fail(i, "expected a line number after '@'")
-                        i += digits.length
-                        LoopRef(fn, digits.toInt())
+                        if (at("@")) {
+                            fail(i, "hole loop names a loop by its function: write 'hole loop KNAME' (its only loop) or 'hole loop KNAME#N' (its N-th loop); a line number moves with every edit above the loop")
+                        }
+                        val ordinal =
+                            if (at("#")) {
+                                i++
+                                val digits = text.substring(i).takeWhile { it.isDigit() }
+                                val number = digits.toIntOrNull()?.takeIf { it >= 1 } ?: fail(i, "expected a loop number from 1 after '#'")
+                                i += digits.length
+                                number
+                            } else {
+                                null
+                            }
+                        LoopRef(fn, ordinal)
                     } else {
                         null
                     }

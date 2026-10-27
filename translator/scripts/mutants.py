@@ -390,10 +390,6 @@ def assume_block(text, name):
     return found[0]
 
 
-# The loop the sidecar's `hole loop` names: its line moves with the Kotlin edits above it.
-CLIENT_LOOP = ("ReqShield.handleLockFailure@181", "        while (attempts < reqShieldConfig.maxAttemptGetCache) {")
-
-
 class Suite:
     """A set of units (KeyLocalLock variants, aspect modules, or the client module's bases), their mutants, and how a
     copy of a unit is made."""
@@ -525,8 +521,9 @@ def parse_report(text):
     return rows, others, checks
 
 
-def client_sidecar(args, suite, unit, mutant, root):
-    """The client sidecar of one run (DESIGN-E E4): the toggle's edits, and the loop line of this copy."""
+def client_sidecar(args, suite, unit, mutant):
+    """The client sidecar of one run (DESIGN-E E4): the signed sidecar with the toggle's edits. Its `hole loop` names
+    the loop by its function (DESIGN-E 12.5), so a Kotlin edit above the loop needs no sidecar edit."""
     with open(os.path.join(args.specs, suite.sidecar(unit))) as f:
         text = f.read()
     if mutant in CLIENT_ASSUME_OFF:
@@ -534,12 +531,6 @@ def client_sidecar(args, suite, unit, mutant, root):
     elif mutant == "A2_on":
         a1 = assume_block(text, "A1")
         text = text.replace(a1, a1 + ASSUME_A2)
-    with open(os.path.join(root, suite.edited(unit))) as f:
-        lines = f.read().split("\n")
-    at = [i + 1 for i, line in enumerate(lines) if line == CLIENT_LOOP[1]]
-    if len(at) != 1 or text.count(CLIENT_LOOP[0]) != 1:
-        raise ScriptError("%s %s: the hole loop %s is not one loop of the copy" % (unit, mutant, CLIENT_LOOP[0]))
-    text = text.replace(CLIENT_LOOP[0], CLIENT_LOOP[0].split("@")[0] + "@%d" % at[0])
     path = os.path.join(args.out, "sidecars", "%s-%s.kv" % (unit, mutant))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -570,7 +561,7 @@ def parse_client_report(text):
 def run_one(args, suite, variant, mutant):
     root = make_root(suite, args.req_shield, args.out, variant, mutant, args.fixed_patch)
     vpr = os.path.join(args.out, "%s-%s.vpr" % (variant, mutant))
-    sidecar = client_sidecar(args, suite, variant, mutant, root) if suite.client else os.path.join(args.specs, suite.sidecar(variant))
+    sidecar = client_sidecar(args, suite, variant, mutant) if suite.client else os.path.join(args.specs, suite.sidecar(variant))
     command = kv_command(args.kv, "verify", root, args.classpath, args.kotlinc, vpr, sidecar)
     start = time.time()
     try:

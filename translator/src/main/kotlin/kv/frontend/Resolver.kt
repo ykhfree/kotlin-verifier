@@ -395,23 +395,41 @@ class SidecarResolver(
         clientFree.getOrPut(op.name.text) { mutableListOf() } += item to path
     }
 
-    /** `hole loop KNAME@LINE` (DESIGN-E 6.8): function KNAME of the module class has a loop at line LINE. */
+    /**
+     * `hole loop KNAME [#N]` (DESIGN-E 6.8, 12.5): the loops of function KNAME of the module class, in source pre-order
+     * (outer before inner), are its FirWhileLoop and FirDoWhileLoop nodes, those in its lambdas too. KNAME names the
+     * only one, KNAME#N the N-th. Two holes may not name one loop.
+     */
     private fun loopHole(h: HoleDecl) {
         val loop = h.loop!!
         val fn = lookupMember(loop.fn.text.split('.'), FirNamedFunctionSymbol::class).singleOrNull() ?: return err(loop.fn.pos, "unresolved", "no single function '${loop.fn.text}'")
-        var found: FirElement? = null
         val decl = module.declarations.filterIsInstance<FirNamedFunction>().find { it.symbol == fn } ?: return err(loop.fn.pos, "unresolved", "fun ${loop.fn.text} is not a function of module class ${module.name}")
+        val loops = mutableListOf<FirElement>()
         decl.accept(
             object : FirVisitorVoid() {
                 override fun visitElement(element: FirElement) {
-                    if ((element is FirWhileLoop || element is FirDoWhileLoop) && positions.of(element.source)?.line == loop.line) found = element
-                    if (found == null) element.acceptChildren(this)
+                    if (element is FirWhileLoop || element is FirDoWhileLoop) loops += element
+                    element.acceptChildren(this)
                 }
             },
         )
-        val at = found ?: return err(h.pos, "no-loop", "hole loop ${loop.fn.text}@${loop.line}: fun ${fn.name} has no loop at line ${loop.line}")
+        val what = "hole loop ${loop.label}: fun ${fn.name}"
+        val at =
+            when {
+                loop.ordinal != null -> loops.getOrNull(loop.ordinal - 1) ?: return err(h.pos, "no-loop", "$what has ${loops.size} loop(s), so #${loop.ordinal} names none")
+                loops.isEmpty() -> return err(h.pos, "no-loop", "$what has no loop")
+                loops.size > 1 -> {
+                    val names = loops.indices.map { "${loop.fn.text}#${it + 1}" }
+                    val lines = loops.joinToString { positions.of(it.source)?.line?.toString() ?: "?" }
+                    return err(h.pos, "ambiguous", "$what has ${loops.size} loops (lines $lines); name one: ${names.dropLast(1).joinToString()} or ${names.last()}")
+                }
+                else -> loops.single()
+            }
+        loopHoles.entries.find { it.value === at }?.let { (other, _) ->
+            return err(h.pos, "duplicate-decl", "hole loop ${loop.label} names the loop of hole loop ${other.loop!!.label} at ${other.pos}")
+        }
         loopHoles[h] = at
-        bindings += Binding("hole loop ${loop.fn.text}@${loop.line}", h.pos, "loop of fun ${fn.callableId.asSingleFqName()}", positions.of(at.source))
+        bindings += Binding("hole loop ${loop.label}", h.pos, "loop of fun ${fn.callableId.asSingleFqName()}", positions.of(at.source))
     }
 
     // ---- symbols ----

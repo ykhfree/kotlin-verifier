@@ -11,25 +11,11 @@ import kotlin.test.assertNull
 
 /**
  * The fixed core of DESIGN-E 5.6 for the E3 gate and the E4 checks: a copy of req-shield's core and support sources
- * with spike/protocol2/fixed-core.patch applied (req-shield itself is never edited), and the core sidecar with the
- * line of the polling loop in that copy (the patch moves it).
+ * with spike/protocol2/fixed-core.patch applied (req-shield itself is never edited). The copy reads the signed core
+ * sidecar as is: its `hole loop` names the polling loop by its function, so the patch, which moves the loop, needs no
+ * sidecar edit (DESIGN-E 12.5).
  */
 object Protocol2 {
-    private const val FILE = "core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt"
-    private const val LOOP = "        while (attempts < reqShieldConfig.maxAttemptGetCache) {"
-
-    /** The core sidecar of the copy under [root]: its hole loop names the loop's line there. */
-    fun sidecarFor(
-        root: File,
-        out: File,
-    ): File {
-        val line = File(root, FILE).readLines().indexOf(LOOP) + 1
-        check(line > 0) { "no polling loop in ${File(root, FILE)}" }
-        val text = File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv").readText()
-        check("handleLockFailure@181" in text)
-        return out.apply { writeText(text.replace("handleLockFailure@181", "handleLockFailure@$line")) }
-    }
-
     /** A copy of req-shield's core and support main sources under [dir] with the fix applied. */
     fun fixedCopy(dir: File): File {
         val root = File(dir, "fixed")
@@ -44,7 +30,7 @@ object Protocol2 {
     /** The fixed core resolved with the signed sidecar (the fix changes no reviewed declaration). */
     fun resolveFixed(dir: File): ResolveOutcome {
         val root = fixedCopy(dir)
-        val o = Frontend.resolve(sidecarFor(root, File(dir, "fixed.kv")), root, ReqShield.classpath, ReqShield.kotlincArgs)
+        val o = Frontend.resolve(File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv"), root, ReqShield.classpath, ReqShield.kotlincArgs)
         assertNull(o.compileMessages)
         assertEquals(emptyList(), o.errors)
         return o
