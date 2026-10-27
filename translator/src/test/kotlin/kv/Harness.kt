@@ -2,6 +2,7 @@ package kv
 
 import kv.frontend.Frontend
 import kv.frontend.FrontendResult
+import kv.sidecar.SPos
 import kv.sidecar.SidecarException
 import kv.sidecar.intentClauses
 import kv.sidecar.parseSidecar
@@ -38,7 +39,8 @@ object Harness {
 
 /**
  * B6: sidecar [text] with every reviewed intent clause stamped with the fingerprint of its text and source lines as
- * they are now, as if a person read the clause again; a note without one gets one. Trusted funs keep theirs. For
+ * they are now, as if a person read the clause again; a note without one gets one. The `review vocabulary` note gets
+ * the fingerprint of the vocabulary as it is now (DESIGN-E 12.3). Trusted funs keep theirs. For
  * fixtures and edits whose subject is not the fingerprint; a text that does not parse is returned unchanged.
  */
 fun rereviewed(text: String): String {
@@ -49,12 +51,17 @@ fun rereviewed(text: String): String {
             return text
         }
     val lines = text.split("\n").toMutableList()
-    for ((_, item) in s.intentClauses()) {
-        val at = item.reviewPos ?: continue
-        val now = "sha256 \"${reviewFingerprint(item.reviewedText)}\""
+    fun stamp(
+        at: SPos,
+        recorded: String?,
+        reviewed: String,
+    ) {
+        val now = "sha256 \"${reviewFingerprint(reviewed)}\""
         val n = at.line - 1
-        lines[n] = item.sha256?.let { lines[n].replace("sha256 \"$it\"", now) } ?: "${lines[n]} $now"
+        lines[n] = recorded?.let { lines[n].replace("sha256 \"$it\"", now) } ?: "${lines[n]} $now"
     }
+    for ((_, item) in s.intentClauses()) item.reviewPos?.let { stamp(it, item.sha256, item.reviewedText) }
+    s.vocabularyReviews.forEach { v -> v.reviewPos?.let { stamp(it, v.sha256, s.vocabularyText) } }
     return lines.joinToString("\n")
 }
 

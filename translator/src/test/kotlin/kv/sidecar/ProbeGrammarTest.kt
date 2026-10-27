@@ -101,7 +101,10 @@ class ProbeGrammarTest {
 
     private fun check(text: String) = checkSidecar(parse(text))
 
-    /** A small sidecar with `review intent` and one clause of each kind; [extra] goes before the hole. */
+    /**
+     * A small sidecar with `review intent` and one clause of each kind; [extra] goes before the hole. The vocabulary
+     * note at the end signs `type Key` and `class Info` (DESIGN-E 12.3).
+     */
     private fun intent(
         op: String,
         extra: String = "",
@@ -119,6 +122,8 @@ class ProbeGrammarTest {
         |}
         |$extra
         |hole MI_INV ${"\"\"\""}true${"\"\"\""}
+        |review vocabulary
+        |  reviewed "v" sha256 "${sha16("type Key = opaque class Info = C.Info { isHeld: AtomicBoolean = isHeld }")}"
     """.trimMargin()
 
     @Test

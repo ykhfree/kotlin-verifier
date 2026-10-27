@@ -103,7 +103,7 @@ kv spec snapshot | stale | check | cells         # 자연어 명세 → sidecar 
 
 ## 열린 과제
 
-- sidecar 문법에 어휘 승인을 적을 칸이 없다. 지금은 sidecar 머리 주석에만 적는다.
+- 서명이 덮지 않는 층 1 묶기가 남아 있다: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`는 타입만 본다 (`DESIGN-E.md` 12.10 JG4).
 - Confluence Cloud에서 명세를 가져오는 단계(C6)는 아직 없다.
 - coroutine 변형의 client 프로토콜(E5)은 결정 UE6이 필요하다.
 - 아직 지원하지 않는 구문이 남아 있다 (`Long.MAX_VALUE`, helper에 넘긴 cell).

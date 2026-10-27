@@ -82,6 +82,8 @@ data class TypeDecl(
     val template: String?,
     override val pos: SPos,
     val kclass: Name? = null,
+    /** DESIGN-E 12.3: the declaration text from its keyword to its last token, comments included. */
+    val unit: String,
 ) : Decl
 
 /** `set-once ID : NAME` (DESIGN-B.md 2.4): every action keeps each mapped key's value of state map [map]. */
@@ -119,6 +121,8 @@ data class ClassDecl(
     val kname: Name,
     val fields: List<FieldDecl>,
     override val pos: SPos,
+    /** DESIGN-E 12.3: the declaration text from its keyword to its last token, comments included. */
+    val unit: String,
 ) : Decl
 
 data class UseDecl(
@@ -131,6 +135,8 @@ data class EnumDecl(
     val name: Name,
     val kclass: Name,
     override val pos: SPos,
+    /** DESIGN-E 12.3: the declaration text from its keyword to its last token, comments included. */
+    val unit: String,
 ) : Decl
 
 /** `obligation NAME(TYPE, ...)` (DESIGN-E 3.1, 6.2): a linear obligation, an abstract Viper predicate. */
@@ -138,6 +144,8 @@ data class ObligationDecl(
     val name: Name,
     val types: List<Name>,
     override val pos: SPos,
+    /** DESIGN-E 12.3: the declaration text from its keyword to its last token, comments included. */
+    val unit: String,
 ) : Decl
 
 /**
@@ -182,6 +190,11 @@ data class TrustedDecl(
     val consumes: ObligationUse? = null,
     /** `throws KIND {, KIND}` (DESIGN-E 3.5): the exception kinds; empty for B's bare `throws` or no clause. */
     val throwKinds: List<Name> = emptyList(),
+    /**
+     * DESIGN-E 12.4 (T-A): the declaration text without its `reviewed` clause, comments included. Under `review intent`
+     * the note's fingerprint covers it with the Kotlin unit.
+     */
+    val contract: String,
 ) : Decl {
     val shortName: String get() = fn.text.substringAfterLast('.')
 
@@ -200,12 +213,16 @@ data class GhostRecordDecl(
     val index: Name,
     val fields: List<GhostFieldDecl>,
     override val pos: SPos,
+    /** DESIGN-E 12.3: the declaration text from its keyword to its last token, comments included. */
+    val unit: String,
 ) : Decl
 
 data class WitnessDecl(
     val cls: Name,
     val field: Name,
     override val pos: SPos,
+    /** DESIGN-E 12.3: the declaration text from its keyword to its last token, comments included. */
+    val unit: String,
 ) : Decl
 
 sealed interface Selector {
@@ -457,6 +474,8 @@ data class TraceDecl(
     val events: List<TraceEvent>,
     override val pos: SPos,
     val derived: List<DerivedDecl> = emptyList(),
+    /** DESIGN-E 12.3: the declaration text from its keyword to its last token, comments included. */
+    val unit: String,
 ) : Decl
 
 /**
@@ -566,6 +585,17 @@ data class ReviewIntentDecl(
     override val pos: SPos,
 ) : Decl
 
+/**
+ * `review vocabulary` (DESIGN-E 12.3, V-C) and its note: [reviewed] signs every vocabulary declaration of the sidecar
+ * ([vocabulary]), [sha256] is the fingerprint the note records, [reviewPos] the `reviewed` keyword.
+ */
+data class ReviewVocabularyDecl(
+    override val pos: SPos,
+    val reviewed: String?,
+    val sha256: String?,
+    val reviewPos: SPos?,
+) : Decl
+
 /** A parsed sidecar, includes resolved. [file] is the file the user named. */
 data class Sidecar(
     val file: String,
@@ -595,6 +625,43 @@ data class Sidecar(
 
     /** True if the sidecar has the line `review intent` (DESIGN-C.md 10 UC4). */
     val reviewIntent get() = decls.any { it is ReviewIntentDecl }
+
+    val vocabularyReviews get() = decls.filterIsInstance<ReviewVocabularyDecl>()
+
+    /** The vocabulary declarations (DESIGN-E 12.3.1, layer 3) in file order. */
+    val vocabulary get() = decls.mapNotNull(::vocabularyItem)
+
+    /** The text the `review vocabulary` note's fingerprint covers (DESIGN-E 12.3.2): the units without comments. */
+    val vocabularyText get() = vocabulary.joinToString("\n") { stripComments(it.unit) }
+}
+
+/** A vocabulary declaration: [name] is the name messages give it, [unit] its declaration text (DESIGN-E 12.3.2). */
+data class VocabularyItem(
+    val name: String,
+    val unit: String,
+    val pos: SPos,
+)
+
+/**
+ * [d] as a vocabulary item if it is a vocabulary declaration (DESIGN-E 12.3.1, DESIGN-C.md 2.1 layer 3), else null.
+ * The `when` has no else branch, so a new kind of declaration must be classified here.
+ */
+private fun vocabularyItem(d: Decl): VocabularyItem? {
+    val (name, unit) =
+        when (d) {
+            is TypeDecl -> "type ${d.name.text}" to d.unit
+            is EnumDecl -> "enum ${d.name.text}" to d.unit
+            is ClassDecl -> "class ${d.name.text}" to d.unit
+            is ObligationDecl -> "obligation ${d.name.text}" to d.unit
+            is TraceDecl -> "trace" to d.unit
+            is GhostRecordDecl -> "ghost record ${d.name.text}" to d.unit
+            is WitnessDecl -> "witness ${d.cls.text}.${d.field.text}" to d.unit
+            is ModuleDecl, is SourceDecl, is IncludeDecl, is SetOnceDecl, is StateDecl, is UseDecl, is TrustedDecl,
+            is OperationDecl, is PropertyDecl, is HoleDecl, is ProbeDecl, is AssumeDecl, is ReviewIntentDecl,
+            is ReviewVocabularyDecl,
+            -> return null
+        }
+    return VocabularyItem(name, unit, d.pos)
 }
 
 /**

@@ -295,9 +295,13 @@ private class SidecarParser(
                     // DESIGN-B.md 5.1: a Kotlin class on the same line binds the opaque type to it.
                     "opaque" -> {
                         skipInlineWs()
-                        TypeDecl(n, null, pos, if (!eof() && isNameStart(text[i])) dotted("a Kotlin class name") else null)
+                        val kclass = if (!eof() && isNameStart(text[i])) dotted("a Kotlin class name") else null
+                        TypeDecl(n, null, pos, kclass, unit = text.substring(start, i))
                     }
-                    "template" -> TypeDecl(n, string(), pos)
+                    "template" -> {
+                        val template = string()
+                        TypeDecl(n, template, pos, unit = text.substring(start, i))
+                    }
                     else -> fail(i - k.length, "expected 'opaque' or 'template'")
                 }
             }
@@ -342,13 +346,14 @@ private class SidecarParser(
                     expect("=")
                     fields += FieldDecl(f, type, nullable, name("a Kotlin property name"))
                 }
-                ClassDecl(n, kname, fields, pos)
+                ClassDecl(n, kname, fields, pos, text.substring(start, i))
             }
             "use" -> UseDecl(dotted("a trusted model name"), pos)
             "enum" -> {
                 val n = name("an enum name")
                 expect("=")
-                EnumDecl(n, dotted("a Kotlin enum class name"), pos)
+                val kclass = dotted("a Kotlin enum class name")
+                EnumDecl(n, kclass, pos, text.substring(start, i))
             }
             "obligation" -> {
                 val n = name("an obligation name")
@@ -358,9 +363,9 @@ private class SidecarParser(
                     types += name("a type")
                 } while (accept(","))
                 expect(")")
-                ObligationDecl(n, types, pos)
+                ObligationDecl(n, types, pos, text.substring(start, i))
             }
-            "trace" -> trace(pos)
+            "trace" -> trace(start, pos)
             "assume" -> {
                 val id = name("an assumption ID")
                 expect(":")
@@ -370,7 +375,7 @@ private class SidecarParser(
                 val (note, sha, at) = topReview()
                 AssumeDecl(id, n, pos, note, sha, at, unit, sources)
             }
-            "trusted" -> trusted(pos)
+            "trusted" -> trusted(start, pos)
             "ghost" -> {
                 keyword("record")
                 val n = name("a ghost record name")
@@ -385,13 +390,13 @@ private class SidecarParser(
                     val type = name("a type")
                     fields += GhostFieldDecl(f, type, ghostKind())
                 }
-                GhostRecordDecl(n, index, fields, pos)
+                GhostRecordDecl(n, index, fields, pos, text.substring(start, i))
             }
             "witness" -> {
                 val target = dotted("CLASS.FIELD")
                 val parts = target.text.split('.')
                 if (parts.size != 2) fail(start, "witness needs CLASS.FIELD")
-                WitnessDecl(Name(parts[0], target.pos), Name(parts[1], target.pos.copy(col = target.pos.col + parts[0].length + 1)), pos)
+                WitnessDecl(Name(parts[0], target.pos), Name(parts[1], target.pos.copy(col = target.pos.col + parts[0].length + 1)), pos, text.substring(start, i))
             }
             "operation" -> operation(pos)
             "invariant", "lemma" -> {
@@ -432,10 +437,18 @@ private class SidecarParser(
             }
             "probe" -> probe(start, indent)
             "review" -> {
-                keyword("intent")
-                ReviewIntentDecl(pos)
+                val what = name("'intent' or 'vocabulary'")
+                when (what.text) {
+                    "intent" -> ReviewIntentDecl(pos)
+                    // DESIGN-E 12.3 (V-C): one note signs every vocabulary declaration.
+                    "vocabulary" -> {
+                        val (note, sha, at) = topReview()
+                        ReviewVocabularyDecl(pos, note, sha, at)
+                    }
+                    else -> fail(i - what.text.length, "expected 'intent' or 'vocabulary'")
+                }
             }
-            "reviewed" -> fail(start, "'reviewed' must follow a trusted fun, an invariant, a lemma or a probe without a note, or a clause of an operation")
+            "reviewed" -> fail(start, "'reviewed' must follow a trusted fun, an invariant, a lemma, a probe or 'review vocabulary' without a note, or a clause of an operation")
             else -> fail(start, "unknown declaration '$kw'")
         }
     }
@@ -454,7 +467,10 @@ private class SidecarParser(
         }
     }
 
-    private fun trusted(pos: SPos): TrustedDecl {
+    private fun trusted(
+        start: Int,
+        pos: SPos,
+    ): TrustedDecl {
         // DESIGN-E 6.2: `trusted value KNAME` is a function-typed property; its parameter list is optional.
         val kw = name("'fun' or 'value'")
         if (kw.text != "fun" && kw.text != "value") fail(i - kw.text.length, "expected 'fun', found '${kw.text}'")
@@ -493,6 +509,7 @@ private class SidecarParser(
         var consumes: ObligationUse? = null
         var sha: String? = null
         var reviewPos: SPos? = null
+        var reviewSpan = IntRange.EMPTY
         while (true) {
             val word = peekWord() ?: break
             if (word !in TRUSTED_CLAUSES) break
@@ -563,12 +580,14 @@ private class SidecarParser(
                     reviewed = note
                     sha = hex
                     reviewPos = at
+                    reviewSpan = clauseStart until i
                 }
             }
         }
         return TrustedDecl(
             fn, params, clock, returns, ghosts, ensures, effectsNone, reviewed, pos, fresh, throws, sha, reviewPos,
             named.takeIf { it.any { p -> p != null } } ?: emptyList(), value, creates, consumes, throwKinds,
+            contract = text.substring(start, i).let { if (reviewSpan.isEmpty()) it else it.removeRange(reviewSpan.first - start, reviewSpan.last + 1 - start) },
         )
     }
 
@@ -587,7 +606,10 @@ private class SidecarParser(
     }
 
     /** `trace { NAME = EVENT ... }` after the keyword (DESIGN-E 6.2), and its `derived NAME = VEXPR` lines (E3). */
-    private fun trace(pos: SPos): TraceDecl {
+    private fun trace(
+        start: Int,
+        pos: SPos,
+    ): TraceDecl {
         expect("{")
         val events = mutableListOf<TraceEvent>()
         val derived = mutableListOf<DerivedDecl>()
@@ -624,7 +646,7 @@ private class SidecarParser(
                     }
                 }
         }
-        return TraceDecl(events, pos, derived)
+        return TraceDecl(events, pos, derived, text.substring(start, i))
     }
 
     /** `holds(NAME(ARG {, ARG}))`; an argument is a name, a constant or `_`. */

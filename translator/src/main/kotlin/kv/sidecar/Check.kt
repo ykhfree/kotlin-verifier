@@ -87,6 +87,7 @@ private class SidecarChecker(
         s.intentClauses().filter { (_, c) -> c is PropertyDecl || c is ProbeDecl || c is AssumeDecl }.forEach { (what, c) -> fingerprint(what, c) }
         if (s.client) ClientChecks(s, ::err).run() else l1Only()
         if (s.reviewIntent) reviewIntent()
+        vocabulary()
         return errors
     }
 
@@ -117,6 +118,28 @@ private class SidecarChecker(
                 }
             }
         }
+    }
+
+    /**
+     * DESIGN-E 12.3 (V-C): under `review intent`, the vocabulary declarations count only after a person signs them with
+     * the note of `review vocabulary`. That note's fingerprint covers their text without comments (12.3.2); without
+     * `review intent` a note is optional, but its fingerprint is checked.
+     */
+    private fun vocabulary() {
+        val notes = s.vocabularyReviews
+        notes.drop(1).forEach { err(it.pos, "duplicate-decl", "a second 'review vocabulary'; the first is at ${notes[0].pos}") }
+        val vocabulary = s.vocabulary
+        val names = vocabulary.joinToString { it.name }
+        val note = notes.firstOrNull()
+        if (s.reviewIntent && !draft && vocabulary.isNotEmpty() && note?.reviewed == null) {
+            err(
+                note?.pos ?: vocabulary[0].pos,
+                "unreviewed",
+                "the vocabulary ($names) needs a 'review vocabulary' note: under 'review intent' it counts only after a person reads it (DESIGN-E 12.3)",
+            )
+        }
+        if (note?.reviewed == null) return
+        fingerprint("the vocabulary", note.sha256, note.reviewPos ?: note.pos, s.vocabularyText, "the vocabulary ($names) now has")
     }
 
     private fun singletons() {
@@ -318,13 +341,23 @@ private class SidecarChecker(
         clause: IntentClause,
     ) {
         if (clause.reviewed == null) return // reported as unreviewed, or not required
-        val now = reviewFingerprint(clause.reviewedText)
-        val at = clause.reviewPos ?: clause.pos
         val text = if (clause.sources.isEmpty()) "the clause text now has" else "the clause text and its source lines now have"
-        when (clause.sha256) {
-            null -> if (!draft) err(at, "missing-fingerprint", "the reviewed note of $what has no fingerprint: write sha256 \"$now\" after it once a person has read the clause")
-            now -> Unit
-            else -> err(at, "stale-review", "$what changed after its review: the note records sha256 \"${clause.sha256}\", $text sha256 \"$now\"; a person must review it again")
+        fingerprint(what, clause.sha256, clause.reviewPos ?: clause.pos, clause.reviewedText, text)
+    }
+
+    /** Compares the fingerprint of [reviewed] with [recorded], the one a note at [at] records; [now] names the text. */
+    private fun fingerprint(
+        what: String,
+        recorded: String?,
+        at: SPos,
+        reviewed: String,
+        now: String,
+    ) {
+        val fp = reviewFingerprint(reviewed)
+        when (recorded) {
+            null -> if (!draft) err(at, "missing-fingerprint", "the reviewed note of $what has no fingerprint: write sha256 \"$fp\" after it once a person has read it")
+            fp -> Unit
+            else -> err(at, "stale-review", "$what changed after its review: the note records sha256 \"$recorded\", $now sha256 \"$fp\"; a person must review it again")
         }
     }
 
