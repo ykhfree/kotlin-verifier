@@ -215,7 +215,7 @@ internal class ClientLowering(
     /** The obligations, with their KVIR types. */
     val obligations = sidecar.obligations.map { o -> ObligationDef(o.name.text, o.types.map { sidecarType(it.text) }) }
 
-    val loops: Map<FirElement, String> = resolver.loopHoles.entries.associate { (h, loop) -> loop to "${h.loop!!.fn.text}@${h.loop.line}" }
+    val loops: Map<FirElement, String> = resolver.loopHoles.entries.associate { (h, loop) -> loop to h.loop!!.label }
     val uses = sidecar.uses.map { it.model.text }.toSet()
     val diagnostics = mutableListOf<Diagnostic>()
     val tasks = linkedMapOf<FirAnonymousFunction, Task?>()

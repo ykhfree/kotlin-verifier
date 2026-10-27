@@ -227,7 +227,7 @@ private fun report(
         return when (val src = f.source) {
             is Source.Sidecar -> {
                 val hole = sidecar.holes.firstOrNull { h -> h.loop != null && src.pos.file == h.textPos.file && src.pos.line in h.textPos.line..h.textPos.line + h.text.count { it == '\n' } }
-                whiles.firstOrNull { w -> hole?.loop?.let { r -> "${r.fn.text}@${r.line}" } == w.hole }
+                whiles.firstOrNull { w -> hole?.loop?.label == w.hole }
             }
             is Source.Kotlin -> whiles.firstOrNull { it.pos == src.pos }
             else -> null

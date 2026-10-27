@@ -1,5 +1,6 @@
 package kv.client
 
+import kv.verify.ClientReport
 import kv.verify.ModuleVerdict
 import kv.verify.render
 import kv.verify.verifyClient
@@ -18,6 +19,13 @@ class ClientVerifyTest {
     @TempDir
     lateinit var dir: File
 
+    /** The loop row of [report]: its kind, label, Kotlin position and verdict (DESIGN-E 12 D12). */
+    private fun loopRow(report: ClientReport): String {
+        val row = report.rows.single { it.kind == "loop" }
+        val p = row.kotlin!!
+        return "${row.kind} ${row.label} ${File(p.file).name}:${p.line}:${p.col} ${row.verdict}"
+    }
+
     @Test
     fun `the core is FAILED at exactly RET_hit, RET_recheck and RET_supplier_error`() {
         val o = ClientGoldenTest.outcome
@@ -29,7 +37,8 @@ class ClientVerifyTest {
         // Every tool fact, the hole, both guards and the other ensures are PROVEN; the run measured the full set.
         assertEquals(18, report.properties!!.size, text)
         assertEquals(15, report.isolationRuns, text)
-        assertEquals(listOf("entry getAndSetReqShieldData FAILED", "task task_69 PROVEN", "task task_125 PROVEN", "loop ReqShield.handleLockFailure@181 PROVEN"), report.rows.map { "${it.kind} ${it.label} ${it.verdict}" })
+        assertEquals(listOf("entry getAndSetReqShieldData FAILED", "task task_69 PROVEN", "task task_125 PROVEN", "loop ReqShield.handleLockFailure PROVEN"), report.rows.map { "${it.kind} ${it.label} ${it.verdict}" })
+        assertEquals("loop ReqShield.handleLockFailure ReqShield.kt:181:9 PROVEN", loopRow(report))
         for (a in listOf("A1 errors-are-fatal: on", "A2 lock-calls-return: off", "A3 accepted-tasks-run: on", "A4 throwing-release-ends-obligation: on", "A5 throwing-acquire-takes-nothing: on")) {
             assertTrue("  $a" in text, text)
         }
@@ -42,5 +51,7 @@ class ClientVerifyTest {
         assertEquals(ModuleVerdict.PROVEN, report.verdict, report.render())
         assertTrue(report.properties!!.none { it.failed })
         assertEquals(0, report.isolationRuns)
+        // The patch moves the loop to line 187; the signed sidecar, read as is, still names it (DESIGN-E 12.5).
+        assertEquals("loop ReqShield.handleLockFailure ReqShield.kt:187:9 PROVEN", loopRow(report))
     }
 }

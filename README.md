@@ -104,7 +104,6 @@ kv spec snapshot | stale | check | cells         # 자연어 명세 → sidecar 
 ## 열린 과제
 
 - sidecar 문법에 어휘 승인을 적을 칸이 없다. 지금은 sidecar 머리 주석에만 적는다.
-- `hole loop @LINE`의 줄 번호는 코드가 바뀌면 움직인다.
 - Confluence Cloud에서 명세를 가져오는 단계(C6)는 아직 없다.
 - coroutine 변형의 client 프로토콜(E5)은 결정 UE6이 필요하다.
 - 아직 지원하지 않는 구문이 남아 있다 (`Long.MAX_VALUE`, helper에 넘긴 cell).

@@ -2011,7 +2011,7 @@ private class ClientEmitter(
             f: Frame,
             indent: Int,
         ) {
-            val decl: HoleDecl = s.holes.firstOrNull { it.loop?.let { r -> "${r.fn.text}@${r.line}" } == name } ?: fail(anchor, "no hole loop $name in the sidecar")
+            val decl: HoleDecl = s.holes.firstOrNull { it.loop?.label == name } ?: fail(anchor, "no hole loop $name in the sidecar")
             val fnInline = f.fn
             val scope = (fnInline?.body ?: body).walk().flatMap { locals(it) }.toList() +
                 (if (fnInline == null) entryFun?.params.orEmpty() + task?.params.orEmpty() else emptyList())

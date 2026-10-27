@@ -93,7 +93,7 @@ entry getAndSet = fun ReqShield.getAndSetReqShieldData            @38:5
           inline handleLockFailure -> out_109_13: Data            @109:13
             var attempts__178: Int := 0                           @178:9
             var consecutiveFailures__179: Int := 0                @179:9
-            while attempts__178 < maxAttempt [hole ReqShield.handleLockFailure@181] [measure maxAttempt - attempts__178] @181:9
+            while attempts__178 < maxAttempt [hole ReqShield.handleLockFailure] [measure maxAttempt - attempts__178] @181:9
               attempts__178 := attempts__178 + 1 [ASSUME A182_13] @182:13 fake=PostfixInc
               inline sleepBetweenPolls                            @183:13
                 try                                               @201:9
