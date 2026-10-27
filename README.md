@@ -1,13 +1,11 @@
 # kotlin-verifier
 
-Kotlin/JVM 코드가 명세대로 작성되었는지 **증명**하는 도구다. 테스트가 아니라 모든 경우를 다루는 증명이다.
-
-> "나는 AI가 생성한 코드가 우리의 명세대로 작성이 된것인지 확인하고 싶은거야"
+AI가 생성한 Kotlin/JVM 코드가 우리의 명세대로 작성되었는지 **증명**하는 도구다. 테스트가 아니라 모든 경우를 다루는 증명이다.
 
 Microsoft Research의 PDD Kit("의도 → 형식 명세 → 코드가 명세를 만족함을 증명")와 같은 일을 Kotlin/JVM에서 한다.
 대상은 AI가 쓴 코드와 기존 코드(req-shield) 모두다. 동시성이 있는 코드를 다룬다.
 
-상태 (2026-10-27): **잠시 멈춤.** 다시 시작할 때는 `HISTORY.md` 끝의 "잠시 멈춤" 항목부터 본다.
+상태 (2026-10-27): **잠시 멈춤.**
 
 ## 동작 방식
 
@@ -95,7 +93,6 @@ kv spec snapshot | stale | check | cells         # 자연어 명세 → sidecar 
 
 | 문서 | 내용 |
 |---|---|
-| `HISTORY.md` | 작업 이력. 단계마다 목표, 결정, 측정, 커밋, 남은 일 |
 | `PHASE1.md` | 조사와 1단계 계획 |
 | `DESIGN-v0.md` | KVIR, sidecar 명세, ghost 상태 (L1 모듈) |
 | `DESIGN-B.md` | aspect 캐시 모듈 |
