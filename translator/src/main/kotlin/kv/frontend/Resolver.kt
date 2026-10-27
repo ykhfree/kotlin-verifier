@@ -91,6 +91,9 @@ private val LONG = ClassId.fromString("kotlin/Long")
 private val INT = ClassId.fromString("kotlin/Int")
 private val BOOLEAN = ClassId.fromString("kotlin/Boolean")
 
+/** Packages of the JDK and the Kotlin library: a trusted fun there has no source, so its signature is reviewed. */
+private val JDK_PACKAGES = listOf("java.", "javax.", "kotlin.")
+
 /** The class [fqn] if [file] declares it, at any nesting depth. */
 @OptIn(DirectDeclarationsAccess::class)
 fun findClass(
@@ -314,8 +317,25 @@ class SidecarResolver(
             return err(t.fn.pos, "kotlin-type", "trusted value ${t.fn.text} is declared $want, but '${t.fn.text}' is a ${typeText(type)}")
         }
         trustedValues[t.shortName] = prop
-        // B6 fingerprints cover a function body; a trusted value has none, so no note can be checked yet (E3 decides).
-        if (t.reviewed != null) err(t.reviewPos ?: t.pos, "review-source", "trusted value ${t.shortName}: the tool does not fingerprint trusted values yet (DESIGN-E 2.5); leave the note out of the draft")
+        reviewedValue(t, prop)
+    }
+
+    /**
+     * DESIGN-E 2.5: a trusted value has no body, so its `reviewed` note records the fingerprint of its declaration, a
+     * property or a constructor `val` parameter, from its first modifier keyword (else `val`/`var`) to its end.
+     */
+    private fun reviewedValue(
+        t: TrustedDecl,
+        prop: FirPropertySymbol,
+    ) {
+        if (t.reviewed == null) return // reported as unreviewed, or not required in a client draft
+        val at = t.reviewPos ?: t.pos
+        val id = prop.callableId ?: return err(at, "review-source", "trusted value ${t.shortName} is a local property")
+        val classes = id.className?.pathSegments()?.map { it.asString() }.orEmpty()
+        val path = runCatching { session.firProvider.getFirCallableContainerFile(prop) }.getOrNull()?.sourceFile?.path
+        val found = path?.let { ReviewedSource.values(java.io.File(it)) }.orEmpty().filter { it.classes == classes && it.name == prop.name.asString() }
+        val decl = found.singleOrNull() ?: return err(at, "review-source", "trusted value ${t.shortName}: ${found.size} source declaration(s) of ${id.asSingleFqName()}")
+        fingerprint(t, "trusted value", reviewFingerprint(decl.reviewedText), "the declaration at ${decl.where}")
     }
 
     /** A client operation: a public function of the module class (DESIGN-E 6.1), and its free values (3.6 layer 1). */
@@ -624,6 +644,11 @@ class SidecarResolver(
         val id = fn.callableId
         val classes = id.className?.pathSegments()?.map { it.asString() }.orEmpty()
         val source = fn.source
+        // DESIGN-E 2.5: a JDK or Kotlin library function has no source here; its reviewed unit is its signature.
+        if (source == null && JDK_PACKAGES.any { id.packageName.asString().startsWith(it) }) {
+            val text = "${id.asSingleFqName()}(${signature(fn).joinToString()}): ${typeText(fn.resolvedReturnType)}"
+            return fingerprint(t, "trusted fun", reviewFingerprint(text), "the library signature $text")
+        }
         val found =
             if (source != null) {
                 val path = runCatching { session.firProvider.getFirCallableContainerFile(fn) }.getOrNull()?.sourceFile?.path
@@ -641,11 +666,21 @@ class SidecarResolver(
                 "trusted fun ${t.shortName}: ${if (found.isEmpty()) "no" else "${found.size}"} source declaration(s) of ${id.asSingleFqName()} with ${fn.valueParameterSymbols.size} parameter(s)" +
                     (reviewRoot?.let { " under $it" } ?: ""),
             )
-        val now = reviewFingerprint(decl.reviewedText)
+        fingerprint(t, "trusted fun", reviewFingerprint(decl.reviewedText), "the declaration at ${decl.where}")
+    }
+
+    /** Compares the fingerprint [now] of the reviewed unit [unit] of [t] with the one its note records (B6). */
+    private fun fingerprint(
+        t: TrustedDecl,
+        what: String,
+        now: String,
+        unit: String,
+    ) {
+        val at = t.reviewPos ?: t.pos
         when (t.sha256) {
-            null -> err(at, "missing-fingerprint", "the reviewed note of trusted fun ${t.shortName} has no fingerprint: write sha256 \"$now\" (${decl.where}) after it once a person has read the function")
+            null -> err(at, "missing-fingerprint", "the reviewed note of $what ${t.shortName} has no fingerprint: write sha256 \"$now\" ($unit) after it once a person has read it")
             now -> Unit
-            else -> err(at, "stale-review", "trusted fun ${t.shortName} changed after its review: the note records sha256 \"${t.sha256}\", the declaration at ${decl.where} now has sha256 \"$now\"; a person must review it again")
+            else -> err(at, "stale-review", "$what ${t.shortName} changed after its review: the note records sha256 \"${t.sha256}\", $unit now has sha256 \"$now\"; a person must review it again")
         }
     }
 

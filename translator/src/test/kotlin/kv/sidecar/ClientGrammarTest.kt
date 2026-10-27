@@ -100,18 +100,22 @@ class ClientGrammarTest {
     }
 
     @Test
-    fun `the draft core sidecar parses and passes the checks only as a draft`() {
-        val s = SidecarLoader.load(File(specDir, "reqshield.core.kv"))
-        assertEquals(emptyList(), checkSidecar(s, draft = true))
-        // DESIGN-E 2.5: 12 intent clauses and 4 assumptions to sign, each with a source line, none signed yet.
+    fun `the signed core sidecar passes the checks, and without its notes only as a draft`() {
+        val file = File(specDir, "reqshield.core.kv")
+        val s = SidecarLoader.load(file)
+        assertEquals(emptyList(), checkSidecar(s, draft = false))
+        // DESIGN-E 2.5: 12 intent clauses and 4 assumptions, each with a source line and a note (signed 2026-10-27).
         val clauses = s.intentClauses()
         assertEquals(16, clauses.size, clauses.map { it.first }.toString())
         assertEquals(12, clauses.count { it.second !is AssumeDecl })
-        assertTrue(clauses.all { it.second.sources.isNotEmpty() && it.second.reviewed == null })
-        // Signed reading: each of the 16 clauses and each of the 6 trusted declarations needs its note.
-        val signed = checkSidecar(s, draft = false).filter { it.code == "unreviewed" }
-        assertEquals(22, signed.size, signed.joinToString("\n"))
-        assertEquals(6, signed.count { it.message.startsWith("trusted") })
+        assertTrue(clauses.all { it.second.sources.isNotEmpty() && it.second.reviewed != null && it.second.sha256 != null })
+        assertTrue(s.trusted.all { it.reviewed != null && it.sha256 != null })
+        // The same text without its notes: a draft passes; the signed reading needs each of the 22 notes.
+        val unsigned = parseSidecar(file.path, file.readLines().filterNot { it.trimStart().startsWith("reviewed \"") }.joinToString("\n"))
+        assertEquals(emptyList(), checkSidecar(unsigned, draft = true))
+        val missing = checkSidecar(unsigned, draft = false).filter { it.code == "unreviewed" }
+        assertEquals(22, missing.size, missing.joinToString("\n"))
+        assertEquals(6, missing.count { it.message.startsWith("trusted") })
     }
 
     @Test

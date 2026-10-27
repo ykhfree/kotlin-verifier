@@ -41,10 +41,10 @@ object Protocol2 {
         return root
     }
 
-    /** The fixed core resolved as a draft. */
+    /** The fixed core resolved with the signed sidecar (the fix changes no reviewed declaration). */
     fun resolveFixed(dir: File): ResolveOutcome {
         val root = fixedCopy(dir)
-        val o = Frontend.resolve(sidecarFor(root, File(dir, "fixed.kv")), root, ReqShield.classpath, ReqShield.kotlincArgs, draft = true)
+        val o = Frontend.resolve(sidecarFor(root, File(dir, "fixed.kv")), root, ReqShield.classpath, ReqShield.kotlincArgs)
         assertNull(o.compileMessages)
         assertEquals(emptyList(), o.errors)
         return o

@@ -352,3 +352,17 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - E3에 넘긴 결정: 이름만 다른 경우(예외 종류, enum 상수)는 메인 세션이 손 모델의 이름을 맞춘다; trace 뜻, 과제 전제의 mode·phase, hole 어휘는 손 모델의 뜻을 따른다; 어휘 승인 문법, `throws RTE`, UE5, JDK 함수 서명은 서명 때 사용자와 정한다.
 - E3-E4 완료 (`b9512f6`, `9d65182`; `PROTOCOL2.md` 6절; 메인 세션 확인: 테스트 683개, 변이 63회와 client 변이 42회 불일치 0): 도구가 원본 req-shield core에서 예측한 세 결함(RET_hit, RET_recheck, RET_supplier_error)을 보고하고, 고친 사본은 PROVEN이다 (메인 세션이 직접 돌림). 변이 42행 중 40행이 손 모델과 같고, 다른 2행은 손 변이의 guard 누락이다. 두 번째 프로토콜의 도입 비용: agent 약 255만 토큰, 약 7시간 반.
 - req-shield 수정 (사용자 결정, req-shield 로컬 커밋 `3a63adc`, push 안 함): 도구가 찾은 세 결함을 고쳤다. 테스트 3개는 수정 전 실패, 수정 뒤 통과. req-shield 전체 빌드 통과. 도구로 고친 브랜치 PROVEN. 검증 도구의 req-shield 경로를 `2e792d2` 고정 worktree로 바꿨다 (테스트 683개, 변이 33·30·42 불일치 0).
+
+### 사용자 결정 (2026-10-27): ReqShield core sidecar 서명
+
+- 사용자가 묶음 4개를 모두 승인했다 (lock 규칙과 UE5 "fallback은 캐시를 쓰지 않음", 호출자 결과, 가정, 신뢰 선언과 어휘).
+- advisor 권고: 지문의 단위는 설계(2.5절)를 먼저 확인하고 정한다; 서명 전 상태를 고정한 테스트는 메모를 지운 사본으로 옮긴다; 변이 스크립트의 가정 끄기가 새 줄을 같이 지우는지 확인한다; 완료 기준은 판정 불변이다; 메모 문구가 세션의 풀어 쓰기임을 기록한다.
+- 결과 (`PROTOCOL2.md` 8절, `DESIGN-E.md` 2.5절 5번): 메모 22개와 지문, 인용 근거 20줄의 블록 지문. 도구는 신뢰 값(선언)과 JDK 함수(시그니처)의 지문을 만든다. client 작업은 `--draft` 없이 돈다. 확인: 테스트 687개, 변이 33·30·42회 불일치 0, 원본 core FAILED(세 절)·고친 사본 PROVEN.
+- 열린 과제: 어휘 승인 문법 칸.
+- req-shield push (사용자 결정): 원격 fork 브랜치가 `5513126`으로 강제 갱신되어 있어서, 수정을 그 위로 옮겨(`1739f01`) 빌드 통과 뒤 push했다 (`PROTOCOL2.md` 7절 6번).
+
+### 잠시 멈춤 (사용자 결정 2026-10-27)
+
+- 도구 작업을 이 단계에서 멈춘다. 다시 시작할 때 볼 것: 어휘 승인 문법 칸; `hole loop @LINE`의 줄 이동; C6 Confluence Cloud 가져오기; coroutine 변형 E5 (UE6 결정 필요); 남은 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell); G-opus-1의 느린 pass 2.
+- 도구는 req-shield 고정 worktree `~/IdeaProjects/req-shield-verifier-pin` (`2e792d2`)을 쓴다. 지우지 않는다.
+

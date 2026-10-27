@@ -11,7 +11,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * DESIGN-E 6.10 E1 acceptance: the names of a client sidecar bind to FIR symbols (the core ReqShield draft and the
+ * DESIGN-E 6.10 E1 acceptance: the names of a client sidecar bind to FIR symbols (the signed core ReqShield sidecar and the
  * construct fixture), and the resolver reports what does not bind: a `hole loop` without a loop, a trusted value or
  * trusted fun whose types do not stand for the Kotlin ones, a free value path through a var or of an unmodeled type.
  */
@@ -40,8 +40,8 @@ class ClientResolveTest {
     private fun codes(o: ResolveOutcome) = o.errors.map { it.code }
 
     @Test
-    fun `the core ReqShield draft binds every name`() {
-        val outcome = Frontend.resolve(File(specDir, "reqshield.core.kv"), ReqShield.dir, ReqShield.classpath, ReqShield.kotlincArgs, draft = true)
+    fun `the signed core ReqShield sidecar binds every name`() {
+        val outcome = Frontend.resolve(File(specDir, "reqshield.core.kv"), ReqShield.dir, ReqShield.classpath, ReqShield.kotlincArgs)
         assertNull(outcome.compileMessages)
         assertEquals(emptyList(), outcome.errors)
         val bindings = outcome.resolution!!.bindings.map { "${it.sidecar} -> ${it.kotlin}${it.kotlinPos?.let { p -> " @${p.line}:${p.col}" } ?: ""}" }

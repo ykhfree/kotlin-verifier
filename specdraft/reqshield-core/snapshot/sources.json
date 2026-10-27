@@ -1,0 +1,1190 @@
+[
+ {
+  "anchor": "README.md#top/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 1,
+  "last": 1,
+  "text": "Visit [the github wiki](https://github.com/line/req-shield/wiki/What-is-Req-Shield) for more information.",
+  "sha256": "90cfd91673ebe293"
+ },
+ {
+  "anchor": "README.md#req-shield/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 5,
+  "last": 5,
+  "text": "A lib that regulates the cache-based requests an application receives in terms of request-collapsing.",
+  "sha256": "890a8ea88345a4ed"
+ },
+ {
+  "anchor": "README.md#requirements/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 9,
+  "last": 9,
+  "text": "- Java 17 or later if you are a user.",
+  "sha256": "08857f23bd4cf284"
+ },
+ {
+  "anchor": "README.md#requirements/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 10,
+  "last": 10,
+  "text": "- Kotlin 1.9 or later if you are a user.",
+  "sha256": "e3602f858f00b85d"
+ },
+ {
+  "anchor": "README.md#requirements/3",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 11,
+  "last": 11,
+  "text": "- (If link this lib with Spring) Spring Boot 3.5 (Spring Framework 6.2) or later if you are a user.",
+  "sha256": "99df8d3926960ed7"
+ },
+ {
+  "anchor": "README.md#requirements/4",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 12,
+  "last": 12,
+  "text": "- (If you use the Reactor modules) Project Reactor 3.7 or later; (if you use the coroutine modules) kotlinx.coroutines 1.8 or later.",
+  "sha256": "4ee59c3275d24eb9"
+ },
+ {
+  "anchor": "README.md#usage/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 16,
+  "last": 16,
+  "text": "Choose a module based on your platform (there is a detailed explanation in the wiki):",
+  "sha256": "cf5bb820dec3d700"
+ },
+ {
+  "anchor": "README.md#usage/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 18,
+  "last": 23,
+  "text": "`implementation(\"com.linecorp.cse.reqshield:core:{version}\")`<br>\n`implementation(\"com.linecorp.cse.reqshield:core-reactor:{version}\")`<br>\n`implementation(\"com.linecorp.cse.reqshield:core-kotlin-coroutine:{version}\")`<br>\n`implementation(\"com.linecorp.cse.reqshield:core-spring:{version}\")`<br>\n`implementation(\"com.linecorp.cse.reqshield:core-spring-webflux:{version}\")`<br>\n`implementation(\"com.linecorp.cse.reqshield:core-spring-webflux-kotlin-coroutine:{version}\")`<br>",
+  "sha256": "5eaf10feaf93a201"
+ },
+ {
+  "anchor": "README.md#release-versions/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 27,
+  "last": 27,
+  "text": "Release versions are available from Maven Central. Add Maven Central and use a release version such as `1.0.0`:",
+  "sha256": "513b2ba3c49dcaa2"
+ },
+ {
+  "anchor": "README.md#release-versions/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 29,
+  "last": 37,
+  "text": "```kotlin\nrepositories {\n    mavenCentral()\n}\n\ndependencies {\n    implementation(\"com.linecorp.cse.reqshield:core:1.0.0\")\n}\n```",
+  "sha256": "f972d4ea2592c248"
+ },
+ {
+  "anchor": "README.md#dev-snapshot-versions/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 41,
+  "last": 42,
+  "text": "Dev versions are published as Maven snapshots and require the Maven Central Snapshot repository. Use a snapshot version\nsuch as `1.0.0-SNAPSHOT`:",
+  "sha256": "fd0935bdfa31af3a"
+ },
+ {
+  "anchor": "README.md#dev-snapshot-versions/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 44,
+  "last": 59,
+  "text": "```kotlin\nrepositories {\n    mavenCentral()\n    maven {\n        name = \"MavenCentralSnapshots\"\n        url = uri(\"https://central.sonatype.com/repository/maven-snapshots/\")\n        mavenContent {\n            snapshotsOnly()\n        }\n    }\n}\n\ndependencies {\n    implementation(\"com.linecorp.cse.reqshield:core:1.0.0-SNAPSHOT\")\n}\n```",
+  "sha256": "8267bccbf4a67f3a"
+ },
+ {
+  "anchor": "README.md#dev-snapshot-versions/3",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 61,
+  "last": 62,
+  "text": "Snapshot versions can be updated without changing the version string. If Gradle continues to use a cached snapshot,\nrefresh dependencies with `./gradlew build --refresh-dependencies`.",
+  "sha256": "4f2306e3df0af8d2"
+ },
+ {
+  "anchor": "README.md#integration-tests-with-redis-testcontainers/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 68,
+  "last": 68,
+  "text": "- Redis-backed integration tests using Testcontainers always run as part of module test tasks.",
+  "sha256": "f20b1f2df5b5038d"
+ },
+ {
+  "anchor": "README.md#integration-tests-with-redis-testcontainers/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 69,
+  "last": 71,
+  "text": "- Requirements:\n    - A working local Docker daemon with network access to pull `redis:6.2.7-alpine` on first run.\n    - Sufficient permissions to start containers from tests.",
+  "sha256": "e1fe168bb9414946"
+ },
+ {
+  "anchor": "README.md#integration-tests-with-redis-testcontainers/3",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 72,
+  "last": 72,
+  "text": "- If you need to temporarily bypass Redis ITs locally (e.g., no Docker), run specific unit-test-only tasks or exclude the example modules when invoking Gradle.",
+  "sha256": "3dd12335d1286ad9"
+ },
+ {
+  "anchor": "README.md#kotlin-with-reactor-3-8-spring-boot-4/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 76,
+  "last": 79,
+  "text": "- Reactor 3.8 declares `Mono`'s type parameter non-null with JSpecify annotations, and the Kotlin compiler reports\n  violations as errors by default. The Reactor-based API still uses nullable type arguments such as\n  `Mono<ReqShieldData<T>?>` (`AsyncCache.get`, `ReqShieldConfiguration.getCacheFunction`), so Kotlin code that\n  implements or calls it fails to compile on Reactor 3.8.",
+  "sha256": "b11817e8d7b7be4e"
+ },
+ {
+  "anchor": "README.md#kotlin-with-reactor-3-8-spring-boot-4/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 80,
+  "last": 81,
+  "text": "- Until the API changes, compile such Kotlin code with `-Xjspecify-annotations=warn`, as\n  `req-shield-spring-boot4-webflux-example` does. Java callers and the coroutine modules are not affected.",
+  "sha256": "dbdc037001b56873"
+ },
+ {
+  "anchor": "README.md#webflux-null-handling/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 85,
+  "last": 87,
+  "text": "- `@ReqShieldCacheable(nullHandling = ...)` controls how `null` values are emitted in WebFlux:\n    - `EMIT_EMPTY` (default): map `null` to `Mono.empty()`.\n    - `ERROR`: throw an `IllegalStateException` if a `null` value is produced.",
+  "sha256": "15f030d703e1bd19"
+ },
+ {
+  "anchor": "README.md#cache-key-layout/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 91,
+  "last": 93,
+  "text": "- The Spring adapters store every entry under `\"{cacheName}::{key}\"` (the same convention as Spring's `RedisCacheManager`),\n  where `key` is the SpEL result or the `KeyGenerator` output. `@ReqShieldCacheEvict` applies the same rule, so an evict\n  with the same `cacheName` and `key` always targets the entry written by `@ReqShieldCacheable`.",
+  "sha256": "52c0c328c3f654e2"
+ },
+ {
+  "anchor": "README.md#cache-key-layout/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 94,
+  "last": 95,
+  "text": "- Lock keys are derived from that namespaced key and prefixed with `reqshield:lock:`, so two caches that happen to use the\n  same raw key never share a lock or an entry.",
+  "sha256": "9244e5573f901c14"
+ },
+ {
+  "anchor": "README.md#cache-key-layout/3",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 96,
+  "last": 96,
+  "text": "- If you call `ReqShield` directly (core / core-reactor / core-kotlin-coroutine), the key you pass is used as is.",
+  "sha256": "37ba09d176a135e2"
+ },
+ {
+  "anchor": "README.md#global-lock-guidance/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 100,
+  "last": 103,
+  "text": "- When `isLocalLock = false`, your cache bean must also implement the module's `GlobalLockSupport` interface\n  (`com.linecorp.cse.reqshield.spring.cache.GlobalLockSupport`, `...spring.webflux.cache.GlobalLockSupport`,\n  `...spring.webflux.kotlin.coroutine.cache.GlobalLockSupport`). If it does not, the first call to the annotated method\n  fails with an `IllegalArgumentException` instead of silently running without request collapsing.",
+  "sha256": "298135e34612c173"
+ },
+ {
+  "anchor": "README.md#global-lock-guidance/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 104,
+  "last": 105,
+  "text": "- Every lock acquisition carries an ownership token. Only the holder that acquired the lock can release it, so a slow\n  holder whose lock already expired can no longer release the lock of the next holder.",
+  "sha256": "ffd91c43c843b5f8"
+ },
+ {
+  "anchor": "README.md#global-lock-guidance/3",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 106,
+  "last": 109,
+  "text": "- Recommended Redis implementation:\n    - Lock: `SET {lockKey} {token} NX PX {ttlMillis}` (atomic; never `SETNX` followed by a separate `PEXPIRE`)\n    - Unlock: compare-and-delete in a Lua script, e.g.\n      `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end`",
+  "sha256": "8143b81d67bd4eb9"
+ },
+ {
+  "anchor": "README.md#global-lock-guidance/4",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 110,
+  "last": 111,
+  "text": "- The example modules contain working implementations for `RedisTemplate`, `ReactiveRedisTemplate` and the coroutine\n  extensions.",
+  "sha256": "a72e4acccc6e70e1"
+ },
+ {
+  "anchor": "README.md#local-lock-map-size/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 115,
+  "last": 117,
+  "text": "- The local lock (`isLocalLock = true`, the default) keeps one entry per `(cache key, lock type)` it is currently\n  locking, in a map shared by the whole JVM. A cache key that is both created and refreshed therefore uses up to two\n  entries.",
+  "sha256": "4b545b75bf0b21e0"
+ },
+ {
+  "anchor": "README.md#local-lock-map-size/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 118,
+  "last": 121,
+  "text": "- An entry is dropped as soon as the lock is released; an entry whose holder never released it is dropped by the\n  cleanup monitor once `lockTimeoutMillis` has passed, which runs on a 1 s interval and so can lag by up to that much.\n  The map's size therefore tracks how many keys are being locked **at the same time**, not how many distinct keys the\n  application sees. A service with 50 ms of supplier latency at 10k rps holds roughly 500 locks at once.",
+  "sha256": "a50a09d95953837f"
+ },
+ {
+  "anchor": "README.md#local-lock-map-size/3",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 122,
+  "last": 138,
+  "text": "- The map is uncapped by default. To bound it, set `req-shield.lock.max-entries`; `0` (the default) means uncapped.\n  Size it against concurrent lock ownership, not key cardinality.\n\n  ```yaml\n  # Spring modules: read from the Environment, so application.yml works\n  req-shield:\n    lock:\n      max-entries: 2000\n  ```\n\n  ```bash\n  # core / core-reactor / core-kotlin-coroutine used directly: system property\n  java -Dreq-shield.lock.max-entries=2000 -jar app.jar\n  ```\n\n  The Spring modules read the same key from the `Environment`, so a `-D` override still outranks the yml entry there,\n  and `REQ_SHIELD_LOCK_MAX_ENTRIES` works as an environment variable.",
+  "sha256": "c9f558f7102a8834"
+ },
+ {
+  "anchor": "README.md#local-lock-map-size/4",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 139,
+  "last": 142,
+  "text": "- Once the map is full, a request for a **new** key is handed a permit that no map entry backs. It then runs exactly as\n  if it had taken the lock - it calls the supplier and writes the cache - so what the cap costs is request collapsing\n  for that key, and nothing else: no added latency, and the cache still gets populated. Keys whose entry is already in\n  the map are not subject to the cap at all.",
+  "sha256": "22ecf436faddbfa1"
+ },
+ {
+  "anchor": "README.md#local-lock-map-size/5",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 143,
+  "last": 144,
+  "text": "- The cap is a soft one. The size check is an estimate and is not atomic with the insertion it guards, so concurrent\n  callers can push the map slightly past the configured number.",
+  "sha256": "1fc22761fa4d11bb"
+ },
+ {
+  "anchor": "README.md#local-lock-map-size/6",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 145,
+  "last": 145,
+  "text": "- The first refusal and every 1000th after it are logged at WARN.",
+  "sha256": "2ca57206f13cd132"
+ },
+ {
+  "anchor": "README.md#local-lock-map-size/7",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 146,
+  "last": 149,
+  "text": "- A value that cannot be read as a non-negative number is logged at WARN and ignored, leaving the current cap\n  unchanged. This is deliberate in both directions: a class initializer that throws would poison the library for the\n  whole JVM, and an application context should not fail to start over a tuning knob typo. Setting the cap\n  programmatically (`LocalLockLimit.maxEntries = -1`) still fails fast, because there the stack trace is actionable.",
+  "sha256": "27634d337141de51"
+ },
+ {
+  "anchor": "README.md#cache-eviction-semantics/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 153,
+  "last": 154,
+  "text": "- `@ReqShieldCacheEvict` evicts **after** the annotated method completes successfully (Spring's `@CacheEvict` default).\n  If the method throws, nothing is evicted; if the eviction itself fails, that failure propagates to the caller.",
+  "sha256": "061a3644dc914d81"
+ },
+ {
+  "anchor": "README.md#cache-eviction-semantics/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 155,
+  "last": 155,
+  "text": "- In WebFlux the eviction also runs when the method completes empty (for example a `Mono<Void>` handler).",
+  "sha256": "449b211a3462b942"
+ },
+ {
+  "anchor": "README.md#waiting-for-another-request-lock-not-acquired/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 159,
+  "last": 159,
+  "text": "- A request that loses the lock polls the cache every 50 ms, up to `maxAttemptGetCache` times (default 60).",
+  "sha256": "b3e9e99f6203e70e"
+ },
+ {
+  "anchor": "README.md#waiting-for-another-request-lock-not-acquired/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 160,
+  "last": 161,
+  "text": "- A cache read failure while polling is logged and counted as a failed attempt. Three consecutive failures are treated as a\n  cache outage and the request falls back to calling the supplier itself right away.",
+  "sha256": "4a446045254ea7eb"
+ },
+ {
+  "anchor": "README.md#waiting-for-another-request-lock-not-acquired/3",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 162,
+  "last": 163,
+  "text": "- When the attempts are exhausted the request calls the supplier once. A supplier failure is propagated as a\n  `ClientException(SUPPLIER_ERROR)` with the original exception as `cause`; it is never turned into a cached `null`.",
+  "sha256": "0b4eefa677614205"
+ },
+ {
+  "anchor": "README.md#thread-pools-and-schedulers/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 167,
+  "last": 171,
+  "text": "- `core` accepts any `java.util.concurrent.Executor` for its background cache writes; only `execute` is called and the\n  library never shuts a caller-supplied pool down. The default is a shared daemon pool. The Spring adapter runs the\n  writes on a daemon pool of its own that is shut down with the context, and registers no `Executor` bean, so Spring\n  Boot keeps its `applicationTaskExecutor`. To use your own pool, define an `Executor` bean named `reqShieldExecutor`;\n  its lifecycle stays yours, and like any `Executor` bean it makes Spring Boot skip `applicationTaskExecutor`.",
+  "sha256": "200cbd2a20742c83"
+ },
+ {
+  "anchor": "README.md#thread-pools-and-schedulers/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 172,
+  "last": 173,
+  "text": "- `core-reactor` accepts a `Scheduler` (default `boundedElastic`). The Spring WebFlux adapter uses the shared\n  `boundedElastic` too and never disposes it; to use your own, define a `Scheduler` bean named `reqShieldScheduler`.",
+  "sha256": "0a2cd31715f39ca6"
+ },
+ {
+  "anchor": "README.md#thread-pools-and-schedulers/3",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 174,
+  "last": 176,
+  "text": "- `core-kotlin-coroutine` accepts a `CoroutineScope` for background cache writes (default: a shared supervisor scope on\n  `Dispatchers.IO`). The coroutine Spring adapter runs them on a supervisor scope of its own on `Dispatchers.IO` and\n  cancels it on context shutdown; to use your own, define a `CoroutineScope` bean named `reqShieldCoroutineScope`.",
+  "sha256": "41a428d404dc17fc"
+ },
+ {
+  "anchor": "README.md#thread-pools-and-schedulers/4",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 177,
+  "last": 179,
+  "text": "- The Spring adapters register none of these beans themselves, so an application bean of the same name replaces the\n  default instead of clashing with it, and its lifecycle stays with the application. A bean of one of these names\n  that is not of the expected type fails the application startup instead of being ignored.",
+  "sha256": "4aa814c92201385c"
+ },
+ {
+  "anchor": "README.md#webflux-adapter/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 183,
+  "last": 187,
+  "text": "- `@ReqShieldCacheable` / `@ReqShieldCacheEvict` from `core-spring-webflux` require methods that return `Mono`. The\n  aspect hands back a lazy `Mono`, and other return types are not rejected up front:\n    - On a `void` (`Unit`) method Spring discards that `Mono`, so the method body never runs and nothing is evicted,\n      without any error. Return `Mono<Void>` from eviction methods instead.\n    - Any other return type fails with a `ClassCastException` at the call site.",
+  "sha256": "97068c247d16add9"
+ },
+ {
+  "anchor": "README.md#webflux-adapter/2",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 188,
+  "last": 188,
+  "text": "- Use `core-spring` for blocking methods and `core-spring-webflux-kotlin-coroutine` for `suspend` functions.",
+  "sha256": "49df7110669b0df6"
+ },
+ {
+  "anchor": "README.md#kotlin-coroutine-adapter/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 192,
+  "last": 194,
+  "text": "- `@ReqShieldCacheable` / `@ReqShieldCacheEvict` from `core-spring-webflux-kotlin-coroutine` require `suspend`\n  functions. Annotating a regular function fails fast with an `IllegalArgumentException`; use `core-spring` or\n  `core-spring-webflux` for blocking or `Mono`-returning methods.",
+  "sha256": "6b949479667dbd49"
+ },
+ {
+  "anchor": "README.md#contributing/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 198,
+  "last": 200,
+  "text": "Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to\nchange.\nPlease see [CONTRIBUTING.md](CONTRIBUTING.md) for contributing to Req-Shield.",
+  "sha256": "f8f1a51e15bd44d3"
+ },
+ {
+  "anchor": "README.md#license/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 204,
+  "last": 204,
+  "text": "Apache License 2.0",
+  "sha256": "e99dd4b311146507"
+ },
+ {
+  "anchor": "README.md#how-to-reach-us/1",
+  "source": "README.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/README.md",
+  "first": 208,
+  "last": 209,
+  "text": "- File an issue in [the issue tracker](https://github.com/line/req-shield/issues) to report a bug or suggest an\n  idea.",
+  "sha256": "edce2c8882e891b0"
+ },
+ {
+  "anchor": "CLAUDE.md#claude-md/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 3,
+  "last": 3,
+  "text": "This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.",
+  "sha256": "9f4ed871849e3195"
+ },
+ {
+  "anchor": "CLAUDE.md#project-overview/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 7,
+  "last": 7,
+  "text": "Req-Shield is a Kotlin library that provides request-collapsing functionality for cache-based applications. It prevents the thundering herd problem by ensuring only one request for the same cache key is processed at a time, while subsequent concurrent requests wait for the result.",
+  "sha256": "4c399b7f21c48357"
+ },
+ {
+  "anchor": "CLAUDE.md#core-architecture/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 11,
+  "last": 11,
+  "text": "The library is organized into several core modules:",
+  "sha256": "6dc1b9d63d6bea64"
+ },
+ {
+  "anchor": "CLAUDE.md#core-architecture/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 13,
+  "last": 13,
+  "text": "- **core**: Base implementation with synchronous operations",
+  "sha256": "5ca2f032db8eff8f"
+ },
+ {
+  "anchor": "CLAUDE.md#core-architecture/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 14,
+  "last": 14,
+  "text": "- **core-reactor**: Reactive implementation using Project Reactor",
+  "sha256": "8ed3b6268d28357d"
+ },
+ {
+  "anchor": "CLAUDE.md#core-architecture/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 15,
+  "last": 15,
+  "text": "- **core-kotlin-coroutine**: Coroutine-based implementation",
+  "sha256": "cf42cc1b00bd78a2"
+ },
+ {
+  "anchor": "CLAUDE.md#core-architecture/5",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 16,
+  "last": 16,
+  "text": "- **core-spring**: Spring integration with traditional caching",
+  "sha256": "14843008770dc3f3"
+ },
+ {
+  "anchor": "CLAUDE.md#core-architecture/6",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 17,
+  "last": 17,
+  "text": "- **core-spring-webflux**: Spring WebFlux integration",
+  "sha256": "bf02bd8460a0a11a"
+ },
+ {
+  "anchor": "CLAUDE.md#core-architecture/7",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 18,
+  "last": 18,
+  "text": "- **core-spring-webflux-kotlin-coroutine**: Spring WebFlux + Kotlin Coroutines integration",
+  "sha256": "d981b0ca03bb6657"
+ },
+ {
+  "anchor": "CLAUDE.md#core-architecture/8",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 19,
+  "last": 19,
+  "text": "- **support**: Shared utilities, models, and constants",
+  "sha256": "68281052b8bb706a"
+ },
+ {
+  "anchor": "CLAUDE.md#key-components/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 23,
+  "last": 23,
+  "text": "1. **ReqShield**: Main orchestrator that manages cache operations and request collapsing",
+  "sha256": "ea10a4675733ce19"
+ },
+ {
+  "anchor": "CLAUDE.md#key-components/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 24,
+  "last": 24,
+  "text": "2. **KeyLock**: Locking mechanism (local or global) to prevent concurrent cache operations. `tryLock` returns an ownership token and `unLock` only releases when the token matches, so a slow holder cannot release someone else's lock",
+  "sha256": "58d3866dfcb69dcf"
+ },
+ {
+  "anchor": "CLAUDE.md#key-components/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 25,
+  "last": 25,
+  "text": "3. **ReqShieldConfiguration**: Configuration object that defines cache functions, locking behavior, and timeouts",
+  "sha256": "dba9d0c5186706e0"
+ },
+ {
+  "anchor": "CLAUDE.md#key-components/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 26,
+  "last": 26,
+  "text": "4. **ReqShieldData**: Wrapper for cached data with metadata (creation time, TTL)",
+  "sha256": "3419758c876cc718"
+ },
+ {
+  "anchor": "CLAUDE.md#key-components/5",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 27,
+  "last": 27,
+  "text": "5. **Spring Aspects**: AOP-based implementations that provide annotation-driven caching. One `ReqShield` instance per annotated method; cache and lock keys are namespaced as `\"{cacheName}::{key}\"`; eviction happens after the method returns successfully",
+  "sha256": "c90f752489aa4e54"
+ },
+ {
+  "anchor": "CLAUDE.md#key-components/6",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 28,
+  "last": 28,
+  "text": "6. **GlobalLockSupport**: Optional interface a cache bean implements to enable `isLocalLock = false` (Redis `SET NX PX` + compare-and-delete). Without it, `isLocalLock = false` fails fast",
+  "sha256": "c9723866cb5c1e3f"
+ },
+ {
+  "anchor": "CLAUDE.md#design-patterns/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 32,
+  "last": 32,
+  "text": "- **Template Method**: Core ReqShield logic is template-based with pluggable cache and lock functions",
+  "sha256": "509808186a2f0447"
+ },
+ {
+  "anchor": "CLAUDE.md#design-patterns/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 33,
+  "last": 33,
+  "text": "- **Strategy Pattern**: Different locking strategies (local vs global) and work modes",
+  "sha256": "ac9d7b2f3b783827"
+ },
+ {
+  "anchor": "CLAUDE.md#design-patterns/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 34,
+  "last": 34,
+  "text": "- **Aspect-Oriented Programming**: Spring modules use AOP for transparent caching",
+  "sha256": "4b71a70a2e986156"
+ },
+ {
+  "anchor": "CLAUDE.md#design-patterns/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 35,
+  "last": 35,
+  "text": "- **Factory Pattern**: Configuration objects create appropriate lock implementations",
+  "sha256": "b8a7cbd35c1dbf5e"
+ },
+ {
+  "anchor": "CLAUDE.md#building-the-project/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 40,
+  "last": 44,
+  "text": "```bash\n./gradlew build                    # Build all modules\n./gradlew :core:build             # Build specific module\n./gradlew clean build             # Clean and build\n```",
+  "sha256": "f007bb1d7f374d7f"
+ },
+ {
+  "anchor": "CLAUDE.md#running-tests/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 47,
+  "last": 51,
+  "text": "```bash\n./gradlew test                    # Run all tests\n./gradlew :core:test              # Run tests for specific module\n./gradlew test --tests \"*ReqShieldTest*\"  # Run specific test pattern\n```",
+  "sha256": "4b09b3eed4dbcd04"
+ },
+ {
+  "anchor": "CLAUDE.md#code-quality/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 54,
+  "last": 58,
+  "text": "```bash\n./gradlew ktlintCheck             # Check Kotlin code style\n./gradlew ktlintFormat            # Format Kotlin code\n./gradlew jacocoTestReport        # Generate test coverage report\n```",
+  "sha256": "e83dde016027df2b"
+ },
+ {
+  "anchor": "CLAUDE.md#running-examples/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 61,
+  "last": 68,
+  "text": "```bash\n./gradlew :req-shield-spring-boot3-example:bootRun                       # Spring Boot 3.5 (the supported minimum)\n./gradlew :req-shield-spring-boot3-webflux-example:bootRun\n./gradlew :req-shield-spring-boot3-webflux-kotlin-coroutine-example:bootRun\n./gradlew :req-shield-spring-boot4-example:bootRun                       # Spring Boot 4.1\n./gradlew :req-shield-spring-boot4-webflux-example:bootRun\n./gradlew :req-shield-spring-boot4-webflux-kotlin-coroutine-example:bootRun\n```",
+  "sha256": "8120da463a6d0d0a"
+ },
+ {
+  "anchor": "CLAUDE.md#core-modules/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 73,
+  "last": 73,
+  "text": "Each core module follows the same package structure:",
+  "sha256": "4ca706be342ef073"
+ },
+ {
+  "anchor": "CLAUDE.md#core-modules/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 74,
+  "last": 74,
+  "text": "- `com.linecorp.cse.reqshield.{variant}/` - Main classes (ReqShield, KeyLock implementations)",
+  "sha256": "22f168493fa49397"
+ },
+ {
+  "anchor": "CLAUDE.md#core-modules/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 75,
+  "last": 75,
+  "text": "- `com.linecorp.cse.reqshield.{variant}/config/` - Configuration classes",
+  "sha256": "dfc84f67b7073c9f"
+ },
+ {
+  "anchor": "CLAUDE.md#spring-integration-modules/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 78,
+  "last": 78,
+  "text": "Spring modules add:",
+  "sha256": "94f26a6201826ce5"
+ },
+ {
+  "anchor": "CLAUDE.md#spring-integration-modules/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 79,
+  "last": 79,
+  "text": "- `annotation/` - Cache annotations (@ReqShieldCacheable, @ReqShieldCacheEvict)",
+  "sha256": "a64fcd0b0805095a"
+ },
+ {
+  "anchor": "CLAUDE.md#spring-integration-modules/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 80,
+  "last": 80,
+  "text": "- `aspect/` - AOP implementation for intercepting annotated methods",
+  "sha256": "a50f10695affefc8"
+ },
+ {
+  "anchor": "CLAUDE.md#spring-integration-modules/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 81,
+  "last": 81,
+  "text": "- `cache/` - Cache interface implementations",
+  "sha256": "ffe33137312a6239"
+ },
+ {
+  "anchor": "CLAUDE.md#spring-integration-modules/5",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 82,
+  "last": 82,
+  "text": "- `config/` - Auto-configuration for Spring Boot",
+  "sha256": "634146ffbf2855cd"
+ },
+ {
+  "anchor": "CLAUDE.md#support-module/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 85,
+  "last": 85,
+  "text": "Contains shared:",
+  "sha256": "f57b419352385465"
+ },
+ {
+  "anchor": "CLAUDE.md#support-module/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 86,
+  "last": 86,
+  "text": "- `constant/` - Configuration constants and defaults",
+  "sha256": "ab365cd3703213c7"
+ },
+ {
+  "anchor": "CLAUDE.md#support-module/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 87,
+  "last": 87,
+  "text": "- `exception/` - Custom exceptions and error codes",
+  "sha256": "2596949c27cc0c69"
+ },
+ {
+  "anchor": "CLAUDE.md#support-module/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 88,
+  "last": 88,
+  "text": "- `model/` - Data models (ReqShieldData)",
+  "sha256": "0c158de853fcdfca"
+ },
+ {
+  "anchor": "CLAUDE.md#support-module/5",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 89,
+  "last": 89,
+  "text": "- `utils/` - Utility functions for cache decisions",
+  "sha256": "5aee68d66b4db17d"
+ },
+ {
+  "anchor": "CLAUDE.md#reqshieldconfiguration-parameters/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 94,
+  "last": 94,
+  "text": "- `isLocalLock`: Use local vs distributed locking (default: true)",
+  "sha256": "95925a53abaedb0c"
+ },
+ {
+  "anchor": "CLAUDE.md#reqshieldconfiguration-parameters/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 95,
+  "last": 95,
+  "text": "- `globalLockFunction` / `globalUnLockFunction`: `(lockKey, token, ttlMillis) -> Boolean` / `(lockKey, token) -> Boolean`, required when `isLocalLock = false`",
+  "sha256": "23911a89becd20ed"
+ },
+ {
+  "anchor": "CLAUDE.md#reqshieldconfiguration-parameters/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 96,
+  "last": 96,
+  "text": "- `executor` (core) / `scheduler` (reactor) / `scope` (coroutine): where background cache writes run; defaults are shared. The Spring adapters register none of them as beans (an `Executor` bean would make Spring Boot drop its `applicationTaskExecutor`, and any library bean would clash with an application bean of the same name): each aspect uses an application bean named `reqShieldExecutor` / `reqShieldScheduler` / `reqShieldCoroutineScope` if one exists (a bean of that name with another type fails the context refresh), otherwise its own default (an aspect-owned pool / the shared `boundedElastic` / an aspect-owned scope), and only shuts down what it owns",
+  "sha256": "f355b26fd94ccf8c"
+ },
+ {
+  "anchor": "CLAUDE.md#reqshieldconfiguration-parameters/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 97,
+  "last": 97,
+  "text": "- `lockTimeoutMillis`: Lock acquisition timeout (default: 3000ms)",
+  "sha256": "96bb2ac381ef4f65"
+ },
+ {
+  "anchor": "CLAUDE.md#reqshieldconfiguration-parameters/5",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 98,
+  "last": 98,
+  "text": "- `decisionForUpdate`: Percentage of TTL after which to trigger async cache refresh (default: 80)",
+  "sha256": "3b62a931a9070c96"
+ },
+ {
+  "anchor": "CLAUDE.md#reqshieldconfiguration-parameters/6",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 99,
+  "last": 99,
+  "text": "- `maxAttemptGetCache`: Max retry attempts when waiting for cache (default: 60, 50ms apart). Three consecutive cache-read failures while waiting fall back to the supplier immediately; supplier failures propagate as `ClientException(SUPPLIER_ERROR)`",
+  "sha256": "2844a1f60fe834a0"
+ },
+ {
+  "anchor": "CLAUDE.md#reqshieldconfiguration-parameters/7",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 100,
+  "last": 100,
+  "text": "- `reqShieldWorkMode`: CREATE_AND_UPDATE_CACHE | ONLY_CREATE_CACHE | ONLY_UPDATE_CACHE",
+  "sha256": "41a1ffeca6156eca"
+ },
+ {
+  "anchor": "CLAUDE.md#work-modes/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 103,
+  "last": 103,
+  "text": "- **CREATE_AND_UPDATE_CACHE**: Full functionality (default)",
+  "sha256": "6f376c03d4d9f1dc"
+ },
+ {
+  "anchor": "CLAUDE.md#work-modes/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 104,
+  "last": 104,
+  "text": "- **ONLY_CREATE_CACHE**: Request collapsing (lock) applies only when a cache entry is being created; refreshes of existing entries still happen but without a lock, so every request past the `decisionForUpdate` threshold may trigger a refresh",
+  "sha256": "d5348c7ce8fa2571"
+ },
+ {
+  "anchor": "CLAUDE.md#work-modes/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 105,
+  "last": 105,
+  "text": "- **ONLY_UPDATE_CACHE**: Request collapsing (lock) applies only when an existing entry is being refreshed; on a cache miss every request calls the supplier and writes the cache without a lock",
+  "sha256": "b74493bbb6f1dcf8"
+ },
+ {
+  "anchor": "CLAUDE.md#test-infrastructure/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 110,
+  "last": 110,
+  "text": "- Uses JUnit 5 platform",
+  "sha256": "e89fab6b60a63a37"
+ },
+ {
+  "anchor": "CLAUDE.md#test-infrastructure/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 111,
+  "last": 111,
+  "text": "- MockK for Kotlin mocking",
+  "sha256": "55c34b45be76beff"
+ },
+ {
+  "anchor": "CLAUDE.md#test-infrastructure/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 112,
+  "last": 112,
+  "text": "- Testcontainers for integration tests (Redis); set `TEST_REDIS_HOST`/`TEST_REDIS_PORT` to use an external Redis instead (CI does this)",
+  "sha256": "cdebee799e74fb13"
+ },
+ {
+  "anchor": "CLAUDE.md#test-infrastructure/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 113,
+  "last": 113,
+  "text": "- Awaitility for asynchronous testing",
+  "sha256": "a950a9a9bfcba687"
+ },
+ {
+  "anchor": "CLAUDE.md#test-infrastructure/5",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 114,
+  "last": 114,
+  "text": "- Separate test fixtures in `support` module",
+  "sha256": "ba86f465ea29e4d4"
+ },
+ {
+  "anchor": "CLAUDE.md#test-coverage-requirements/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 117,
+  "last": 117,
+  "text": "- **Minimum test coverage**: 80% line coverage for every library module (example modules are exempt)",
+  "sha256": "06c1af591411df40"
+ },
+ {
+  "anchor": "CLAUDE.md#test-coverage-requirements/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 118,
+  "last": 118,
+  "text": "- Coverage reports generated via `./gradlew jacocoTestReport`",
+  "sha256": "d72f7e7e633970bd"
+ },
+ {
+  "anchor": "CLAUDE.md#test-coverage-requirements/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 119,
+  "last": 119,
+  "text": "- Enforced by `jacocoTestCoverageVerification`, which runs as part of `./gradlew check` / `./gradlew build`",
+  "sha256": "e5e11386c49ea7b1"
+ },
+ {
+  "anchor": "CLAUDE.md#code-quality-requirements/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 122,
+  "last": 122,
+  "text": "- **Lint validation**: All code must pass ktlint checks before completion",
+  "sha256": "5243791d139bc38b"
+ },
+ {
+  "anchor": "CLAUDE.md#code-quality-requirements/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 123,
+  "last": 123,
+  "text": "- Run `./gradlew ktlintCheck` to validate code style",
+  "sha256": "51d5300e9f8846d3"
+ },
+ {
+  "anchor": "CLAUDE.md#code-quality-requirements/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 124,
+  "last": 124,
+  "text": "- Fix any lint issues with `./gradlew ktlintFormat`",
+  "sha256": "d224d85600c25533"
+ },
+ {
+  "anchor": "CLAUDE.md#code-quality-requirements/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 125,
+  "last": 125,
+  "text": "- Lint validation is mandatory for all code changes",
+  "sha256": "e9032f64232dcb3b"
+ },
+ {
+  "anchor": "CLAUDE.md#test-categories/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 128,
+  "last": 128,
+  "text": "- **Unit Tests**: Test individual components in isolation",
+  "sha256": "0a91e9d6ea0218c1"
+ },
+ {
+  "anchor": "CLAUDE.md#test-categories/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 129,
+  "last": 129,
+  "text": "- **Integration Tests**: Test Spring integration with real Redis containers",
+  "sha256": "de5859aa0d7d9676"
+ },
+ {
+  "anchor": "CLAUDE.md#test-categories/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 130,
+  "last": 130,
+  "text": "- **Base Test Classes**: Located in `support/src/testFixtures/` for reuse across modules",
+  "sha256": "e46deaf33e00f483"
+ },
+ {
+  "anchor": "CLAUDE.md#java-kotlin-compatibility/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 135,
+  "last": 135,
+  "text": "- **All modules**: Java 17+; library consumers need Kotlin 1.9+",
+  "sha256": "f762c64dda06aea7"
+ },
+ {
+  "anchor": "CLAUDE.md#java-kotlin-compatibility/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 136,
+  "last": 137,
+  "text": "- **Example applications**: `req-shield-spring-boot3-*` run on Spring Boot 3.5 (the supported minimum),\n  `req-shield-spring-boot4-*` run the same code on Spring Boot 4.1",
+  "sha256": "ab1ac9017c0a872b"
+ },
+ {
+  "anchor": "CLAUDE.md#kotlin-toolchain/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 140,
+  "last": 140,
+  "text": "- The build uses the Kotlin 2.4 compiler (K2), set by `kotlin` in `libs.versions.toml`.",
+  "sha256": "3f539929d94cc421"
+ },
+ {
+  "anchor": "CLAUDE.md#kotlin-toolchain/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 141,
+  "last": 147,
+  "text": "- Library modules compile with `languageVersion`/`apiVersion` 2.0 and publish `kotlin-stdlib`/`kotlin-reflect` at\n  `kotlinApi` (2.0.21) instead of the compiler's version (`kotlin.stdlib.default.dependency=false`). This keeps the\n  published metadata and stdlib readable by consumers on Kotlin 1.9+, the default Kotlin of Spring Boot 3.5. Kotlin\n  documents that 1.9 reads most 2.0 binaries; kotlinc 1.9.25 and 2.0.21 consumers were checked (1.8.22 also worked,\n  but no Kotlin guarantee covers it, so 1.8 is not supported).\n  Raising either value raises the minimum Kotlin version of consumers. Kotlin 2.4 already reports language version\n  2.0 as deprecated, so a later Kotlin upgrade may force a higher value and a higher consumer minimum.",
+  "sha256": "2b3ef962b3f42f3e"
+ },
+ {
+  "anchor": "CLAUDE.md#kotlin-toolchain/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 148,
+  "last": 148,
+  "text": "- Example applications are not published and use the compiler's stdlib.",
+  "sha256": "966502d832d870eb"
+ },
+ {
+  "anchor": "CLAUDE.md#kotlin-toolchain/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 149,
+  "last": 149,
+  "text": "- The stdlib is an `api` dependency of the library modules, so it stays in the POM's compile scope for Java callers.",
+  "sha256": "904c7b2c2dca234b"
+ },
+ {
+  "anchor": "CLAUDE.md#framework-support/1",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 152,
+  "last": 152,
+  "text": "- Spring Boot 3.5+ (Spring Framework 6.2+)",
+  "sha256": "112f7ed3e82ac432"
+ },
+ {
+  "anchor": "CLAUDE.md#framework-support/2",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 153,
+  "last": 153,
+  "text": "- Project Reactor 3.7+",
+  "sha256": "d1859f0d7443f84d"
+ },
+ {
+  "anchor": "CLAUDE.md#framework-support/3",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 154,
+  "last": 154,
+  "text": "- Kotlin Coroutines 1.8+",
+  "sha256": "73b3512a027a5cd4"
+ },
+ {
+  "anchor": "CLAUDE.md#framework-support/4",
+  "source": "CLAUDE.md",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/CLAUDE.md",
+  "first": 155,
+  "last": 156,
+  "text": "- The library compiles and runs its tests against these minimums. The boot3 examples run it on Spring Boot 3.5 and\n  the boot4 examples on Spring Boot 4.1; keep the two sets in sync when changing one.",
+  "sha256": "4242717208ae135d"
+ },
+ {
+  "anchor": "ReqShield.kt#runInBackground",
+  "source": "ReqShield.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt",
+  "first": 132,
+  "last": 136,
+  "text": "Runs [task] on the configured executor. The task releases the lock identified by [token] itself, so when the\nexecutor rejects it - a saturated bounded pool, or one already shut down - the lock is released here instead.\nOnly that background cache write or refresh is dropped: the caller still gets its data.",
+  "sha256": "001e7346d24a001a"
+ },
+ {
+  "anchor": "ReqShield.kt#handleLockFailure",
+  "source": "ReqShield.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt",
+  "first": 160,
+  "last": 172,
+  "text": "Another request holds the lock: poll the cache until that request publishes its result.\n\nPolling runs on the caller's thread, which is blocked for the duration of the wait either way.\nKeeping it here gives the wait a single termination condition and means a saturated executor\ncannot stall it. The supplier is never called from the polling loop - it is called on this\nthread only after the wait gave up, so at most one extra supplier call per waiting request\nhappens.\n\nThe wait ends after [ReqShieldConfiguration.maxAttemptGetCache] polls, or earlier when\n[MAX_CONSECUTIVE_GET_CACHE_FAILURES] reads failed in a row (the cache looks unavailable).\nA poll whose cache read fails still counts as an attempt, so the wait stays bounded.",
+  "sha256": "ebcb6b54f2429b11"
+ },
+ {
+  "anchor": "ReqShield.kt#executeCallable",
+  "source": "ReqShield.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt",
+  "first": 251,
+  "last": 254,
+  "text": "Runs the client supplier, releasing the lock identified by [token] when it fails.\nA null [token] means this request holds no lock, so nothing is released.",
+  "sha256": "b3da4a44989b535d"
+ },
+ {
+  "anchor": "ReqShieldConfiguration.kt#decl35",
+  "source": "ReqShieldConfiguration.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/config/ReqShieldConfiguration.kt",
+  "first": 35,
+  "last": 39,
+  "text": "(lockKey, token, ttlMillis) -> acquired. Required when [isLocalLock] is false.\nThe implementation must acquire only when the key is absent and must let the lock expire\non its own, e.g. `SET key token NX PX ttl`.",
+  "sha256": "e14445391f65e0f2"
+ },
+ {
+  "anchor": "ReqShieldConfiguration.kt#decl41",
+  "source": "ReqShieldConfiguration.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/config/ReqShieldConfiguration.kt",
+  "first": 41,
+  "last": 45,
+  "text": "(lockKey, token) -> released. Required when [isLocalLock] is false.\nThe implementation must be a compare-and-delete: delete the key only while its value still\nequals the token, so an expired holder cannot release the lock of the next holder.",
+  "sha256": "6e1ae25999283ff6"
+ },
+ {
+  "anchor": "ReqShieldConfiguration.kt#decl49",
+  "source": "ReqShieldConfiguration.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/config/ReqShieldConfiguration.kt",
+  "first": 49,
+  "last": 55,
+  "text": "Executor used for the asynchronous cache writes. Only [Executor.execute] is called, so any\npool works, and the library never shuts the pool down - a caller-supplied one stays the\ncaller's to manage. A task the pool rejects (bounded queue full, or pool shut down) only\nskips that cache write or refresh; the request still gets its data and the lock is released.\nDefaults to a single pool shared by every configuration instance.",
+  "sha256": "60ebe20853f39062"
+ },
+ {
+  "anchor": "ReqShieldConfiguration.kt#decl65",
+  "source": "ReqShieldConfiguration.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/config/ReqShieldConfiguration.kt",
+  "first": 65,
+  "last": 68,
+  "text": "Shared by every configuration instance: one ReqShield per cache key must not mean one\nthread pool per cache key. Threads are daemons so the pool never blocks JVM shutdown.",
+  "sha256": "1994de19166d1e5d"
+ },
+ {
+  "anchor": "ReqShieldConfiguration.kt#defaultKeyLock",
+  "source": "ReqShieldConfiguration.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/config/ReqShieldConfiguration.kt",
+  "first": 92,
+  "last": 97,
+  "text": "Builds the [KeyLock] used when the caller does not pass one.\n\nA default parameter expression is evaluated before the init block, so the global lock functions\nmust be validated here as well to report a missing one as an [IllegalArgumentException].",
+  "sha256": "692fbdd192025ce7"
+ },
+ {
+  "anchor": "KeyLock.kt#KeyLock",
+  "source": "KeyLock.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/KeyLock.kt",
+  "first": 19,
+  "last": 25,
+  "text": "Lock used to collapse concurrent requests for the same cache key.\n\nOwnership is represented by an opaque token: only the holder that acquired the lock can\nrelease it, so a holder whose lock already expired and was taken over by someone else\ncannot release the new owner's lock.",
+  "sha256": "029ff8a4f97809d0"
+ },
+ {
+  "anchor": "KeyLock.kt#tryLock",
+  "source": "KeyLock.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/KeyLock.kt",
+  "first": 27,
+  "last": 31,
+  "text": "Acquires the lock for [key] + [lockType].\n\n@return an opaque ownership token, or null when another holder owns the lock.",
+  "sha256": "68befb2c296b8dfa"
+ },
+ {
+  "anchor": "KeyLock.kt#unLock",
+  "source": "KeyLock.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/core/src/main/kotlin/com/linecorp/cse/reqshield/KeyLock.kt",
+  "first": 37,
+  "last": 41,
+  "text": "Releases the lock for [key] + [lockType] only if [token] matches the current owner.\n\n@return false when the lock is not held or the token does not match the current owner.",
+  "sha256": "5066248acc117759"
+ },
+ {
+  "anchor": "ClientException.kt#ClientException",
+  "source": "ClientException.kt",
+  "path": "/Users/ykhfree/IdeaProjects/req-shield-verifier-pin/support/src/main/kotlin/com/linecorp/cse/reqshield/support/exception/ClientException.kt",
+  "first": 21,
+  "last": 27,
+  "text": "Wraps failures raised by client-provided functions (supplier, cache getter/setter, lock functions).\n\nThe original exception is chained as [cause] so callers keep the full stack trace.\nThis class intentionally does not log: synchronous failures are propagated to the caller,\nand fire-and-forget paths inside ReqShield log at the point where the error is dropped.",
+  "sha256": "a3f2f2b5d5f541a7"
+ }
+]

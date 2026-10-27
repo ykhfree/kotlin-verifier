@@ -238,11 +238,14 @@ class MutantScriptTest {
         val fixed = File(dir, "out/roots/fixed-M3/$rel").readText()
         assertTrue("private fun releaseQuietly(" in fixed && "                if (true) {" in fixed, "the fixed copy has the patch and the mutant")
         assertTrue("releaseQuietly" !in File(ReqShield.dir, rel).readText(), "req-shield is not touched")
-        // The fixed copy's loop is at 187; the toggle drops `assume A1`; each run reads its own sidecar as a draft.
+        // The fixed copy's loop is at 187; the toggle drops `assume A1` with its source and reviewed lines; each run
+        // reads its own signed sidecar, not as a draft.
         assertTrue("hole loop ReqShield.handleLockFailure@187" in File(dir, "out/sidecars/fixed-M3.kv").readText())
-        assertTrue("assume A1:" !in File(dir, "out/sidecars/original-A1_off.kv").readText() && "assume A3:" in File(dir, "out/sidecars/original-A1_off.kv").readText())
+        val a1Off = File(dir, "out/sidecars/original-A1_off.kv").readText()
+        assertTrue("assume A1:" !in a1Off && "a java.lang.Error ends the process" !in a1Off && "assume A3:" in a1Off, a1Off)
         val args = File(dir, "responses/original-A1_off.args").readLines()
-        assertEquals(listOf("--draft", File(dir, "out/sidecars/original-A1_off.kv").path), args.takeLast(2))
+        assertEquals(File(dir, "out/sidecars/original-A1_off.kv").path, args.last())
+        assertTrue("--draft" !in args, args.toString())
         // Another failing set is a mismatch.
         val (bad, badOut) = run("M3,A1_off", rows, responses + ("fixed-M3" to Response(1, clientReport("LD_own", "LD_noleak"))), suite = "client", extra = listOf("--fixed-patch", patch.path))
         assertEquals(1, bad, badOut)

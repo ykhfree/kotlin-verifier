@@ -91,3 +91,15 @@ E0-E2 `dc232ad`, `1e2d072`, `73e2cc4`; E3-E4 `b9512f6`, `9d65182`.
 3. `fixed-core.patch`를 적용했다. req-shield `./gradlew build` (모든 모듈 테스트, ktlint) 통과.
 4. 도구로 고친 브랜치를 검증했다: `module: PROVEN` (hole loop의 줄 번호 181 → 187인 sidecar 사본으로).
 5. 검증 도구의 기본 req-shield 경로를 `2e792d2`에 고정한 worktree `~/IdeaProjects/req-shield-verifier-pin`으로 바꿨다 (`translator/build.gradle.kts`). 작업 브랜치가 움직여도 테스트·gate·측정이 같은 커밋 위에서 돈다. 확인: 테스트 683개, 변이 33·30·42회 불일치 0.
+6. push (사용자 결정 2026-10-27): 원격 fork 브랜치는 그사이 `5513126`(같은 Kotlin 2.4 업그레이드 커밋의 다른 판, 67개 파일 차이)으로 강제 갱신되어 있었다. 수정이 고치는 두 파일은 `2e792d2`와 `5513126`에서 같다. 수정을 `5513126` 위로 옮겼다 (`1739f01`). req-shield `./gradlew build` 통과 (`ReqShieldTest` 40개 통과, 새 테스트 3개 포함). `ykhfree` fork에 강제 없이 push했다. 도구의 고정 worktree는 `2e792d2`에 그대로 있다.
+
+## 8. 서명 (사용자 결정 2026-10-27)
+
+1. 방식: 묶음별로 문구를 보고 서명. 묶음은 4개였다 (lock 규칙 4개와 UE5, 호출자 결과 8개, 가정 4개, 신뢰 선언 6개와 어휘). 사용자는 질문 1번에 4개 묶음을 모두 승인했다. 수정 요청은 없었다.
+2. UE5: "fallback은 캐시를 쓰지 않는다" (LD_write의 모양이 그대로).
+3. 서명 메모 22개의 영어 문구는 메인 세션이 승인된 묶음을 풀어 쓴 것이다. 사용자는 한국어 설명과 절 미리보기를 보았고, 메모 문구 자체는 보지 않았다. 신뢰 함수의 본문(`KeyLock.kt`, `CommonUtils.kt:19-28`)은 메인 세션이 읽었다.
+4. 도구 변경: 신뢰 값은 선언으로, 소스가 없는 JDK 함수는 시그니처로 지문을 만든다 (`DESIGN-E.md` 2.5절 5번). client 변이 실행과 `resolveClient`·`lowerClient`는 이제 `--draft` 없이 서명된 sidecar를 쓴다. 가정 끄기 변이는 `assume` 블록(source, reviewed 줄 포함)을 통째로 지운다.
+5. 판정 불변 확인: 서명 전과 후의 판정이 같다. 원본 core는 RET_hit, RET_recheck, RET_supplier_error에서 FAILED, 고친 사본은 PROVEN (`ClientVerifyTest`). 변이 33·30·42회 불일치 0.
+6. 남은 틈: 어휘 승인 칸이 없다. `hole loop @LINE`은 코드가 바뀌면 줄이 움직인다 (지문 대상이 아니라서 서명을 깨지는 않는다).
+7. 서명 비용: 사용자 질문 1번 (묶음 4개), 도구 보완 약 250줄 (코드와 테스트).
+

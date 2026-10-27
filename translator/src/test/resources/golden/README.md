@@ -309,8 +309,8 @@ The node counts are 653 (core-spring: 640 in the ledger, 13 translated), 700 (we
 
 ## Client module: core ReqShield (DESIGN-E, E2)
 
-`ClientGoldenTest` compares the lowering of req-shield core `ReqShield.kt` (draft sidecar
-`specs/reqshield/reqshield.core.kv`, `kv lower --draft`) with `client/reqshield.core.kvir`. Reference model:
+`ClientGoldenTest` compares the lowering of req-shield core `ReqShield.kt` (signed sidecar
+`specs/reqshield/reqshield.core.kv`, `kv lower`) with `client/reqshield.core.kvir`. Reference model:
 `spike/protocol2/target.vpr` (the canonical model of DESIGN-E 5); its line numbers below. `./gradlew lowerClient` prints
 the module.
 

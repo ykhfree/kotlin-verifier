@@ -1,12 +1,11 @@
-// DRAFT sidecar for req-shield core ReqShield (DESIGN-E 6.2): the L3 client protocol, lock discipline over one call.
+// Sidecar for req-shield core ReqShield (DESIGN-E 6.2): the L3 client protocol, lock discipline over one call.
 // Format: kv-sidecar/0 with the E additions (DESIGN-E 6.2). `source` paths are relative to the req-shield checkout.
 //
-// DRAFT: no clause, assumption or trusted declaration carries a `reviewed` note. The user signs them later
-// (DESIGN-E 2.5: 12 intent clauses, 4 assumptions, 6 trusted declarations, 1 vocabulary approval). Until then the
-// tool reads this file only with --draft (kv resolve --draft, kv lower --draft).
-// Quoted sources are blocks of `kv spec snapshot` over README.md, CLAUDE.md and the KDoc of ReqShield.kt,
-// ReqShieldConfiguration.kt, KeyLock.kt and ClientException.kt. A `//` comment of ReqShield.kt is no snapshot block,
-// so a source that is such a comment is a `source none` line that names its line.
+// Signed 2026-10-27 (DESIGN-E 2.5): 12 intent clauses, 4 assumptions and 6 trusted declarations carry a `reviewed`
+// note. The user also approved the vocabulary (types, enums, obligation, trace); the grammar has no slot for that note.
+// Quoted sources are blocks of `kv spec snapshot` (specdraft/reqshield-core/snapshot) over README.md, CLAUDE.md and
+// the KDoc of ReqShield.kt, ReqShieldConfiguration.kt, KeyLock.kt and ClientException.kt. A `//` comment of
+// ReqShield.kt is no snapshot block, so a source that is such a comment is a `source none` line that names its line.
 review intent
 
 module com.linecorp.cse.reqshield.ReqShield client
@@ -46,10 +45,15 @@ trace {
 // The exception kinds are those of spike/protocol2/target.vpr: a KeyLock call throws a RuntimeException (UE3).
 // The Viper models are in this order (trusted and use lines): KeyLock, the user functions, the JDK calls, the clock.
 trusted fun KeyLock.tryLock(k: Key, lt: LockType) returns t: Token? creates Lease(k, lt, t) if t != null throws RTE
+  reviewed "ykhfree 2026-10-27: KeyLock.kt contract: a non-null token is one acquisition that the caller must release; the call may throw a RuntimeException" sha256 "4f59db86ad6a725e"
 trusted fun KeyLock.unLock(k: Key, lt: LockType, t: Token) returns released: Bool consumes Lease(k, lt, t) throws RTE
+  reviewed "ykhfree 2026-10-27: KeyLock.kt contract: unLock ends the acquisition of its token; the call may throw a RuntimeException" sha256 "b6d659be56be5d98"
 trusted value ReqShieldConfiguration.getCacheFunction(k: Key) returns d: Data? throws RTE, CHK
+  reviewed "ykhfree 2026-10-27: a user function: returns the cached data or null, and may throw" sha256 "87e6f63305e3fe90"
 trusted value ReqShieldConfiguration.setCacheFunction(k: Key, d: Data, kotlin.Long) returns b: Bool throws RTE, CHK
+  reviewed "ykhfree 2026-10-27: a user function: writes the cache, and may throw" sha256 "49ed92eb1dfc68e6"
 trusted fun java.util.concurrent.Callable.call() returns v: Int throws RTE, CHK, INTR
+  reviewed "ykhfree 2026-10-27: the user's supplier: returns a value, or throws a RuntimeException, a checked exception or an interrupt" sha256 "f6747f6649ac463f"
 
 use jdk.CompletableFuture.runAsync
 use jdk.CompletableFuture.whenComplete
@@ -59,66 +63,83 @@ use kotlin.runCatching
 use slf4j.Logger
 
 trusted fun com.linecorp.cse.reqshield.support.utils.decideToUpdateCache(kotlin.Long, kotlin.Long, kotlin.Int) returns b: Bool
+  reviewed "ykhfree 2026-10-27: CommonUtils.kt:19-28 reads the clock and returns passedDuration >= ttl * pct / 100; it has no lock or cache effect, and the model leaves the result free" sha256 "ec165827409cb603"
 
 // ---- Assumptions of the trusted models (DESIGN-E 4); A2 is off (UE3) ----
 assume A1: errors-are-fatal
   source none "user decision UE2 (2026-10-26): a java.lang.Error ends the process, so no call throws one"
+  reviewed "ykhfree 2026-10-27: assumed, not proven: a java.lang.Error ends the process" sha256 "35eb5c3e1a8b21ef"
 assume A3: accepted-tasks-run
-  source "ReqShieldConfiguration.kt#decl49" quote "the library never shuts the pool down - a caller-supplied one stays the"
+  source "ReqShieldConfiguration.kt#decl49" quote "the library never shuts the pool down - a caller-supplied one stays the" sha256 "60ebe20853f39062"
   source none "user decision UE4 (2026-10-26): a task the executor accepted runs"
+  reviewed "ykhfree 2026-10-27: assumed, not proven: a task the executor accepted runs" sha256 "fde6bbe239879d87"
 assume A4: throwing-release-ends-obligation
   source none "ReqShield.kt:150, a code comment: A failed release must not cost the caller its data; the lock then expires on its own"
+  reviewed "ykhfree 2026-10-27: assumed, not proven: an unLock that throws ends the obligation, and the lock expires by its lease" sha256 "d4f37ee0db6d53c7"
 assume A5: throwing-acquire-takes-nothing
-  source "ReqShieldConfiguration.kt#decl35" quote "must let the lock expire"
+  source "ReqShieldConfiguration.kt#decl35" quote "must let the lock expire" sha256 "e14445391f65e0f2"
+  reviewed "ykhfree 2026-10-27: assumed, not proven: a tryLock that throws leaves the caller no obligation, and the lock expires by its lease" sha256 "f6820a13679b2999"
 
 // ---- The public function: one thread's run (DESIGN-E 6.1) ----
 operation getAndSet = fun ReqShield.getAndSetReqShieldData {
   free mode = this.reqShieldConfig.reqShieldWorkMode
   free maxAttempt = this.reqShieldConfig.maxAttemptGetCache
   result res
-  // LD_write: a cache write of a collapsing path holds that path's lock (UE5 open: the fallback after the wait).
+  // LD_write: a cache write of a collapsing path holds that path's lock; the fallback after the wait writes no cache (UE5).
   guard LD_write: setCacheFunction requires
       (PHASE == CREATE && mode != ONLY_UPDATE_CACHE ==> holds(Lease(k, CREATE, _))) &&
       (PHASE == UPDATE && mode != ONLY_CREATE_CACHE ==> holds(Lease(k, UPDATE, _)))
-    source "CLAUDE.md#work-modes/2" quote "refreshes of existing entries still happen but without a lock"
-    source "CLAUDE.md#work-modes/3" quote "on a cache miss every request calls the supplier and writes the cache without a lock"
-    source none "UE5 open (DESIGN-E 2.3): this shape says the fallback after the wait does not write the cache"
+    source "CLAUDE.md#work-modes/2" quote "refreshes of existing entries still happen but without a lock" sha256 "d5348c7ce8fa2571"
+    source "CLAUDE.md#work-modes/3" quote "on a cache miss every request calls the supplier and writes the cache without a lock" sha256 "b74493bbb6f1dcf8"
+    source none "user decision UE5 (2026-10-27): the fallback after the wait does not write the cache"
+    reviewed "ykhfree 2026-10-27: a cache write on a collapsing path holds that path's lock; the fallback after the wait writes no cache (UE5)" sha256 "c4c14c27307e737d"
   // LD_supplier: so does a supplier call, except the creation fallback after the wait gave up.
   guard LD_supplier: Callable.call requires
       (PHASE == CREATE && mode != ONLY_UPDATE_CACHE ==> holds(Lease(k, CREATE, _)) || GAVE_UP) &&
       (PHASE == UPDATE && mode != ONLY_CREATE_CACHE ==> holds(Lease(k, UPDATE, _)))
-    source "ReqShield.kt#handleLockFailure" quote "The supplier is never called from the polling loop - it is called on this"
-    source "CLAUDE.md#project-overview/1" quote "ensuring only one request for the same cache key is processed at a time"
+    source "ReqShield.kt#handleLockFailure" quote "The supplier is never called from the polling loop - it is called on this" sha256 "ebcb6b54f2429b11"
+    source "CLAUDE.md#project-overview/1" quote "ensuring only one request for the same cache key is processed at a time" sha256 "4c399b7f21c48357"
+    reviewed "ykhfree 2026-10-27: a supplier call on a collapsing path holds that path's lock, except the creation fallback after the wait gave up" sha256 "7ab7e47c408a5ab2"
   ensures MODE_create: mode == ONLY_UPDATE_CACHE ==> ntryC == 0
-    source "CLAUDE.md#work-modes/3" quote "on a cache miss every request calls the supplier and writes the cache without a lock"
+    source "CLAUDE.md#work-modes/3" quote "on a cache miss every request calls the supplier and writes the cache without a lock" sha256 "b74493bbb6f1dcf8"
     source none "ReqShield.kt:88, a code comment: ONLY_UPDATE_CACHE collapses requests on cache update only, so the creation runs without a lock"
+    reviewed "ykhfree 2026-10-27: ONLY_UPDATE_CACHE never tries the CREATE lock" sha256 "b15ab050000139eb"
   ensures MODE_update: mode == ONLY_CREATE_CACHE ==> ntryU == 0
-    source "CLAUDE.md#work-modes/2" quote "refreshes of existing entries still happen but without a lock"
+    source "CLAUDE.md#work-modes/2" quote "refreshes of existing entries still happen but without a lock" sha256 "d5348c7ce8fa2571"
     source none "ReqShield.kt:65, a code comment: ONLY_CREATE_CACHE collapses requests on cache creation only, so the update runs without a lock"
+    reviewed "ykhfree 2026-10-27: ONLY_CREATE_CACHE never tries the UPDATE lock" sha256 "3abfc83b10817177"
   ensures SUP_once: nsup <= 1
-    source "ReqShield.kt#handleLockFailure" quote "so at most one extra supplier call per waiting request"
-    source "README.md#waiting-for-another-request-lock-not-acquired/3" quote "When the attempts are exhausted the request calls the supplier once."
+    source "ReqShield.kt#handleLockFailure" quote "so at most one extra supplier call per waiting request" sha256 "ebcb6b54f2429b11"
+    source "README.md#waiting-for-another-request-lock-not-acquired/3" quote "When the attempts are exhausted the request calls the supplier once." sha256 "0b4eefa677614205"
+    reviewed "ykhfree 2026-10-27: one request calls the supplier at most once on the calling thread" sha256 "c41cb4b3ad8252fe"
   ensures POLL_bound: npoll <= (maxAttempt < 0 ? 0 : maxAttempt)
-    source "ReqShield.kt#handleLockFailure" quote "The wait ends after [ReqShieldConfiguration.maxAttemptGetCache] polls, or earlier when"
-    source "README.md#waiting-for-another-request-lock-not-acquired/1" quote "up to `maxAttemptGetCache` times (default 60)."
+    source "ReqShield.kt#handleLockFailure" quote "The wait ends after [ReqShieldConfiguration.maxAttemptGetCache] polls, or earlier when" sha256 "ebcb6b54f2429b11"
+    source "README.md#waiting-for-another-request-lock-not-acquired/1" quote "up to `maxAttemptGetCache` times (default 60)." sha256 "b3e9e99f6203e70e"
+    reviewed "ykhfree 2026-10-27: the wait polls the cache at most maxAttemptGetCache times" sha256 "7fba6f874904cd28"
   ensures RET_hit: first == HIT ==> exc == NONE && res == first.obj
-    source "ReqShield.kt#runInBackground" quote "Only that background cache write or refresh is dropped: the caller still gets its data."
-    source "ReqShieldConfiguration.kt#decl49" quote "the request still gets its data and the lock is released."
+    source "ReqShield.kt#runInBackground" quote "Only that background cache write or refresh is dropped: the caller still gets its data." sha256 "001e7346d24a001a"
+    source "ReqShieldConfiguration.kt#decl49" quote "the request still gets its data and the lock is released." sha256 "60ebe20853f39062"
     source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
+    reviewed "ykhfree 2026-10-27: a first read that hits returns that data, whatever the lock calls do" sha256 "edfa670dc5cc5575"
   ensures RET_get_error: first == THREW ==> exc == ClientException(GET_CACHE_ERROR)
-    source "ClientException.kt#ClientException" quote "Wraps failures raised by client-provided functions (supplier, cache getter/setter, lock functions)."
+    source "ClientException.kt#ClientException" quote "Wraps failures raised by client-provided functions (supplier, cache getter/setter, lock functions)." sha256 "a3f2f2b5d5f541a7"
+    reviewed "ykhfree 2026-10-27: a first read that throws gives ClientException(GET_CACHE_ERROR)" sha256 "9ca1c027a6bbcbea"
   ensures RET_recheck: recheck == HIT ==> exc == NONE && res == recheck.obj && nsup == 0 && nspawn == 0
     source none "ReqShield.kt:94, a code comment: Another request may have filled the cache between our initial miss and lock acquisition."
     source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
+    reviewed "ykhfree 2026-10-27: a recheck hit under the CREATE lock returns that data, with no supplier call and no background task" sha256 "297cf5cfd83cc146"
   ensures RET_poll: poll.hit ==> exc == NONE && res == poll.obj && nsup == 0
-    source "ReqShield.kt#handleLockFailure" quote "Another request holds the lock: poll the cache until that request publishes its result."
-    source "README.md#waiting-for-another-request-lock-not-acquired/1" quote "A request that loses the lock polls the cache every 50 ms"
+    source "ReqShield.kt#handleLockFailure" quote "Another request holds the lock: poll the cache until that request publishes its result." sha256 "ebcb6b54f2429b11"
+    source "README.md#waiting-for-another-request-lock-not-acquired/1" quote "A request that loses the lock polls the cache every 50 ms" sha256 "b3e9e99f6203e70e"
+    reviewed "ykhfree 2026-10-27: a poll that finds data returns it without a supplier call" sha256 "90958e08c41e5038"
   ensures RET_supplier: sup == OK ==> exc == NONE && res != null && res.value == sup.val
-    source "ReqShield.kt#runInBackground" quote "Only that background cache write or refresh is dropped: the caller still gets its data."
-    source "ReqShieldConfiguration.kt#decl49" quote "the request still gets its data and the lock is released."
+    source "ReqShield.kt#runInBackground" quote "Only that background cache write or refresh is dropped: the caller still gets its data." sha256 "001e7346d24a001a"
+    source "ReqShieldConfiguration.kt#decl49" quote "the request still gets its data and the lock is released." sha256 "60ebe20853f39062"
+    reviewed "ykhfree 2026-10-27: the caller gets the supplier's value" sha256 "8e8bd9577b8508df"
   ensures RET_supplier_error: sup == THREW ==> exc == ClientException(SUPPLIER_ERROR)
-    source "README.md#waiting-for-another-request-lock-not-acquired/3" quote "A supplier failure is propagated as a"
+    source "README.md#waiting-for-another-request-lock-not-acquired/3" quote "A supplier failure is propagated as a" sha256 "0b4eefa677614205"
     source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
+    reviewed "ykhfree 2026-10-27: a supplier that throws gives ClientException(SUPPLIER_ERROR), whatever the unlock does" sha256 "788b282edd61f30f"
 }
 
 // ---- Hole (layer 5): the invariant of the polling loop, the code's counters against the trace (DESIGN-E 6.8) ----
