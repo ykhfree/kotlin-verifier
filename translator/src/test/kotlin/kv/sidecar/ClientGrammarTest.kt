@@ -46,6 +46,8 @@ class ClientGrammarTest {
                       reads  = count Config.get where !holds(Lease(k, CREATE, _))
                       last   = last Callable.call where true
                       fails  = trailing failures of reads
+                      found  = hit Config.get where !holds(Lease(k, CREATE, _))
+                      derived PATH = first == HIT ? UPDATE : CREATE
                     }
                     assume A1: errors-are-fatal
                       source none "fixture decision"
@@ -76,7 +78,9 @@ class ClientGrammarTest {
         assertEquals(emptyList(), s.trusted.single { it.shortName == "decide" }.named)
         val events = s.traces.single().events
         assertEquals(EventForm.entries.toList(), events.map { it.form })
-        assertEquals(listOf("Config.get", "Config.get", "Config.get", "Callable.call", null), events.map { it.call?.text })
+        assertEquals(listOf("Config.get", "Config.get", "Config.get", "Callable.call", null, "Config.get"), events.map { it.call?.text })
+        // DESIGN-E E3: a derived value of the trace, by name.
+        assertEquals(listOf("PATH" to "first == HIT ? UPDATE : CREATE"), s.traces.single().derived.map { it.name.text to it.expr.text })
         assertEquals(listOf("Lease", "k", "CREATE", "_"), events[1].holds!!.let { listOf(it.obligation.text) + it.args.map { a -> a.text } })
         assertEquals("!holds(Lease(k, CREATE, _))", events[2].where!!.text)
         assertEquals("reads", events[4].of!!.text)

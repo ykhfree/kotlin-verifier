@@ -116,8 +116,10 @@ class VerifyCliTest {
         assertEquals(0, exit, out + err)
         assertEquals("DRAFT: not signed; the verdict counts for nothing", out.lines()[0], out)
         assertTrue("module: PROVEN" in out.lines()[1], out)
-        // --draft belongs to verify only.
-        assertEquals(2, kv(listOf("emit", "--draft", "--root", ws.root.path, File(ws.specs, "keylocallock.core.kv").path)).first)
+        // --draft belongs to verify, resolve, lower and emit (DESIGN-E E3: a client sidecar is a draft until signed).
+        val cp = listOf("--classpath", ReqShield.classpath.joinToString(File.pathSeparator), "--kotlinc", ReqShield.kotlincArgs.joinToString(" "))
+        assertEquals(0, kv(listOf("emit", "--draft", "--root", ws.root.path) + cp + listOf("--out", File(dir, "draft.vpr").path, File(ws.specs, "keylocallock.core.kv").path)).first)
+        assertEquals(2, kv(listOf("mutation-sites", "--draft", "--root", ws.root.path, File(ws.specs, "keylocallock.core.kv").path)).first)
     }
 
     @Test

@@ -189,7 +189,7 @@ const val FACT_PEND = "tool fact PEND"
 const val RESERVE_FRESH = "reserve: the next counter value may be issued or reserved; the hole must show that it is fresh"
 
 /** Writes text and records which source each range comes from. */
-private class VprWriter {
+internal class VprWriter {
     private val sb = StringBuilder()
     var line = 1
         private set

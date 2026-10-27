@@ -410,10 +410,13 @@ data class HoleDecl(
     val loop: LoopRef? = null,
 ) : Decl
 
-/** The form of a trace event (DESIGN-E 3.2, 6.2). */
+/**
+ * The form of a trace event (DESIGN-E 3.2, 6.2). [HIT] (DESIGN-E E3) records whether some matching call returned a
+ * non-null result, and the last such result: the hand model's `pollHit` and `pollObj`.
+ */
 enum class EventForm(
     val keyword: String,
-) { FIRST("first"), WHILE_HOLDS("while holds"), COUNT("count"), LAST("last"), TRAILING_FAILURES("trailing failures of") }
+) { FIRST("first"), WHILE_HOLDS("while holds"), COUNT("count"), LAST("last"), TRAILING_FAILURES("trailing failures of"), HIT("hit") }
 
 /** `holds(NAME(PATTERN))`: an obligation with argument patterns; `_` matches any value. */
 data class HoldsPattern(
@@ -423,7 +426,7 @@ data class HoldsPattern(
 
 /**
  * One field of the trace record (DESIGN-E 3.2): `NAME = first CALL`, `CALL while holds(...)`, `count CALL`, `last
- * CALL` (each but `while holds` with an optional `where VEXPR`), or `trailing failures of NAME`.
+ * CALL`, `hit CALL` (each but `while holds` with an optional `where VEXPR`), or `trailing failures of NAME`.
  */
 data class TraceEvent(
     val name: Name,
@@ -434,10 +437,20 @@ data class TraceEvent(
     val of: Name? = null,
 )
 
-/** `trace { NAME = event ... }` (DESIGN-E 3.2, 6.2): the event record of one thread run. */
+/**
+ * `derived NAME = VEXPR` in a trace block (DESIGN-E 3.2, E3): a value over the trace fields and free values, e.g.
+ * `PHASE` and `GAVE_UP`. Guards and ensures use it by name.
+ */
+data class DerivedDecl(
+    val name: Name,
+    val expr: Vexpr,
+)
+
+/** `trace { NAME = event ... }` (DESIGN-E 3.2, 6.2): the event record of one thread run, with its derived values. */
 data class TraceDecl(
     val events: List<TraceEvent>,
     override val pos: SPos,
+    val derived: List<DerivedDecl> = emptyList(),
 ) : Decl
 
 /**
