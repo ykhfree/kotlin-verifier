@@ -29,8 +29,34 @@ internal data class FunDeclaration(
     val reviewedText: String get() = source.substring(reviewStart, end)
 
     /** `File.kt:line` of the `fun` keyword, for messages. */
-    val where: String get() = "${file.name}:${source.substring(0, funKeyword).count { it == '\n' } + 1}"
+    val where: String get() = whereOf(file, source, funKeyword)
 }
+
+/**
+ * A property, or a `val`/`var` parameter of a primary constructor, of a Kotlin file: the declaration of a trusted value
+ * (DESIGN-E 2.5). [keyword] is where `val` or `var` starts; [reviewStart] and [end] bound the reviewed text.
+ */
+internal data class ValueDeclaration(
+    val file: File,
+    val classes: List<String>,
+    val name: String,
+    val keyword: Int,
+    val reviewStart: Int,
+    val end: Int,
+    val source: String,
+) {
+    /** The reviewed unit of a trusted value: the declaration from its first modifier keyword (else `val`/`var`) to its end, its type included. KDoc and annotations are outside it. */
+    val reviewedText: String get() = source.substring(reviewStart, end)
+
+    /** `File.kt:line` of the `val` or `var` keyword, for messages. */
+    val where: String get() = whereOf(file, source, keyword)
+}
+
+private fun whereOf(
+    file: File,
+    source: String,
+    offset: Int,
+) = "${file.name}:${source.substring(0, offset).count { it == '\n' } + 1}"
 
 /** Finds the source text of a trusted fun (DESIGN-v0.md 8.3 "reviewed 지문"). */
 internal object ReviewedSource {
@@ -51,10 +77,7 @@ internal object ReviewedSource {
                         val name = parts.firstOrNull { it.tokenType == KtTokens.IDENTIFIER } ?: continue
                         val keyword = parts.firstOrNull { it.tokenType == KtTokens.FUN_KEYWORD } ?: continue
                         val params = parts.firstOrNull { it.tokenType == KtNodeTypes.VALUE_PARAMETER_LIST }?.let { list -> tree.children(list).count { it.tokenType == KtNodeTypes.VALUE_PARAMETER } } ?: 0
-                        val firstModifier =
-                            parts.firstOrNull { it.tokenType == KtNodeTypes.MODIFIER_LIST }
-                                ?.let { list -> tree.children(list).firstOrNull { it.tokenType != KtNodeTypes.ANNOTATION_ENTRY && it.tokenType != KtNodeTypes.ANNOTATION } }
-                        out += FunDeclaration(file, classes, text.substring(name.startOffset, name.endOffset), params, child.startOffset, keyword.startOffset, firstModifier?.startOffset ?: keyword.startOffset, child.endOffset, text)
+                        out += FunDeclaration(file, classes, text.substring(name.startOffset, name.endOffset), params, child.startOffset, keyword.startOffset, tree.reviewStart(parts, keyword), child.endOffset, text)
                     }
                     KtNodeTypes.CLASS, KtNodeTypes.OBJECT_DECLARATION -> {
                         val parts = tree.children(child)
@@ -66,6 +89,59 @@ internal object ReviewedSource {
         }
         visit(tree.root, emptyList())
         return out
+    }
+
+    /**
+     * Every property and every `val`/`var` parameter of a primary constructor of [file], in classes and objects at any
+     * depth; a top-level property has no classes.
+     */
+    fun values(file: File): List<ValueDeclaration> {
+        val text = file.readText()
+        val tree = KotlinLightParser.buildLightTree(text, null, null)
+        val out = mutableListOf<ValueDeclaration>()
+
+        fun add(
+            node: LighterASTNode,
+            classes: List<String>,
+        ) {
+            val parts = tree.children(node)
+            val name = parts.firstOrNull { it.tokenType == KtTokens.IDENTIFIER } ?: return
+            val keyword = parts.firstOrNull { it.tokenType == KtTokens.VAL_KEYWORD || it.tokenType == KtTokens.VAR_KEYWORD } ?: return
+            out += ValueDeclaration(file, classes, text.substring(name.startOffset, name.endOffset), keyword.startOffset, tree.reviewStart(parts, keyword), node.endOffset, text)
+        }
+
+        fun visit(
+            node: LighterASTNode,
+            classes: List<String>,
+        ) {
+            for (child in tree.children(node)) {
+                when (child.tokenType) {
+                    KtNodeTypes.PROPERTY -> add(child, classes)
+                    KtNodeTypes.CLASS, KtNodeTypes.OBJECT_DECLARATION -> {
+                        val parts = tree.children(child)
+                        val name = parts.firstOrNull { it.tokenType == KtTokens.IDENTIFIER }?.let { text.substring(it.startOffset, it.endOffset) } ?: "Companion"
+                        parts.filter { it.tokenType == KtNodeTypes.PRIMARY_CONSTRUCTOR }
+                            .flatMap { tree.children(it) }.filter { it.tokenType == KtNodeTypes.VALUE_PARAMETER_LIST }
+                            .flatMap { tree.children(it) }.filter { it.tokenType == KtNodeTypes.VALUE_PARAMETER }
+                            .forEach { add(it, classes + name) }
+                        parts.filter { it.tokenType == KtNodeTypes.CLASS_BODY }.forEach { visit(it, classes + name) }
+                    }
+                }
+            }
+        }
+        visit(tree.root, emptyList())
+        return out
+    }
+
+    /** Where the reviewed text of a declaration with [parts] starts: its first modifier keyword, else [keyword]. */
+    private fun FlyweightCapableTreeStructure<LighterASTNode>.reviewStart(
+        parts: List<LighterASTNode>,
+        keyword: LighterASTNode,
+    ): Int {
+        val firstModifier =
+            parts.firstOrNull { it.tokenType == KtNodeTypes.MODIFIER_LIST }
+                ?.let { list -> children(list).firstOrNull { it.tokenType != KtNodeTypes.ANNOTATION_ENTRY && it.tokenType != KtNodeTypes.ANNOTATION } }
+        return firstModifier?.startOffset ?: keyword.startOffset
     }
 
     /**

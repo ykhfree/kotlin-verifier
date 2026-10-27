@@ -16,14 +16,14 @@ import kotlin.test.assertNull
 import kotlin.test.fail
 
 /**
- * DESIGN-E 6.10 E2 acceptance: the KVIR of req-shield core ReqShield (the draft sidecar, req-shield 2e792d2) equals the
+ * DESIGN-E 6.10 E2 acceptance: the KVIR of req-shield core ReqShield (the signed sidecar, req-shield 2e792d2) equals the
  * reviewed golden file golden/client/reqshield.core.kvir; golden/README.md maps it to spike/protocol2/target.vpr.
  */
 class ClientGoldenTest {
     companion object {
         /** The resolved core sidecar and its module; one compile serves every client test that reads it. */
         val outcome: ResolveOutcome by lazy {
-            val o = Frontend.resolve(File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv"), ReqShield.dir, ReqShield.classpath, ReqShield.kotlincArgs, draft = true)
+            val o = Frontend.resolve(File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv"), ReqShield.dir, ReqShield.classpath, ReqShield.kotlincArgs)
             assertNull(o.compileMessages)
             assertEquals(emptyList(), o.errors)
             o

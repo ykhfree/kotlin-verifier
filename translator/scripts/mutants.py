@@ -361,7 +361,7 @@ CLIENT_EDITS = {
             "                    if (token != null) reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
             "                }\n"
             "            }\n")],
-    # The assumption toggles (DESIGN-E 4) change the sidecar only (CLIENT_SIDECAR_EDITS).
+    # The assumption toggles (DESIGN-E 4) change the sidecar only (client_sidecar).
     "A1_off": [], "A2_on": [], "A3_off": [], "A4_off": [], "A5_off": [],
 }
 # Where fixed-core.patch changed the text a mutant edits: the fixed base's releaseQuietly.
@@ -374,20 +374,22 @@ CLIENT_UNIT_EDITS = {
                 RECHECK_WITHOUT_FLAG.replace("{release1}", QUIET.format("after the cache recheck")).replace("{release2}", QUIET.format("after the cache recheck")))],
     },
 }
-# The toggles: an `assume` block removed (the assumption is off), or A2 added.
-ASSUME_A1 = ("assume A1: errors-are-fatal\n"
-             "  source none \"user decision UE2 (2026-10-26): a java.lang.Error ends the process, so no call throws one\"\n")
-CLIENT_SIDECAR_EDITS = {
-    "A1_off": [(ASSUME_A1, "")],
-    "A2_on": [(ASSUME_A1, ASSUME_A1 + "assume A2: lock-calls-return\n  source none \"mutant toggle A2_on\"\n")],
-    "A3_off": [("assume A3: accepted-tasks-run\n"
-                "  source \"ReqShieldConfiguration.kt#decl49\" quote \"the library never shuts the pool down - a caller-supplied one stays the\"\n"
-                "  source none \"user decision UE4 (2026-10-26): a task the executor accepted runs\"\n", "")],
-    "A4_off": [("assume A4: throwing-release-ends-obligation\n"
-                "  source none \"ReqShield.kt:150, a code comment: A failed release must not cost the caller its data; the lock then expires on its own\"\n", "")],
-    "A5_off": [("assume A5: throwing-acquire-takes-nothing\n"
-                "  source \"ReqShieldConfiguration.kt#decl35\" quote \"must let the lock expire\"\n", "")],
-}
+# The toggles: an `assume` block (its line and the indented source and reviewed lines under it) removed, so the
+# assumption is off; or A2 added after A1's block, signed as the sidecar is (the fingerprint is the one `kv` computes).
+CLIENT_ASSUME_OFF = {"A1_off": "A1", "A3_off": "A3", "A4_off": "A4", "A5_off": "A5"}
+ASSUME_A2 = ("assume A2: lock-calls-return\n"
+             "  source none \"mutant toggle A2_on\"\n"
+             "  reviewed \"mutant toggle A2_on\" sha256 \"f3976b419809632a\"\n")
+
+
+def assume_block(text, name):
+    """The `assume NAME` block of a sidecar text; it must occur once."""
+    found = re.findall(r"^assume %s:.*\n(?:  .*\n)*" % name, text, re.M)
+    if len(found) != 1:
+        raise ScriptError("the sidecar has %d 'assume %s' blocks (must be 1)" % (len(found), name))
+    return found[0]
+
+
 # The loop the sidecar's `hole loop` names: its line moves with the Kotlin edits above it.
 CLIENT_LOOP = ("ReqShield.handleLockFailure@181", "        while (attempts < reqShieldConfig.maxAttemptGetCache) {")
 
@@ -527,10 +529,11 @@ def client_sidecar(args, suite, unit, mutant, root):
     """The client sidecar of one run (DESIGN-E E4): the toggle's edits, and the loop line of this copy."""
     with open(os.path.join(args.specs, suite.sidecar(unit))) as f:
         text = f.read()
-    for old, new in CLIENT_SIDECAR_EDITS.get(mutant, []):
-        if text.count(old) != 1:
-            raise ScriptError("%s %s: sidecar edit matches %d times (must be 1): %r" % (unit, mutant, text.count(old), old))
-        text = text.replace(old, new)
+    if mutant in CLIENT_ASSUME_OFF:
+        text = text.replace(assume_block(text, CLIENT_ASSUME_OFF[mutant]), "")
+    elif mutant == "A2_on":
+        a1 = assume_block(text, "A1")
+        text = text.replace(a1, a1 + ASSUME_A2)
     with open(os.path.join(root, suite.edited(unit))) as f:
         lines = f.read().split("\n")
     at = [i + 1 for i, line in enumerate(lines) if line == CLIENT_LOOP[1]]
@@ -569,9 +572,6 @@ def run_one(args, suite, variant, mutant):
     vpr = os.path.join(args.out, "%s-%s.vpr" % (variant, mutant))
     sidecar = client_sidecar(args, suite, variant, mutant, root) if suite.client else os.path.join(args.specs, suite.sidecar(variant))
     command = kv_command(args.kv, "verify", root, args.classpath, args.kotlinc, vpr, sidecar)
-    if suite.client:
-        # The client sidecar is a draft (DESIGN-E 2.5: not signed yet).
-        command.insert(-1, "--draft")
     start = time.time()
     try:
         p = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout)
@@ -585,7 +585,7 @@ def run_one(args, suite, variant, mutant):
     if p.returncode == 2:
         raise ScriptError("%s %s: kv verify usage error:\n%s" % (variant, mutant, p.stderr))
     verdict = VERDICTS.get(p.returncode, "exit %d" % p.returncode)
-    # A draft report (the client sidecar) starts with a DRAFT line; the module line follows it.
+    # The report's module line.
     first = next((line for line in p.stdout.splitlines() if "module: " in line), "")
     if p.stdout and "module: %s" % verdict not in first:
         raise ScriptError("%s %s: exit code says %s, the report says %r" % (variant, mutant, verdict, first))

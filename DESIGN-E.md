@@ -182,6 +182,11 @@
    - 신뢰 선언 6개: `KeyLock.tryLock`, `KeyLock.unLock`, `decideToUpdateCache`, `getCacheFunction`, `setCacheFunction`, `Callable.call`. 각각 `reviewed`와 지문을 단다.
    - 어휘 층 승인 1번: `obligation Lease`, 사건 기록 규칙, `PHASE`, `GAVE_UP` (`DESIGN-C.md` 2.1절 층 3).
 4. 도구 사실(LD_noleak, LD_own, LD_transfer, LD_wait, TERM)은 서명하지 않는다. `obligation`과 `consumes`에서 도구가 낸다.
+5. 서명 결과 (2026-10-27, 사용자가 묶음 4개를 승인): UE5는 "fallback은 캐시를 쓰지 않는다"로 정했다. 그래서 1번 절의 모양은 그대로다. 의도 절 12개, 가정 4개, 신뢰 선언 6개에 `reviewed`와 지문이 붙었다. 인용 근거 20줄에는 블록 지문이 붙었다 (스냅숏 `specdraft/reqshield-core/snapshot`). 지문의 단위:
+   - 함수 본문이 있는 신뢰 선언(`KeyLock.tryLock`, `KeyLock.unLock`, `decideToUpdateCache`): 지금처럼 Kotlin 선언 (B6).
+   - 신뢰 값(`getCacheFunction`, `setCacheFunction`): 속성 또는 생성자 `val` 매개변수의 선언. 첫 수식어(없으면 `val`/`var`)부터 끝까지이고, KDoc과 annotation은 밖이다.
+   - 소스가 없는 JDK·Kotlin 라이브러리 함수(`Callable.call`): 시그니처 글자 `java.util.concurrent.Callable.call(): V`.
+   - 어휘 승인: 문법에 칸이 없다. 승인은 sidecar 머리 주석에만 있고, 도구는 검사하지 않는다 (열린 과제).
 
 ## 3. 어휘
 
