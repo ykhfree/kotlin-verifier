@@ -366,3 +366,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 도구 작업을 이 단계에서 멈춘다. 다시 시작할 때 볼 것: 어휘 승인 문법 칸; `hole loop @LINE`의 줄 이동; C6 Confluence Cloud 가져오기; coroutine 변형 E5 (UE6 결정 필요); 남은 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell); G-opus-1의 느린 pass 2.
 - 도구는 req-shield 고정 worktree `~/IdeaProjects/req-shield-verifier-pin` (`2e792d2`)을 쓴다. 지우지 않는다.
 
+- 원격 저장소 (사용자 결정 2026-10-27): GitHub private `ykhfree/kotlin-verifier`에 `main`을 push했다 (`origin`). push 전 점검: 현재 파일과 전체 이력에 비밀 값 형태 없음, 크기 2.6 MB.
