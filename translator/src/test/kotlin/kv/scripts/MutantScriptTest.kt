@@ -54,6 +54,7 @@ class MutantScriptTest {
         responses: Map<String, Response>,
         reqShield: File = ReqShield.dir,
         suite: String = "keylocallock",
+        extra: List<String> = emptyList(),
     ): Pair<Int, String> {
         val data = File(dir, "responses").apply { mkdirs() }
         for ((root, r) in responses) {
@@ -68,6 +69,7 @@ class MutantScriptTest {
                     |#!/usr/bin/env python3
                     |import os, sys
                     |root = os.path.join("${data.path}", os.path.basename(sys.argv[sys.argv.index("--root") + 1]))
+                    |open(root + ".args", "w").write("\n".join(sys.argv[1:]))
                     |sys.stdout.write(open(root + ".out").read())
                     |sys.stderr.write(open(root + ".err").read())
                     |sys.exit(int(open(root + ".exit").read()))
@@ -80,7 +82,7 @@ class MutantScriptTest {
         val p =
             ProcessBuilder(
                 "python3", "-I", script.path, "--suite", suite, "--kv", kv.path, "--req-shield", reqShield.path, "--classpath", "unused",
-                "--kotlinc", "unused", "--specs", dir.path, "--expected", table.path, "--out", File(dir, "out").path, "--only", only,
+                "--kotlinc", "unused", "--specs", dir.path, "--expected", table.path, "--out", File(dir, "out").path, "--only", only, *extra.toTypedArray(),
             ).redirectErrorStream(true).start()
         val out = p.inputStream.bufferedReader().readText()
         check(p.waitFor(120, TimeUnit.SECONDS)) { "mutants.py did not finish" }
@@ -208,5 +210,42 @@ class MutantScriptTest {
         val (exit, out) = run("SB1", sb1Rows, mapOf("coroutine-SB1" to sb1Failed, "core-SB1" to sb1Failed, "reactor-SB1" to sb1Failed), fake)
         assertEquals(2, exit, out)
         assertTrue("coroutine SB1: edit matches 0 times (must be 1)" in out, out)
+    }
+
+    /** A client report (DESIGN-E 6.7): its module line and Properties rows, [failed] FAILED and the others PROVEN. */
+    private fun clientReport(vararg failed: String): String =
+        (
+            listOf("DRAFT: not signed; the verdict counts for nothing", "c.ReqShield (reqshield.core.kv)    module: ${if (failed.isEmpty()) "PROVEN" else "FAILED"} (Silicon 2.30 s)", "Properties (each property's full failing set, DESIGN-E 5.2):") +
+                listOf("LD_noleak", "LD_own", "RET_hit").map { "  ${it.padEnd(10)}  ${if (it in failed) "FAILED" else "PROVEN"}  ensures of getAndSet" } + listOf("Tool facts: LD_noleak", "")
+        ).joinToString("\n")
+
+    @Test
+    fun `the client suite patches the fixed base, moves the hole loop line, edits the sidecar for a toggle, and compares the failing properties`() {
+        File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv").copyTo(File(dir, "reqshield.core.kv"))
+        val patch = File(System.getProperty("kv.spikeDir"), "protocol2/fixed-core.patch")
+        val rows = "original  M3  FAILED  LD_own; RET_hit\nfixed  M3  FAILED  LD_own\noriginal  A1_off  FAILED  LD_noleak; RET_hit  # a comment\nfixed  A1_off  FAILED  LD_noleak\n"
+        val responses =
+            mapOf(
+                "original-M3" to Response(1, clientReport("LD_own", "RET_hit")),
+                "fixed-M3" to Response(1, clientReport("LD_own")),
+                "original-A1_off" to Response(1, clientReport("LD_noleak", "RET_hit")),
+                "fixed-A1_off" to Response(1, clientReport("LD_noleak")),
+            )
+        val (exit, out) = run("M3,A1_off", rows, responses, suite = "client", extra = listOf("--fixed-patch", patch.path))
+        assertEquals(0, exit, out)
+        assertTrue(out.lines().any { it.startsWith("fixed      M3        FAILED") && it.endsWith("properties {LD_own}") }, out)
+        val rel = "core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt"
+        val fixed = File(dir, "out/roots/fixed-M3/$rel").readText()
+        assertTrue("private fun releaseQuietly(" in fixed && "                if (true) {" in fixed, "the fixed copy has the patch and the mutant")
+        assertTrue("releaseQuietly" !in File(ReqShield.dir, rel).readText(), "req-shield is not touched")
+        // The fixed copy's loop is at 187; the toggle drops `assume A1`; each run reads its own sidecar as a draft.
+        assertTrue("hole loop ReqShield.handleLockFailure@187" in File(dir, "out/sidecars/fixed-M3.kv").readText())
+        assertTrue("assume A1:" !in File(dir, "out/sidecars/original-A1_off.kv").readText() && "assume A3:" in File(dir, "out/sidecars/original-A1_off.kv").readText())
+        val args = File(dir, "responses/original-A1_off.args").readLines()
+        assertEquals(listOf("--draft", File(dir, "out/sidecars/original-A1_off.kv").path), args.takeLast(2))
+        // Another failing set is a mismatch.
+        val (bad, badOut) = run("M3,A1_off", rows, responses + ("fixed-M3" to Response(1, clientReport("LD_own", "LD_noleak"))), suite = "client", extra = listOf("--fixed-patch", patch.path))
+        assertEquals(1, bad, badOut)
+        assertTrue("MISMATCH: FAILED rows properties {LD_noleak, LD_own}, expected properties {LD_own}" in badOut, badOut)
     }
 }

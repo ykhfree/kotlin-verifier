@@ -130,7 +130,7 @@ task task_69 = lambda in updateReqShieldData via runInBackground, spawned by get
   free  mode: Mode <- this.reqShieldConfig.reqShieldWorkMode (instance val reqShieldConfig.reqShieldWorkMode @63:31) @63:31
   requires lockType__62 == LockType.UPDATE                        @144:13
   requires (mode == Mode.ONLY_CREATE_CACHE) || (token__66 != null) @68:13
-  holds (token__66 != null) ==> Lease(k, lockType__62, token__66) @265:17
+  holds (token__66 != null) ==> Lease(k, lockType__62, token__66) @66:52
   translates FIR nodes 110-133,424-431,456-543
   body
     inline executeCallable -> arg_72_25: Int                      @72:25
@@ -160,7 +160,7 @@ task task_125 = lambda in createReqShieldData via runInBackground, spawned by ge
   free  mode: Mode <- this.reqShieldConfig.reqShieldWorkMode (instance val reqShieldConfig.reqShieldWorkMode @63:31) @63:31
   requires lockType__85 == LockType.CREATE                        @144:13
   requires (mode == Mode.ONLY_UPDATE_CACHE) || (token__89 != null) @106:20
-  holds (token__89 != null) ==> Lease(k, lockType__85, token__89) @243:32
+  holds (token__89 != null) ==> Lease(k, lockType__85, token__89) @89:52
   translates FIR nodes 249-260,456-500
   body
     inline executeSetCacheFunction                                @126:13

@@ -326,8 +326,8 @@ the module.
 | `inline createReqShieldData -> out_107_13`: `inline executeCallable -> arg_122_17`, `inline buildReqShieldData -> reqShieldData__120` with `new ... Data {value := arg_122_17}`, `inline runInBackground` at 125 | 107:13, 113-130 | 438-490 | |
 | `inline handleLockFailure -> out_109_13`: `while attempts__178 < maxAttempt [hole ReqShield.handleLockFailure@181] [measure maxAttempt - attempts__178]`, `inline sleepBetweenPolls`, the poll `try` with `return cachedData__186`, `catch Exception` with `break` | 109:13, 173-198 | 492-542 | target encodes return and break with `found_187` and `break_192` |
 | fallback `inline executeCallable -> arg_197_35` with null lock type and token, `inline buildReqShieldData -> out_197_16` | 197 | 543-561 | |
-| `task task_69`: `param k, lockType__62, token__66`, `requires lockType__62 == LockType.UPDATE`, `requires (mode == Mode.ONLY_CREATE_CACHE) \|\| (token__66 != null)`, `holds (token__66 != null) ==> Lease(k, lockType__62, token__66)` | 69:51 | 216-278 (`TASK69_PRE` 216-219) | DESIGN-E 3.4 parts 1-3 |
-| `task task_125`: `param k, lockType__85, token__89, reqShieldData__120`, `requires lockType__85 == LockType.CREATE`, `requires (mode == Mode.ONLY_UPDATE_CACHE) \|\| (token__89 != null)`, `holds ...` | 125:47 | 281-313 (`TASK125_PRE` 281-284) | |
+| `task task_69`: `param k, lockType__62, token__66`, `requires lockType__62 == LockType.UPDATE`, `requires (mode == Mode.ONLY_CREATE_CACHE) \|\| (token__66 != null)`, `holds (token__66 != null) ==> Lease(k, lockType__62, token__66)` | 69:51 | 216-278 (`TASK69_PRE` 216-219) | DESIGN-E 3.4 parts 1-3; the holds line is at the tryLock that created the obligation (66:52, E4) |
+| `task task_125`: `param k, lockType__85, token__89, reqShieldData__120`, `requires lockType__85 == LockType.CREATE`, `requires (mode == Mode.ONLY_UPDATE_CACHE) \|\| (token__89 != null)`, `holds ...` | 125:47 | 281-313 (`TASK125_PRE` 281-284) | holds at 89:52 (E4) |
 | ledger: `no-effect whenComplete callback: logs only` 280-294, `no-effect fun logAsyncFailure` 544-566 | 146:31, 270:5 | none | DESIGN-E 6.4 row 10 |
 
 Differences, each a job of the E3 emitter:
@@ -342,7 +342,7 @@ Differences, each a job of the E3 emitter:
 | CE6 | The fallback's `executeCallable(callable, key, null, null)` keeps its dead branch `if (null != null) && (null != null) { call KeyLock.unLock(k, null, null) }`; target.vpr (553-554) leaves it out. | The lowering does not fold constants; Viper prunes the branch. |
 | CE7 | Thrown kinds are `ClientException(GET_CACHE_ERROR)` and so on; target.vpr names them `CE_GET`, `CE_SET`, `CE_SUP`. | The kind is the class and its error code (DESIGN-E 3.5); E3 picks the Viper names. |
 
-### E3 (DESIGN-E 6.6, 6.10)
+### E3 and E4 (DESIGN-E 6.6, 6.10)
 
 1. The client emitter (`kv/emit/ClientEmitter.kt`) resolves CE1-CE7: the trace record, the event rules, the guards,
    `NO_LEASES`, the ensures and the assumption switches come from the sidecar (CE1); exceptions become flags `e_...`
@@ -353,3 +353,6 @@ Differences, each a job of the E3 emitter:
 2. `ClientGateTest` compares the generated models with `spike/protocol2/target.vpr` and `fixed.vpr` through
    `scripts/protocol2_gate.py`, which lists the rename table, the structural edits (each with its reason) and the
    normalizer change E3 needs.
+3. E4 (DESIGN-E 3.4 part 1): a task's `holds` is the obligation the spawning unit created over the values the spawn
+   gives the task, not the obligations the task's releases name. The holds lines above moved from the release calls
+   (265:17, 243:32) to the creating tryLock calls (66:52, 89:52); the text is the same.
