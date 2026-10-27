@@ -13,8 +13,9 @@ repositories {
 
 val kotlinCompilerVersion = "2.4.21"
 
-// req-shield checkout that holds the KeyLocalLock sources. Read only.
-val reqShieldDir = providers.gradleProperty("reqShieldDir").getOrElse("/Users/ykhfree/IdeaProjects/req-shield")
+// req-shield checkout that holds the KeyLocalLock sources. Read only. The default is a worktree pinned at 2e792d2,
+// the commit every test, gate and measurement was made on; the working branch moves on (PROTOCOL2.md 7).
+val reqShieldDir = providers.gradleProperty("reqShieldDir").getOrElse("/Users/ykhfree/IdeaProjects/req-shield-verifier-pin")
 
 // Compile classpath of req-shield's core, core-kotlin-coroutine and core-reactor modules, with the versions from
 // req-shield's libs.versions.toml. KeyLocalLock needs nothing else.
