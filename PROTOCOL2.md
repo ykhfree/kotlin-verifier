@@ -83,3 +83,11 @@ E0-E2 `dc232ad`, `1e2d072`, `73e2cc4`; E3-E4 `b9512f6`, `9d65182`.
 - 어휘 결정(`hit`, `derived`, 사건 그룹, spawn count, 과제의 경로 값, hole 어휘)은 서명 때 사용자에게 묻는다.
 
 비용 (측정, rate limit 대기 제외): E0-E2 agent 약 89만 토큰, 약 3시간 15분; E3-E4 agent 약 92만 토큰, 약 3시간 10분. 설계와 spike agent 약 74만 토큰. 합계 약 255만 토큰, agent 작업 약 7시간 반. 사람 엔지니어 추정(12.5-19.5 인일)과는 비교할 수 없다.
+
+## 7. req-shield 수정 (사용자 결정 2026-10-27)
+
+1. 작업 브랜치 `feature/NOISSUE/upgrade-kotlin2-and-deps`에 로컬 커밋 `3a63adc` "Keep the caller's result when a lock store call fails" (push 안 함).
+2. 테스트 3개를 먼저 넣었다: 갱신 `tryLock` 실패 시 hit 유지, 재확인 뒤 `unLock` 실패 시 데이터 유지, supplier와 `unLock` 모두 실패 시 `SUPPLIER_ERROR`. 수정 전 코드에서 세 테스트 모두 실패했다 (메인 세션 측정).
+3. `fixed-core.patch`를 적용했다. req-shield `./gradlew build` (모든 모듈 테스트, ktlint) 통과.
+4. 도구로 고친 브랜치를 검증했다: `module: PROVEN` (hole loop의 줄 번호 181 → 187인 sidecar 사본으로).
+5. 검증 도구의 기본 req-shield 경로를 `2e792d2`에 고정한 worktree `~/IdeaProjects/req-shield-verifier-pin`으로 바꿨다 (`translator/build.gradle.kts`). 작업 브랜치가 움직여도 테스트·gate·측정이 같은 커밋 위에서 돈다. 확인: 테스트 683개, 변이 33·30·42회 불일치 0.
