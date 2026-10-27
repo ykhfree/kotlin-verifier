@@ -7,7 +7,11 @@ Usage:
   python3 -I mutants.py --suite SUITE --req-shield DIR --out DIR --roots-only [--only NAME[,NAME...]]
 
 Suites: `keylocallock` (default) has the three KeyLocalLock variants and the mutants of DESIGN-v0.md 6; `aspect` has
-the three Spring aspect modules and the mutants of DESIGN-B.md 7.2 (spike/aspect/mutants.py, in Kotlin).
+the three Spring aspect modules and the mutants of DESIGN-B.md 7.2 (spike/aspect/mutants.py, in Kotlin); `client` has
+the client module ReqShield (DESIGN-E E4) on two bases, the code as it is (`original`) and a copy with --fixed-patch
+applied (`fixed`), and the mutants, controls and assumption toggles of spike/protocol2/mutants.py, in Kotlin and in the
+sidecar. A client run reads the report's `Properties:` rows (the full failing set) and checks the module verdict and
+the failing property IDs.
 For each unit (variant or module) and mutant (the unmutated original included), the script:
   1. copies the unit's sources into OUT/roots/<unit>-<mutant>/<same relative path>: KeyLock.kt and KeyLocalLock.kt of
      a variant with the support module's main sources (the library trusted funs, B6), or the whole main source
@@ -215,17 +219,191 @@ M6_TRY = (
 )
 ASPECT_MODULE_EDITS = {"webflux": {"M6": [M6_TRY]}, "coroutine": {"M6": [M6_TRY]}}
 
+# ---- The client suite (DESIGN-E E4): req-shield core ReqShield.kt, the Kotlin side of spike/protocol2/mutants.py ----
+CLIENT_FILE = "core/src/main/kotlin/com/linecorp/cse/reqshield/ReqShield.kt"
+# executeCallable's release on failure (264-266) and runInBackground's release after a rejection (149-156).
+SUPPLIER_RELEASE = ("            if (token != null && lockType != null) {\n"
+                    "                reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+                    "            }\n")
+REJECT_RELEASE = ("            if (token != null) {\n"
+                  "                // A failed release must not cost the caller its data; the lock then expires on its own\n"
+                  "                try {\n"
+                  "                    reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+                  "                } catch (unlockError: Exception) {\n"
+                  "                    log.error(\"Failed to unlock key '{}' after the executor rejected its task\", key, unlockError)\n"
+                  "                }\n"
+                  "            }\n")
+# The same releases in the fixed code (fixed-core.patch: releaseQuietly).
+FIXED_SUPPLIER_RELEASE = ("            if (token != null && lockType != null) {\n"
+                          "                releaseQuietly(key, lockType, token, \"after the supplier failed\")\n"
+                          "            }\n")
+FIXED_REJECT_RELEASE = ("            if (token != null) {\n"
+                        "                releaseQuietly(key, lockType, token, \"after the executor rejected its task\")\n"
+                        "            }\n")
+FALLBACK = "        return buildReqShieldData(executeCallable(callable, key, null, null), timeToLiveMillis)\n"
+RECHECK = ("        if (token != null) {\n"
+           "            var cacheCreationRequired = false\n"
+           "            try {\n"
+           "                // Another request may have filled the cache between our initial miss and lock acquisition.\n"
+           "                val cachedData = executeGetCacheFunction(reqShieldConfig.getCacheFunction, key)\n"
+           "                if (cachedData != null) return cachedData\n"
+           "                cacheCreationRequired = true\n"
+           "            } finally {\n"
+           "                // On a miss, the existing creation path keeps the lock until its asynchronous write finishes.\n"
+           "                if (!cacheCreationRequired) {\n"
+           "                    {release}\n"
+           "                }\n"
+           "            }\n"
+           "        }\n")
+RECHECK_WITHOUT_FLAG = ("        if (token != null) {\n"
+                        "            val cachedData =\n"
+                        "                runCatching { reqShieldConfig.getCacheFunction.invoke(key) }.getOrElse {\n"
+                        "                    {release1}\n"
+                        "                    throw ClientException(ErrorCode.GET_CACHE_ERROR, cause = it)\n"
+                        "                }\n"
+                        "            if (cachedData != null) {\n"
+                        "                {release2}\n"
+                        "                return cachedData\n"
+                        "            }\n"
+                        "        }\n")
+UNLOCK = "reqShieldConfig.keyLock.unLock(key, lockType, token)"
+QUIET = "releaseQuietly(key, lockType, token, \"{}\")"
+SET_WITH_FINALLY = ("        try {\n"
+                    "            setFunction.invoke(key, value, value.timeToLiveMillis)\n"
+                    "        } catch (e: Exception) {\n"
+                    "            throw ClientException(ErrorCode.SET_CACHE_ERROR, cause = e)\n"
+                    "        } finally {\n"
+                    "            if (token != null) {\n"
+                    "                // No retry needed: false means lock already released or expired (not an error)\n"
+                    "                val unlocked = reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+                    "                if (!unlocked) {\n"
+                    "                    log.debug(\"Lock already released or expired for key '{}'\", key)\n"
+                    "                }\n"
+                    "            }\n"
+                    "        }\n")
+REFRESH_TASK = ("            runInBackground(key, lockType, token) {\n"
+                "                val reqShieldData =\n"
+                "                    buildReqShieldData(\n"
+                "                        executeCallable(callable, key, lockType, token),\n"
+                "                        timeToLiveMillis,\n"
+                "                    )\n"
+                "                executeSetCacheFunction(reqShieldConfig.setCacheFunction, key, reqShieldData, lockType, token)\n"
+                "            }\n")
+
+# Each mutant's Kotlin change is the one its spike/protocol2/mutants.py entry names (lines of ReqShield.kt at 2e792d2).
+CLIENT_EDITS = {
+    "original": [],
+    # M1: executeCallable without the release in getOrElse (264-266 deleted).
+    "M1": [(SUPPLIER_RELEASE, "")],
+    # M2: runInBackground's catch only logs (149-156 deleted).
+    "M2": [(REJECT_RELEASE, "")],
+    # M3: the recheck's finally releases on every path (100: the condition deleted), a double release.
+    "M3": [("                if (!cacheCreationRequired) {\n", "                if (true) {\n")],
+    # M4: the fallback's data is written to the cache too.
+    "M4": [(FALLBACK, "        val fallback = buildReqShieldData(executeCallable(callable, key, null, null), timeToLiveMillis)\n"
+                      "        reqShieldConfig.setCacheFunction.invoke(key, fallback, timeToLiveMillis)\n"
+                      "        return fallback\n")],
+    # M5: a racy field lastToken, set after the create tryLock; the write task releases `lastToken ?: token` (243).
+    "M5": [("    private val reqShieldConfig: ReqShieldConfiguration<T>,\n) {\n",
+            "    private val reqShieldConfig: ReqShieldConfiguration<T>,\n) {\n    @Volatile private var lastToken: String? = null\n\n"),
+           ("        val token = if (onlyUpdateCache) null else reqShieldConfig.keyLock.tryLock(key, lockType)\n",
+            "        val token = if (onlyUpdateCache) null else reqShieldConfig.keyLock.tryLock(key, lockType)\n        lastToken = token\n"),
+           ("                val unlocked = reqShieldConfig.keyLock.unLock(key, lockType, token)\n",
+            "                val unlocked = reqShieldConfig.keyLock.unLock(key, lockType, lastToken ?: token)\n")],
+    # M6: executeCallable releases LockType.CREATE instead of its lockType (265).
+    "M6": [(SUPPLIER_RELEASE, SUPPLIER_RELEASE.replace("unLock(key, lockType, token)", "unLock(key, LockType.CREATE, token)"))],
+    # M7: the refresh runs even when another request holds the update lock (68: `if (true)`).
+    "M7": [("        if (onlyCreateCache || token != null) {\n", "        if (true) {\n")],
+    # M8: the create lock in every mode (89 without the ONLY_UPDATE_CACHE check).
+    "M8": [("        val token = if (onlyUpdateCache) null else reqShieldConfig.keyLock.tryLock(key, lockType)\n",
+            "        val token = reqShieldConfig.keyLock.tryLock(key, lockType)\n")],
+    # M9: executeCallable releases and returns null instead of throwing SUPPLIER_ERROR (267).
+    "M9": [("            throw ClientException(ErrorCode.SUPPLIER_ERROR, cause = it)\n", "            null\n")],
+    # M10: the fallback supplier is retried once when it fails.
+    "M10": [(FALLBACK, "        return buildReqShieldData(\n"
+                       "            runCatching { executeCallable(callable, key, null, null) }.getOrElse { executeCallable(callable, key, null, null) },\n"
+                       "            timeToLiveMillis,\n"
+                       "        )\n")],
+    # M11: attempts++ moved from 182 into the catch: only a failed read counts as an attempt.
+    "M11": [("            attempts++\n            sleepBetweenPolls(key)\n", "            sleepBetweenPolls(key)\n"),
+            ("                if (++consecutiveFailures >= MAX_CONSECUTIVE_GET_CACHE_FAILURES) break\n",
+             "                attempts++\n                if (++consecutiveFailures >= MAX_CONSECUTIVE_GET_CACHE_FAILURES) break\n")],
+    # M12: createReqShieldData releases right after the supplier, before the background write.
+    "M12": [("        runInBackground(key, lockType, token) {\n            executeSetCacheFunction(",
+             "        if (token != null) reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+             "        runInBackground(key, lockType, token) {\n            executeSetCacheFunction(")],
+    # C1: executeSetCacheFunction without finally: release in each catch (an Exception as SET_CACHE_ERROR, any other
+    # Throwable rethrown) and after a normal return.
+    "C1": [(SET_WITH_FINALLY,
+            "        try {\n"
+            "            setFunction.invoke(key, value, value.timeToLiveMillis)\n"
+            "        } catch (e: Exception) {\n"
+            "            if (token != null) reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+            "            throw ClientException(ErrorCode.SET_CACHE_ERROR, cause = e)\n"
+            "        } catch (e: Throwable) {\n"
+            "            if (token != null) reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+            "            throw e\n"
+            "        }\n"
+            "        if (token != null) reqShieldConfig.keyLock.unLock(key, lockType, token)\n")],
+    # C2: the recheck without the flag: release when the read fails (then GET_CACHE_ERROR) and before the hit returns.
+    "C2": [(RECHECK.replace("{release}", UNLOCK), RECHECK_WITHOUT_FLAG.replace("{release1}", UNLOCK).replace("{release2}", UNLOCK))],
+    # C3: the refresh task releases in one finally around the supplier and the write.
+    "C3": [(REFRESH_TASK,
+            "            runInBackground(key, lockType, token) {\n"
+            "                try {\n"
+            "                    val reqShieldData =\n"
+            "                        buildReqShieldData(\n"
+            "                            executeCallable(callable, key, null, null),\n"
+            "                            timeToLiveMillis,\n"
+            "                        )\n"
+            "                    executeSetCacheFunction(reqShieldConfig.setCacheFunction, key, reqShieldData, lockType, null)\n"
+            "                } finally {\n"
+            "                    if (token != null) reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+            "                }\n"
+            "            }\n")],
+    # The assumption toggles (DESIGN-E 4) change the sidecar only (CLIENT_SIDECAR_EDITS).
+    "A1_off": [], "A2_on": [], "A3_off": [], "A4_off": [], "A5_off": [],
+}
+# Where fixed-core.patch changed the text a mutant edits: the fixed base's releaseQuietly.
+CLIENT_UNIT_EDITS = {
+    "fixed": {
+        "M1": [(FIXED_SUPPLIER_RELEASE, "")],
+        "M2": [(FIXED_REJECT_RELEASE, "")],
+        "M6": [(FIXED_SUPPLIER_RELEASE, FIXED_SUPPLIER_RELEASE.replace("releaseQuietly(key, lockType, token,", "releaseQuietly(key, LockType.CREATE, token,"))],
+        "C2": [(RECHECK.replace("{release}", QUIET.format("after the cache recheck")),
+                RECHECK_WITHOUT_FLAG.replace("{release1}", QUIET.format("after the cache recheck")).replace("{release2}", QUIET.format("after the cache recheck")))],
+    },
+}
+# The toggles: an `assume` block removed (the assumption is off), or A2 added.
+ASSUME_A1 = ("assume A1: errors-are-fatal\n"
+             "  source none \"user decision UE2 (2026-10-26): a java.lang.Error ends the process, so no call throws one\"\n")
+CLIENT_SIDECAR_EDITS = {
+    "A1_off": [(ASSUME_A1, "")],
+    "A2_on": [(ASSUME_A1, ASSUME_A1 + "assume A2: lock-calls-return\n  source none \"mutant toggle A2_on\"\n")],
+    "A3_off": [("assume A3: accepted-tasks-run\n"
+                "  source \"ReqShieldConfiguration.kt#decl49\" quote \"the library never shuts the pool down - a caller-supplied one stays the\"\n"
+                "  source none \"user decision UE4 (2026-10-26): a task the executor accepted runs\"\n", "")],
+    "A4_off": [("assume A4: throwing-release-ends-obligation\n"
+                "  source none \"ReqShield.kt:150, a code comment: A failed release must not cost the caller its data; the lock then expires on its own\"\n", "")],
+    "A5_off": [("assume A5: throwing-acquire-takes-nothing\n"
+                "  source \"ReqShieldConfiguration.kt#decl35\" quote \"must let the lock expire\"\n", "")],
+}
+# The loop the sidecar's `hole loop` names: its line moves with the Kotlin edits above it.
+CLIENT_LOOP = ("ReqShield.handleLockFailure@181", "        while (attempts < reqShieldConfig.maxAttemptGetCache) {")
+
 
 class Suite:
-    """A set of units (KeyLocalLock variants or aspect modules), their mutants, and how a copy of a unit is made."""
+    """A set of units (KeyLocalLock variants, aspect modules, or the client module's bases), their mutants, and how a
+    copy of a unit is made."""
 
-    def __init__(self, units, edits, unit_edits, sidecar, copies, edited):
+    def __init__(self, units, edits, unit_edits, sidecar, copies, edited, client=False):
         self.units = units            # unit -> directory relative to the req-shield checkout
         self.edits = edits            # mutant -> edits
         self.unit_edits = unit_edits  # unit -> mutant -> edits that replace the shared ones
         self.sidecar = sidecar        # unit -> sidecar file name
         self.copies = copies          # unit -> paths to copy, relative to the checkout (files or directories)
         self.edited = edited          # unit -> the file the edits apply to, relative to the checkout
+        self.client = client          # a client module (DESIGN-E): bases, sidecar edits, the Properties rows
 
     def edits_for(self, unit, mutant):
         return self.unit_edits.get(unit, {}).get(mutant, self.edits[mutant])
@@ -241,6 +419,10 @@ SUITES = {
         ASPECT_DIRS, ASPECT_EDITS, ASPECT_MODULE_EDITS, lambda m: "aspect.%s.kv" % m,
         lambda m: [ASPECT_DIRS[m]],
         lambda m: os.path.join(ASPECT_DIRS[m], ASPECT_FILES[m])),
+    # The fixed base is a copy with --fixed-patch applied (spike/protocol2/fixed-core.patch), never req-shield itself.
+    "client": Suite(
+        {"original": "core", "fixed": "core"}, CLIENT_EDITS, CLIENT_UNIT_EDITS, lambda u: "reqshield.core.kv",
+        lambda u: ["core/src/main/kotlin", SUPPORT_DIR], lambda u: CLIENT_FILE, client=True),
 }
 
 # `kv verify` exit codes (DESIGN-v0.md 8.3, Q7).
@@ -277,9 +459,15 @@ def kv_command(kv, command, root, classpath, kotlinc, out, sidecar):
     return [kv, command, "--root", root, "--classpath", classpath, "--kotlinc", kotlinc, "--out", out, sidecar]
 
 
-def make_root(suite, req_shield, out, unit, mutant):
+def make_root(suite, req_shield, out, unit, mutant, patch=None):
     root = os.path.join(out, "roots", "%s-%s" % (unit, mutant))
     copy_sources(suite, req_shield, root, unit)
+    if suite.client and unit == "fixed":
+        if not patch:
+            raise ScriptError("the fixed base needs --fixed-patch")
+        p = subprocess.run(["patch", "-p1", "-s", "-d", root, "-i", os.path.abspath(patch)], capture_output=True, text=True)
+        if p.returncode != 0:
+            raise ScriptError("fixed base: the patch does not apply:\n%s%s" % (p.stdout, p.stderr))
     path = os.path.join(root, suite.edited(unit))
     with open(path) as f:
         text = f.read()
@@ -335,10 +523,55 @@ def parse_report(text):
     return rows, others, checks
 
 
+def client_sidecar(args, suite, unit, mutant, root):
+    """The client sidecar of one run (DESIGN-E E4): the toggle's edits, and the loop line of this copy."""
+    with open(os.path.join(args.specs, suite.sidecar(unit))) as f:
+        text = f.read()
+    for old, new in CLIENT_SIDECAR_EDITS.get(mutant, []):
+        if text.count(old) != 1:
+            raise ScriptError("%s %s: sidecar edit matches %d times (must be 1): %r" % (unit, mutant, text.count(old), old))
+        text = text.replace(old, new)
+    with open(os.path.join(root, suite.edited(unit))) as f:
+        lines = f.read().split("\n")
+    at = [i + 1 for i, line in enumerate(lines) if line == CLIENT_LOOP[1]]
+    if len(at) != 1 or text.count(CLIENT_LOOP[0]) != 1:
+        raise ScriptError("%s %s: the hole loop %s is not one loop of the copy" % (unit, mutant, CLIENT_LOOP[0]))
+    text = text.replace(CLIENT_LOOP[0], CLIENT_LOOP[0].split("@")[0] + "@%d" % at[0])
+    path = os.path.join(args.out, "sidecars", "%s-%s.kv" % (unit, mutant))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+    return path
+
+
+# The client report (DESIGN-E 6.7): one row per property ID after `Properties`.
+PROPERTY = re.compile(r"^  (\S+)\s+(PROVEN|FAILED)  ")
+
+
+def parse_client_report(text):
+    """The failing property IDs of a client report, or None if it has no Properties rows (an ERROR run)."""
+    lines = text.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith("Properties")), None)
+    if start is None:
+        return None
+    failed = set()
+    for line in lines[start + 1:]:
+        m = PROPERTY.match(line)
+        if not m:
+            break
+        if m.group(2) == "FAILED":
+            failed.add(m.group(1))
+    return failed
+
+
 def run_one(args, suite, variant, mutant):
-    root = make_root(suite, args.req_shield, args.out, variant, mutant)
+    root = make_root(suite, args.req_shield, args.out, variant, mutant, args.fixed_patch)
     vpr = os.path.join(args.out, "%s-%s.vpr" % (variant, mutant))
-    command = kv_command(args.kv, "verify", root, args.classpath, args.kotlinc, vpr, os.path.join(args.specs, suite.sidecar(variant)))
+    sidecar = client_sidecar(args, suite, variant, mutant, root) if suite.client else os.path.join(args.specs, suite.sidecar(variant))
+    command = kv_command(args.kv, "verify", root, args.classpath, args.kotlinc, vpr, sidecar)
+    if suite.client:
+        # The client sidecar is a draft (DESIGN-E 2.5: not signed yet).
+        command.insert(-1, "--draft")
     start = time.time()
     try:
         p = subprocess.run(command, capture_output=True, text=True, timeout=args.timeout)
@@ -352,9 +585,14 @@ def run_one(args, suite, variant, mutant):
     if p.returncode == 2:
         raise ScriptError("%s %s: kv verify usage error:\n%s" % (variant, mutant, p.stderr))
     verdict = VERDICTS.get(p.returncode, "exit %d" % p.returncode)
-    first = p.stdout.splitlines()[0] if p.stdout else ""
+    # A draft report (the client sidecar) starts with a DRAFT line; the module line follows it.
+    first = next((line for line in p.stdout.splitlines() if "module: " in line), "")
     if p.stdout and "module: %s" % verdict not in first:
         raise ScriptError("%s %s: exit code says %s, the report says %r" % (variant, mutant, verdict, first))
+    if suite.client:
+        props = parse_client_report(p.stdout)
+        return {"variant": variant, "mutant": mutant, "verdict": verdict, "failed": {"properties": props or set()} if props else {},
+                "other": [] if props is not None else ["no Properties rows"], "checks": {}, "seconds": seconds}
     rows, others, checks = parse_report(p.stdout)
     failed = {name: ids for name, (v, ids) in rows.items() if v == "FAILED"}
     not_proven = [name for name, (v, _) in rows.items() if v not in ("PROVEN", "FAILED")]
@@ -364,16 +602,21 @@ def run_one(args, suite, variant, mutant):
 
 
 def read_expected(path, suite):
-    """Rows `unit  mutant  verdict  action  obligations`, columns separated by two or more spaces."""
+    """Rows `unit  mutant  verdict  action  obligations`, columns separated by two or more spaces. A client suite row
+    has no action column: `base  mutant  verdict  properties` (its failing properties)."""
     out = {}
     with open(path) as f:
         for n, line in enumerate(f, 1):
             line = line.rstrip("\n")
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
+            # A row may end with a comment after two spaces and '#'.
+            line = line.split("  #")[0]
             cols = re.split(r"\s{2,}", line.strip())
+            if suite.client and len(cols) == 4:
+                cols = cols[:3] + ["properties"] + cols[3:]
             if len(cols) != 5:
-                raise ScriptError("%s:%d: expected 5 columns, found %d: %r" % (path, n, len(cols), line))
+                raise ScriptError("%s:%d: expected %d columns, found %d: %r" % (path, n, 4 if suite.client else 5, len(cols), line))
             variant, mutant, verdict, action, obligations = cols
             if variant not in suite.units or mutant not in suite.edits:
                 raise ScriptError("%s:%d: unknown variant or mutant: %r" % (path, n, line))
@@ -418,6 +661,7 @@ def main():
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--timeout", type=int, default=900, help="seconds per kv verify run")
     ap.add_argument("--only", help="comma-separated mutant names")
+    ap.add_argument("--fixed-patch", help="the client suite's fixed base: this patch applied to a copy (-p1)")
     args = ap.parse_args()
     suite = SUITES[args.suite]
     try:
@@ -428,7 +672,7 @@ def main():
             for u in suite.units:
                 for m in suite.edits:
                     if only is None or m in only:
-                        print(u, m, make_root(suite, args.req_shield, args.out, u, m))
+                        print(u, m, make_root(suite, args.req_shield, args.out, u, m, args.fixed_patch))
             return 0
         absent = [n for n in ("kv", "classpath", "kotlinc", "specs", "expected") if getattr(args, n) is None]
         if absent:
@@ -446,7 +690,8 @@ def main():
         print("mutants.py: script error: %s" % e, file=sys.stderr)
         return 2
     bad = 0
-    print("%-10s %-9s %-8s %-6s %s" % ("variant" if args.suite == "keylocallock" else "module", "mutant", "verdict", "time", "failing obligations"))
+    unit = {"keylocallock": "variant", "client": "base"}.get(args.suite, "module")
+    print("%-10s %-9s %-8s %-6s %s" % (unit, "mutant", "verdict", "time", "failing obligations"))
     for r in results:
         problems = check(r, expected[(r["variant"], r["mutant"])])
         bad += bool(problems)

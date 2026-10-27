@@ -17,9 +17,10 @@ import kotlin.test.fail
 private val POSITION = Regex("""\s+@\d+:\d+( fake=\S+)?$""")
 
 /**
- * DESIGN-E 3.4: the precondition the lowering derives for a task. Part 1: the obligations its release calls name,
- * with the non-null test of their nullable arguments. Part 2: captured vals with a constant value. Part 3: the
- * conditions around the spawn over captured and instance values; a conjunct over another local is dropped.
+ * DESIGN-E 3.4: the precondition the lowering derives for a task. Part 1: the obligations the spawning unit created
+ * over values the spawn gives the task, held if the created result is not null (E4: not the obligations the task's
+ * release calls name). Part 2: captured vals with a constant value. Part 3: the conditions around the spawn over
+ * captured and instance values; a conjunct over another local is dropped.
  */
 class TaskPreconditionTest {
     @TempDir
@@ -116,10 +117,36 @@ class TaskPreconditionTest {
                 "requires token__19 != null",
                 "requires mode == Mode.BOTH",
                 "requires !(config_maxAttempt__20 > 3)",
-                // Part 1: unLock names Lease(k, kind, token); token is a nullable value.
+                // Part 1: tryLock created Lease(k, kind, token) if token is not null.
                 "holds (token__19 != null) ==> Lease(k, kind__18, token__19)",
             ),
             pre(m, t),
+        )
+    }
+
+    @Test
+    fun `the obligation handed over is the one created, whatever the task's releases name`() {
+        val m =
+            lower(
+                """
+                val data = Data(value = callable.call(), ttl = 0L)
+                val token = config.lock.tryLock(key, Kind.UPDATE)
+                if (token != null) {
+                    release(key) {
+                        config.lock.unLock(key, Kind.CREATE, token)
+                        config.lock.unLock(key, Kind.UPDATE, token)
+                    }
+                }
+                return data
+                """,
+                release,
+            )
+        val t = m.tasks.single()
+        // M6's shape (DESIGN-E E4): a release of another lock type does not add an obligation the caller never had.
+        assertEquals(
+            listOf("requires token__18 != null", "holds (token__18 != null) ==> Lease(k, Kind.UPDATE, token__18)"),
+            pre(m, t),
+            printModule(m),
         )
     }
 

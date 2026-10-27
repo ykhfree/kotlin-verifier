@@ -171,10 +171,11 @@ private class Scope(
     fun local(sym: FirBasedSymbol<*>): Bound? = vars[sym] ?: parent?.local(sym)
 }
 
-/** An inline helper frame: the helper, the call that inlined it, the name suffix of its locals. */
+/** An inline helper frame: the helper, the name suffix of its locals, and the type of the value it returns (or null). */
 private class Frame(
     val fn: FirNamedFunctionSymbol?,
     val suffix: String,
+    val outType: KType? = null,
 )
 
 /**
@@ -311,7 +312,8 @@ internal class ClientLowering(
                 val decl = ctx.index.functions[fn] ?: return@mapNotNull null
                 ClientUnit(this, op.name.text, op).entry(decl, op)
             }
-        val taskList = tasks.values.filterNotNull()
+        val units = entries.map { it.body } + tasks.values.filterNotNull().map { it.body }
+        val taskList = tasks.values.filterNotNull().map { t -> t.copy(holds = handedOver(t, units)) }
         val ledger = ClientAudit(this, entries, taskList).run()
         return Module(
             id = sidecar.modules.single().fqn.text,
@@ -332,6 +334,38 @@ internal class ClientLowering(
             entries = entries,
             tasks = taskList,
         )
+    }
+
+    /**
+     * DESIGN-E 3.4 part 1: the obligations the spawning unit hands task [t] over. Each obligation a call of that unit
+     * creates over values the spawn gives the task (the key, constants, captured values), held if its created result
+     * is not null. The spawn's exhale checks that the caller holds it (3.4 item 4); a release in the task that names
+     * another obligation fails LD_own there (DESIGN-E E4: the hand model's precondition does not follow the releases).
+     */
+    private fun handedOver(
+        t: Task,
+        units: List<List<kv.kvir.Stmt>>,
+    ): List<Holds> {
+        val (body, sp) = units.firstNotNullOfOrNull { b -> b.walk().filterIsInstance<Spawn>().firstOrNull { it.task == t.id }?.let { b to it } } ?: return emptyList()
+        val toParam = sp.args.zip(t.params).mapNotNull { (a, p) -> (a as? Var)?.local?.let { it to p } }.toMap()
+
+        fun mapped(a: Expr): Expr? =
+            when (a) {
+                is Var -> toParam[a.local]?.let { Var(it, a.pos) }
+                is EnumLit, is IntLit, is BoolLit -> a
+                else -> null
+            }
+        val holds = mutableListOf<Holds>()
+        for (call in body.walk().filterIsInstance<Call>()) {
+            val o = call.obligation?.takeIf { it.creates } ?: continue
+            val args = o.args.map { mapped(it) ?: return@map null }
+            if (args.any { it == null }) continue
+            val cond = o.ifNotNull?.let { r -> toParam[r]?.let { p -> Cmp(CmpOp.NE, Var(p, call.pos), NullLit(p.type, call.pos), call.pos) } ?: continue }
+            val h = Holds(o.obligation, args.filterNotNull(), cond, call.pos)
+            fun same(e: Expr) = (e as? Var)?.local?.name ?: (e as? EnumLit)?.entry ?: e.toString()
+            if (holds.none { it.obligation == h.obligation && it.args.map(::same) == h.args.map(::same) }) holds += h
+        }
+        return holds
     }
 
     /**
@@ -689,6 +723,12 @@ private class ClientUnit(
         val sym = ctx.calleeOf(lhs)
         val bound = sym?.let { scope.local(it) }
         val local = ((bound as? Bound.Value)?.e as? Var)?.local
+        if (racy(lhs)) {
+            // A write to a racy property: every read of it is arbitrary (kv.arbitrary), so the model keeps no value.
+            markAll(lhs)
+            valueInto(a.rValue, scope, Sink.Discard)
+            return
+        }
         if (local == null || sym !is FirPropertySymbol || !sym.isLocal) return run { unsupported("assignment to ${sourceText(lhs)}", "the client lowering assigns only locals of the unit (DESIGN-E 6.4)", a) }
         val pos = ctx.posOf(a)
         if (simple(unwrap(a.rValue))) {
@@ -901,6 +941,8 @@ private class ClientUnit(
         when (sink) {
             is Sink.Into -> sink.v.type
             is Sink.Declare -> sink.v.type
+            // A return of an inlined helper: the type of its out.
+            is Sink.Ret -> frames.lastOrNull()?.outType
             else -> null
         }
 
@@ -1146,7 +1188,7 @@ private class ClientUnit(
         inlined += f
         f.valueParameters.forEach(::markAll)
         mark(f.body)
-        frames.addLast(Frame(f.symbol, (frames.last().suffix + if (sites > 1) "_at${pos.line}" else "")))
+        frames.addLast(Frame(f.symbol, (frames.last().suffix + if (sites > 1) "_at${pos.line}" else ""), outType))
         val body = block(f.body?.statements.orEmpty(), inner)
         frames.removeLast()
         out += Inline(f.name.asString(), result, body, pos)
@@ -1434,8 +1476,9 @@ private class ClientUnit(
 
     /**
      * Lowers task [lambda] (DESIGN-E 3.4): its captured values become parameters, bound at the spawn to the caller's
-     * values; its precondition is the obligations its release calls name, its captured constants, and [conds] (the
-     * conditions around the spawn) over captured values. Returns the task and the spawn's arguments.
+     * values; its precondition is its captured constants and [conds] (the conditions around the spawn) over captured
+     * values, and the obligations the caller hands over ([handedOver], after the caller is lowered). Returns the task
+     * and the spawn's arguments.
      */
     fun task(
         lambda: FirAnonymousFunction,
@@ -1470,15 +1513,6 @@ private class ClientUnit(
         for (c in conds) {
             for (conjunct in conjuncts(c)) translate(conjunct, callerToParam, callerLets)?.let { if (it !in requires) requires += it }
         }
-        val holds = mutableListOf<Holds>()
-        for (call in out.walk().filterIsInstance<Call>()) {
-            val o = call.obligation?.takeIf { !it.creates } ?: continue
-            if (o.args.any { a -> a.walk().any { it is Var && it.local !in captured.values.map { c -> c.first } && it.local != key } }) continue
-            val nullableArgs = o.args.filter { canBeNull(it.type) }
-            val cond = nullableArgs.map<Expr, Expr> { a -> Cmp(CmpOp.NE, a, NullLit(a.type, a.pos), a.pos) }.reduceOrNull { a, b -> And(a, b, a.pos) }
-            val h = Holds(o.obligation, o.args, cond, call.pos)
-            if (holds.none { it.obligation == h.obligation && it.args.map(::unpos) == h.args.map(::unpos) && it.cond?.let(::unpos) == h.cond?.let(::unpos) }) holds += h
-        }
         val ok = problems.isEmpty()
         // The key first, then the captured values in Kotlin declaration order.
         val order = captured.values.sortedWith(compareBy({ it.first != key }, { it.first.pos.line }, { it.first.pos.col }))
@@ -1492,7 +1526,8 @@ private class ClientUnit(
                 params = order.map { it.first },
                 free = free.values.toList(),
                 requires = requires,
-                holds = holds,
+                // Part 1 (the obligations handed over) comes from the spawning unit, after it is lowered (handedOver).
+                holds = emptyList(),
                 body = if (ok) out else problems.toList(),
                 status = if (ok) Status.Supported else Status.Unsupported(problems.map { unsupportedDiagnostic(it, id) }),
                 translated = translated,
@@ -1647,7 +1682,13 @@ private class ClientUnit(
             is FirLiteralExpression -> {
                 mark(x)
                 when {
-                    x.kind == ConstantValueKind.Null -> if (expected != null && canBeNull(expected)) NullLit(expected, pos) else unsupported("null", "a null of a type without null in the model", x)
+                    x.kind == ConstantValueKind.Null ->
+                        when {
+                            expected != null && canBeNull(expected) -> NullLit(expected, pos)
+                            // A type parameter's value is an Int of the model (an arbitrary value of it), so is its null.
+                            expected == KType.IntT -> arbitrary("arb", KType.IntT, pos)
+                            else -> unsupported("null", "a null of a type without null in the model", x)
+                        }
                     x.kind == ConstantValueKind.Boolean -> BoolLit(x.value as Boolean, pos)
                     x.value is Number && x.kind != ConstantValueKind.Float && x.kind != ConstantValueKind.Double -> IntLit((x.value as Number).toLong(), pos)
                     else -> unsupported("literal ${x.value}", "the literal's type is not part of the model", x)
@@ -1823,7 +1864,29 @@ private class ClientUnit(
             free[key] = FreeValue(local, InstanceVal(path.joinToString(".") { it.name.asString() }, pos), named?.first?.names?.first()?.text, "this.${path.joinToString(".") { it.name.asString() }}")
             return Var(local, pos)
         }
+        if (racy(x)) {
+            markAll(x)
+            val type = ktype(sym!!.resolvedReturnType, sym, x) ?: return null
+            return arbitrary("racy", type, pos)
+        }
         return unsupported("read of ${sourceText(x)}", "a property outside the model: a local, a parameter, an enum entry, a const, or a path of vals from this (DESIGN-E 3.6)", x)
+    }
+
+    /** True for a `var` property of the module class read or written through this: another thread may write it. */
+    private fun racy(x: FirQualifiedAccessExpression): Boolean {
+        val sym = ctx.calleeOf(x) as? FirPropertySymbol ?: return false
+        return sym.isVar && !sym.isLocal && unwrap(x.dispatchReceiver) is FirThisReceiverExpression
+    }
+
+    /** An arbitrary value of [type] (ClientModels.ARBITRARY): a call without arguments into a new temp. */
+    private fun arbitrary(
+        prefix: String,
+        type: KType,
+        pos: Pos,
+    ): Expr {
+        val t = temp(prefix, type, pos)
+        out += Call(listOf(t), ClientModels.ARBITRARY, emptyList(), emptyList(), null, pos)
+        return Var(t, pos)
     }
 
     /** The path of val properties from this that [x] reads, or null. */

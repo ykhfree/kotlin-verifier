@@ -28,7 +28,7 @@ import kotlin.test.fail
  * the emitted text and, where the rule decides a verdict, with Silicon: the exception-flag dispatch, the guard of the
  * code after a raising statement (G1), the else of an early return (G2), pending returns and breaks, the finally that
  * cancels a pending return, the task precondition and the spawn, the trace events, the loop frame and hole vocabulary,
- * and the isolation runs.
+ * arbitrary values, and the isolation runs.
  */
 class ClientEmitterTest {
     @TempDir
@@ -226,7 +226,7 @@ class ClientEmitterTest {
     }
 
     @Test
-    fun `a spawn hands the task its precondition, and the exhale checks it (LD_transfer)`() {
+    fun `a spawn hands the task the obligation its spawning call created, and the exhale checks it (LD_transfer)`() {
         val body =
             """
             val data = Data(value = callable.call(), ttl = 0L)
@@ -253,6 +253,31 @@ class ClientEmitterTest {
         // A release before the spawn leaves the caller nothing to hand over: the exhale fails (M12's LD_transfer).
         val early = emit(body.replace("    background(key", "    config.lock.unLock(key, Kind.UPDATE, token)\n    background(key"), spawnHelper, extra = assumes)
         assertTrue(failures(early).any { it.startsWith("Exhale might fail") && it.contains("exhale TASK_") }, early.text)
+        // A release of another lock type in the task: the precondition stays, the release fails LD_own (M6).
+        val other = emit(body.replace("unLock(key, Kind.UPDATE, token)\n                    }", "unLock(key, Kind.CREATE, token)\n                    }"), spawnHelper, extra = assumes)
+        assertTrue(other.lines().any { it.endsWith("(token__18 != NULL ==> Lease(k, UPDATE, token__18)))") }, other.text)
+        assertTrue(failures(other).any { it.startsWith("The precondition of method Lock_unLock might not hold") }, other.text)
+    }
+
+    @Test
+    fun `a racy field and a null of a type parameter are arbitrary values, declared and never assigned`() {
+        val e =
+            emit(
+                """
+                val data = Data(value = supply(callable), ttl = 0L)
+                val token = config.lock.tryLock(key, Kind.CREATE)
+                last = token
+                if (token != null) config.lock.unLock(key, Kind.CREATE, last ?: token)
+                return data
+                """,
+                "@Volatile private var last: String? = null\n\nprivate fun supply(callable: Callable<T?>): T? = runCatching { callable.call() }.getOrElse { null }",
+            )
+        val ls = e.lines()
+        assertTrue(ls.any { it.matches(Regex("""^var racy_\d+_\d+: Int$""")) }, e.text)
+        assertTrue(ls.any { it.matches(Regex("""^var arb_\d+_\d+: Int$""")) }, e.text)
+        assertFalse(ls.any { it.startsWith("racy_") && ":=" in it }, e.text)
+        // The release may name another token than the one held: LD_own fails (M5's shape).
+        assertTrue(failures(e).any { it.startsWith("The precondition of method Lock_unLock might not hold") }, e.text)
     }
 
     @Test

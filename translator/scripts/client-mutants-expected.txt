@@ -1,0 +1,56 @@
+# Expected `kv verify` results of the client suite of scripts/mutants.py (DESIGN-E E4): req-shield core ReqShield on
+# two bases, the code as it is (original) and a copy with spike/protocol2/fixed-core.patch (fixed).
+# Taken from spike/protocol2/expected-verdicts.txt, the full failing sets of the hand mutants (DESIGN-E 5.2):
+# canonical -> original, fixed -> fixed; the hand name and its verdict there are in the comment after each row.
+# Columns, separated by two or more spaces: base, mutant, module verdict, the failing property IDs as the
+# report's Properties rows name them (separated by ';'); '-' means none.
+#
+# One deviation (DESIGN-E E4, measured 2026-10-27): M12 adds RET_supplier on both bases. In Kotlin a throwing unLock
+# inserted before runInBackground skips the rest, so the caller loses its value; the hand mutant
+# M12_release_before_write runs the rest after the throw (no `if (exc == NONE)` after the inserted call), and its
+# always-on LD_transfer check stops that path first. The hand mutant with the rest under `if (exc == NONE)` fails
+# exactly the sets below (spike/protocol2/isolate.py on a scratch copy).
+#
+# base    mutant    verdict  properties
+original  original  FAILED   RET_hit; RET_recheck; RET_supplier_error                                 # original: FAILED
+original  M1        FAILED   LD_noleak; RET_hit; RET_recheck                                          # M1_no_release_on_supplier_failure: DETECTED
+original  M2        FAILED   LD_noleak; RET_hit; RET_recheck; RET_supplier_error                      # M2_no_release_after_rejection: DETECTED
+original  M3        FAILED   LD_own; LD_supplier; LD_transfer; RET_hit; RET_recheck                   # M3_double_release: DETECTED
+original  M4        FAILED   LD_write; RET_hit; RET_recheck; RET_supplier; RET_supplier_error         # M4_write_without_lock_after_fallback: DETECTED
+original  M5        FAILED   LD_own; RET_hit; RET_recheck; RET_supplier_error                         # M5_unlock_with_stale_token: DETECTED
+original  M6        FAILED   LD_own; RET_hit; RET_recheck; RET_supplier_error                         # M6_unlock_wrong_lock_type: DETECTED
+original  M7        FAILED   LD_supplier; LD_write; RET_hit; RET_recheck; RET_supplier_error          # M7_refresh_without_lock: DETECTED
+original  M8        FAILED   MODE_create; RET_hit; RET_recheck; RET_supplier_error                    # M8_create_lock_in_update_only_mode: DETECTED
+original  M9        FAILED   LD_own; LD_transfer; LD_write; RET_hit; RET_recheck; RET_supplier_error  # M9_swallow_supplier_error: DETECTED
+original  M10       FAILED   RET_hit; RET_recheck; RET_supplier_error; SUP_once                       # M10_retry_fallback_supplier: DETECTED
+original  M11       FAILED   HOLE; RET_hit; RET_recheck; RET_supplier_error; TERM                     # M11_only_failed_reads_count: DETECTED
+original  M12       FAILED   LD_own; LD_transfer; RET_hit; RET_recheck; RET_supplier; RET_supplier_error   # M12_release_before_write: DETECTED (there without RET_supplier; see above)
+original  C1        FAILED   RET_hit; RET_recheck; RET_supplier_error                                 # C1_write_release_without_finally: ACCEPTED
+original  C2        FAILED   RET_hit; RET_recheck; RET_supplier_error                                 # C2_recheck_release_without_flag: ACCEPTED
+original  C3        FAILED   RET_hit; RET_recheck; RET_supplier_error                                 # C3_refresh_release_in_one_finally: ACCEPTED
+original  A1_off    FAILED   LD_noleak; RET_hit; RET_recheck; RET_supplier; RET_supplier_error        # A1_off_errors_not_fatal: DETECTED
+original  A2_on     PROVEN   -                                                                        # A2_on_lock_calls_return: PROVEN
+original  A3_off    FAILED   LD_noleak; RET_hit; RET_recheck; RET_supplier_error                      # A3_off_accepted_task_may_be_dropped: DETECTED
+original  A4_off    FAILED   LD_noleak; RET_hit; RET_recheck; RET_supplier_error                      # A4_off_throwing_unlock_keeps_obligation: DETECTED
+original  A5_off    FAILED   LD_noleak; RET_hit; RET_recheck; RET_supplier_error                      # A5_off_throwing_trylock_may_take_lock: DETECTED
+fixed     original  PROVEN   -                                                                        # original: PROVEN
+fixed     M1        FAILED   LD_noleak                                                                # M1_no_release_on_supplier_failure: DETECTED
+fixed     M2        FAILED   LD_noleak                                                                # M2_no_release_after_rejection: DETECTED
+fixed     M3        FAILED   LD_own; LD_supplier; LD_transfer                                         # M3_double_release: DETECTED
+fixed     M4        FAILED   LD_write; RET_supplier                                                   # M4_write_without_lock_after_fallback: DETECTED
+fixed     M5        FAILED   LD_own                                                                   # M5_unlock_with_stale_token: DETECTED
+fixed     M6        FAILED   LD_own                                                                   # M6_unlock_wrong_lock_type: DETECTED
+fixed     M7        FAILED   LD_supplier; LD_write                                                    # M7_refresh_without_lock: DETECTED
+fixed     M8        FAILED   MODE_create                                                              # M8_create_lock_in_update_only_mode: DETECTED
+fixed     M9        FAILED   LD_own; LD_transfer; LD_write; RET_supplier_error                        # M9_swallow_supplier_error: DETECTED
+fixed     M10       FAILED   SUP_once                                                                 # M10_retry_fallback_supplier: DETECTED
+fixed     M11       FAILED   HOLE; TERM                                                               # M11_only_failed_reads_count: DETECTED
+fixed     M12       FAILED   LD_own; LD_transfer; RET_supplier   # M12_release_before_write: DETECTED (there without RET_supplier; see above)
+fixed     C1        PROVEN   -                                                                        # C1_write_release_without_finally: ACCEPTED
+fixed     C2        PROVEN   -                                                                        # C2_recheck_release_without_flag: ACCEPTED
+fixed     C3        PROVEN   -                                                                        # C3_refresh_release_in_one_finally: ACCEPTED
+fixed     A1_off    FAILED   LD_noleak; RET_hit; RET_recheck; RET_supplier; RET_supplier_error        # A1_off_errors_not_fatal: DETECTED
+fixed     A2_on     PROVEN   -                                                                        # A2_on_lock_calls_return: PROVEN
+fixed     A3_off    FAILED   LD_noleak                                                                # A3_off_accepted_task_may_be_dropped: DETECTED
+fixed     A4_off    FAILED   LD_noleak                                                                # A4_off_throwing_unlock_keeps_obligation: DETECTED
+fixed     A5_off    FAILED   LD_noleak                                                                # A5_off_throwing_trylock_may_take_lock: DETECTED

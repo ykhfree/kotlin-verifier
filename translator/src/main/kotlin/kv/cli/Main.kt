@@ -41,6 +41,7 @@ import kv.verify.SiliconBudget
 import kv.verify.SiliconMissing
 import kv.verify.render
 import kv.verify.verify
+import kv.verify.verifyClient
 import java.io.File
 import java.io.PrintStream
 import kotlin.system.exitProcess
@@ -72,6 +73,8 @@ private const val USAGE = """usage:
       names a Viper release's tools directory. Budget: --assert-timeout (assert and check timeout, default 20000 ms) and
       --wall-seconds (default 300). Exit 0 PROVEN, 1 FAILED, 2 usage error, 3 INCOMPLETE, 4 ERROR (a compile
       error, a sidecar error, a W1-W16 violation, a missing Silicon or an abnormal Silicon run).
+      A client module (DESIGN-E 6.7) gets the client report: a row per entry, task and loop, and per property ID
+      PROVEN or FAILED; if the first run fails, one more run per property gives the full failing set (DESIGN-E 5.2).
   kv mutation-sites --root DIR [--classpath CP] [--kotlinc "ARGS"] SIDECAR.kv
       As lower, then prints as JSON every mutation site of MUTATION.md 2 and 3 (the module's operations, their
       action lambdas, the helpers they call, the reviewed trusted fun bodies): the operator, the source range, the
@@ -326,8 +329,18 @@ private fun verify(
     val vpr = options.out ?: File.createTempFile("kv-", ".vpr")
     val budget = SiliconBudget(options.assertTimeoutMs ?: 20_000, options.assertTimeoutMs ?: 20_000, options.wallSeconds ?: 300)
     if (outcome.sidecar?.client == true) {
-        err.println("kv: ${options.files.single().path} is a client module; its report comes with DESIGN-E E4")
-        return verdictExit(ModuleVerdict.ERROR)
+        // DESIGN-E 6.7: a client module's report, with the full failing set when the first run fails.
+        val report =
+            try {
+                verifyClient(module, outcome.sidecar, vpr, options.viperHome ?: Silicon.defaultHome(), budget)
+            } catch (e: SiliconMissing) {
+                err.println("kv: ${e.message}")
+                return verdictExit(ModuleVerdict.ERROR)
+            }
+        if (draft) out.println(DRAFT_LINE)
+        out.print(report.render())
+        out.println("Viper program: ${vpr.path}")
+        return verdictExit(report.verdict)
     }
     val report =
         try {

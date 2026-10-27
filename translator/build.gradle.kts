@@ -272,6 +272,32 @@ val mutantsAspect by tasks.registering(Exec::class) {
     )
 }
 
+// `./gradlew mutantsClient`: DESIGN-E E4. The same script with `--suite client`: the Kotlin mutants M1-M12, the controls
+// C1-C3 and the assumption toggles of spike/protocol2/mutants.py on req-shield core ReqShield, on the original code and
+// on a copy with spike/protocol2/fixed-core.patch, checked against scripts/client-mutants-expected.txt (the full failing
+// sets of spike/protocol2/expected-verdicts.txt). Needs python3, patch and Silicon. Options: -PmutantJobs=N, -PmutantOnly=M1,C2.
+val mutantsClient by tasks.registering(Exec::class) {
+    group = "kv"
+    description = "Runs the E4 Kotlin mutant script on the client module ReqShield (original and fixed)."
+    dependsOn(tasks.installDist)
+    executable = "python3"
+    val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
+    val out = layout.buildDirectory.dir("kv/client-mutants").get().asFile.path
+    val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
+    val patch = layout.projectDirectory.file("../spike/protocol2/fixed-core.patch").asFile.path
+    val jobs = providers.gradleProperty("mutantJobs").getOrElse("2")
+    val only = providers.gradleProperty("mutantOnly").orNull
+    argumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                "-I", "scripts/mutants.py", "--suite", "client", "--kv", kv, "--req-shield", reqShieldDir, "--classpath", reqShieldClasspath.asPath,
+                "--kotlinc", reqShieldKotlincArgs, "--specs", specs, "--expected", "scripts/client-mutants-expected.txt", "--out", out,
+                "--jobs", jobs, "--fixed-patch", patch,
+            ) + (only?.let { listOf("--only", it) } ?: emptyList())
+        },
+    )
+}
+
 // `./gradlew mechanicalMutants`: the mechanical mutation measurement of MUTATION.md. scripts/mechanical.py lists the
 // mutation sites of the six modules with `kv mutation-sites`, applies each to a temp copy, runs `kv emit`, and runs
 // `kv verify` (Silicon, with its budget) once per normalized model hash. It writes results.jsonl, summary.md and
