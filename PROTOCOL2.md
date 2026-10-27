@@ -57,3 +57,29 @@ req-shield의 `ReqShield` (요청 합치기, single-flight): `core/.../ReqShield
 6. 사용자 서명: 16개 (의도 절 12, 가정 4) + 신뢰 선언 6개 + 어휘 층 승인 1번 (DESIGN-E 2.5).
 
 진행 방식: 마일스톤 E0-E2(발견, 문법, 함수 본문 lowering)를 먼저 하고 메인 세션이 확인한 뒤 E3-E4(emitter와 gate, 보고서와 변이)를 한다. 구현 agent는 `spike/protocol2/`를 고치지 못한다. req-shield 코드는 도구가 예측 1을 보고한 뒤에 고친다 (사용자에게 묻고).
+
+## 6. 구현 결과 (2026-10-27)
+
+E0-E2 `dc232ad`, `1e2d072`, `73e2cc4`; E3-E4 `b9512f6`, `9d65182`.
+
+예측 대조 (5절):
+
+| 예측 | 결과 | 근거 |
+|---|---|---|
+| 1. 원본 core는 RET_hit, RET_recheck, RET_supplier_error에서만 FAILED | **맞음** | 메인 세션이 `kv verify --draft`를 직접 돌림: "module: FAILED", FAILED 성질은 정확히 그 셋. LD_* 7개(LD_noleak, LD_own, LD_transfer, LD_wait, LD_write, LD_supplier 등), MODE 2개, SUP_once, POLL_bound, TERM, HOLE, 나머지 RET은 PROVEN |
+| 2. 고친 core는 PROVEN | **맞음** | 메인 세션이 req-shield 사본에 `fixed-core.patch`를 적용해 돌림: "module: PROVEN" |
+| 3. 변이·대조·토글이 손 모델 기록과 같음 | 42행 중 40행 같음 | M12 두 행에서 도구가 RET_supplier를 더 보고한다. 손 변이 M12에 `if (exc == NONE)` guard가 빠져 있었다. guard를 넣은 손 변이는 도구와 같은 집합이다 (agent 측정). 판정(DETECTED)은 같다 |
+| 4. 생성 모델 = 손 모델 (정규화 뒤) | 이름표, 구조 편집, 정규화기 변경 뒤 같음 | 이름표와 구조 편집 16곳(`translator/scripts/protocol2_gate.py`에 이유와 함께). 편집한 손 모델도 같은 판정을 낸다 (agent 측정). 구조 차이 중 둘은 손 모델 안의 불일치에서 왔다 |
+| 5. 기존 결과 그대로 | 맞음 | 기존 출력 36파일 중 24개 바이트 동일, 12개는 checkout 경로만 다름; AI 구현 24개 보고서 같음 (agent 측정) |
+| 6. 서명 수 16 + 6 + 1 | 맞음 | 새 문법 `hit`, `derived`는 어휘 승인에 속한다 |
+
+메인 세션 결정 (구현 agent의 열린 질문):
+- 손 모델(`spike/protocol2/`)은 설계 때의 기준으로 그대로 둔다. 이름표와 구조 편집은 gate 스크립트에 이유와 함께 둔다.
+- M12의 기대값은 도구의 집합을 쓴다 (손 변이의 guard 누락).
+- DESIGN-E 3.4 part 1은 "넘기는 쪽이 만든 의무"로 고친다 (아래 DESIGN-E 기록).
+- `kv.arbitrary`(module class의 var 읽기 = 임의 값)는 과대 근사라서 건전하다.
+- 자동 isolation(FAILED일 때 약 14 s 더)은 기본으로 둔다.
+- `hole loop @LINE`은 코드가 바뀌면 줄이 움직인다 (고친 사본에서 181 → 187). 함수 안 순서로 묶는 방식은 뒤로 미룬다.
+- 어휘 결정(`hit`, `derived`, 사건 그룹, spawn count, 과제의 경로 값, hole 어휘)은 서명 때 사용자에게 묻는다.
+
+비용 (측정, rate limit 대기 제외): E0-E2 agent 약 89만 토큰, 약 3시간 15분; E3-E4 agent 약 92만 토큰, 약 3시간 10분. 설계와 spike agent 약 74만 토큰. 합계 약 255만 토큰, agent 작업 약 7시간 반. 사람 엔지니어 추정(12.5-19.5 인일)과는 비교할 수 없다.
