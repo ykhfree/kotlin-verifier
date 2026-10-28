@@ -424,3 +424,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 인용을 `LD_supplier`에 다는 이유: 어휘(trace 블록)에는 출처 줄을 달 수 없다. `GAVE_UP`을 쓰는 의도 절은 `LD_supplier` 하나다.
 - 예측: 판정은 바뀌지 않는다 (원본 core FAILED 세 절, 고친 사본 PROVEN, 변이 42회 불일치 0). 생성 Viper는 바이트 단위로 같고, core 위치표만 sidecar 줄 번호가 바뀐다. `kv spec stale`의 오류는 0개다.
 - 결과 (측정, `DESIGN-C.md` 10.12): 범위 메모 지문 `9dee5e78c92be221`, `LD_supplier` 지문 `ca26eadd855a7371`. `kv spec stale` 오류 0 (`uncovered-block` 0). 생성 Viper 8개 바이트 동일, core 위치표만 sidecar 줄 번호가 다름. 원본 core는 세 절에서 FAILED 그대로. 전체 테스트 743개 통과, `mutantsClient` 42회 불일치 0. 예측 모두 맞음.
+- 커밋 `a6f4e0f`, GitHub `origin/main`에 push했다 (사용자 결정 2026-10-28). 커밋할 트리를 따로 꺼내 관련 테스트 통과를 확인했다.
