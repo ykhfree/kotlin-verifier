@@ -387,4 +387,11 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 틈 1, 1b 구현 (메인 세션): `review vocabulary`와 어휘 지문 (`Ast.kt`, `Parser.kt`, `Check.kt`, `Fingerprint.kt`), 신뢰 선언 지문의 계약 텍스트 (`Resolver.kt`). 새 테스트 `VocabularyReviewTest` 13개와 `ClientCliTest` 2개.
 - 서명 (사용자 승인 2026-10-28): 어휘 메모 1개 (`92a6a3bbf1f4b44b`, 예측과 같음)와 신뢰 선언 지문 6개를 `reqshield.core.kv`에 적었다.
 - 결과 (측정, `DESIGN-E.md` 12.12): 예측 10개 중 9개 맞음, 1개(크기) 일부 맞음. 테스트 712개 (첫 실행에서 옛 지문을 적어 둔 3개가 실패해 기대값을 고침), 변이 33·30·42회 불일치 0, 여섯 L1 모듈과 두 core Viper 바이트 동일 (core 위치표는 sidecar 줄 번호만 다름), 고의 고장 R6 모두 잡힘.
-- 남은 일: JG4 (`free` 값 묶기의 같은 종류 틈). 멈춘 항목 중 C6, E5(UE6 필요), 미지원 구문, G-opus-1 pass 2는 그대로다.
+- 커밋 (사용자 결정 2026-10-28, 2개로 나눔): `93f6cf0` (틈 2, L-B), `61d449a` (틈 1·1b, 서명된 sidecar, 문서). 첫 커밋의 트리는 따로 꺼내 관련 테스트 144개 통과를 확인했다. GitHub `origin/main`에 push했다 (사용자 결정).
+- JG4 측정 (메인 세션, 2026-10-28): `free maxAttempt`를 같은 Int 속성 `decisionForUpdate`에 묶은 사본은 `kv resolve` exit 0이지만, `kv verify`는 module ERROR("proves nothing")다. 이 경우는 거짓 PROVEN이 아니라 드러나는 실패다. 잰 것은 한 경우뿐이다 (`free mode`는 같은 타입의 다른 속성이 없다).
+- 남은 일의 우선도 (메인 세션 의견, 사용자 결정 전):
+  1. C6 Confluence Cloud 가져오기: 처음 목표("명세는 Confluence에 있다")에 바로 닿는다. 사용자의 시험 페이지 1개와 API 토큰이 필요하다. 추정 1.5-3 인일.
+  2. E5 coroutine 변형: ReqShield의 세 번째 구현을 덮는다. UE6 결정이 먼저다. 추정 3-5 인일.
+  3. JG4: 측정한 경우는 ERROR로 드러났다. 묶음 오류를 `kv resolve` 단계에서 잡도록 고치는 것은 품질 개선이다.
+  4. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
+  5. G-opus-1의 느린 pass 2: 87-127 s, 예산 300 s 안이다.
