@@ -425,3 +425,24 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 예측: 판정은 바뀌지 않는다 (원본 core FAILED 세 절, 고친 사본 PROVEN, 변이 42회 불일치 0). 생성 Viper는 바이트 단위로 같고, core 위치표만 sidecar 줄 번호가 바뀐다. `kv spec stale`의 오류는 0개다.
 - 결과 (측정, `DESIGN-C.md` 10.12): 범위 메모 지문 `9dee5e78c92be221`, `LD_supplier` 지문 `ca26eadd855a7371`. `kv spec stale` 오류 0 (`uncovered-block` 0). 생성 Viper 8개 바이트 동일, core 위치표만 sidecar 줄 번호가 다름. 원본 core는 세 절에서 FAILED 그대로. 전체 테스트 743개 통과, `mutantsClient` 42회 불일치 0. 예측 모두 맞음.
 - 커밋 `a6f4e0f`, GitHub `origin/main`에 push했다 (사용자 결정 2026-10-28). 커밋할 트리를 따로 꺼내 관련 테스트 통과를 확인했다.
+
+## 남은 일 (2026-10-28 기준, 메인 세션 의견, 사용자 결정 전)
+
+이 목록이 392행의 우선도 목록을 대신한다. C6, C7, core sidecar의 범위는 끝났다.
+
+바로 할 수 있는 것:
+1. L1 sidecar를 `review intent`로 옮기기 (새로 찾음): KeyLocalLock과 aspect의 sidecar 8개는 `review intent` 아래에 있지 않다. 출처 줄은 `keylocallock.common.kv`에 6개, `aspect.common.kv`에 1개, 나머지 6개 파일에 0개다 (측정, grep). 그래서 서명 검사와 범위 검사(C7)가 이 모듈들에는 적용되지 않는다. 예: README `local-lock-map-size` 절(KeyLocalLock 내용)의 7개 블록이 모두 인용되지 않았다. 절마다 출처와 사용자 서명이 필요하다. 시작 전에 범위(KeyLocalLock만, 또는 aspect까지)를 사용자가 정한다.
+2. 한국어 비밀 키워드: 비밀 검사의 `assigned-credential`은 영어 키워드만 안다. `비밀번호: ...`, `토큰 = ...`은 가려지지 않는다 (`DESIGN-C.md` 10.9 5번). 규모 작음.
+3. JG4: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`가 통과한다. 잰 한 경우는 `kv verify`에서 ERROR로 드러났다. 오류를 앞 단계에서 내는 품질 개선이다.
+4. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
+5. G-opus-1의 느린 pass 2: 87-127 s, 예산 300 s 안이다. 원인은 재지 않았다.
+
+막혀 있는 것:
+1. C6 수락 2 (실제 Confluence 페이지로 확인): Confluence 연결(시험 페이지 id, API 토큰)이 필요하다.
+2. E5 coroutine 변형: UE6 결정이 먼저다. 추정 3-5 인일.
+
+미뤄 둔 것 (필요해지면 한다):
+1. 인용 안의 `"` escape: 실제 페이지가 필요를 보일 때 (`DESIGN-C.md` 10.8).
+2. Data Center 받기: 사용자 결정 UC6이 Cloud다.
+
+권고: 2번(한국어 비밀 키워드)을 먼저 하고, 그다음 1번(L1 sidecar 전환)을 한다.
