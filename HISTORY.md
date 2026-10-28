@@ -406,3 +406,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 구현 완료 (`DESIGN-C.md` 10.9): 받기 스크립트 `confluence_fetch.py` (feature-developer), `.xhtml` 블록 나누기, 한국어 제목 slug, 비밀 검사 (메인 세션). `kv spec snapshot`에 Confluence 페이지를 넣을 수 있다.
 - 결과 (측정): 예측 5개 모두 맞음. 전체 테스트 732개 통과. 파일럿 128블록과 ReqShield core 132블록 스냅숏이 바이트 단위로 같다. 가짜 서버 시험에서 토큰 출현 0번. 고의 고장 16개를 모두 잡았다.
 - 남은 일: C6 수락 2 (실제 Confluence 페이지로 확인). 연결이 생기면 미확인 항목(entity 집합, 중첩 목록, task 완료 값, `ac:adf-extension`, Cloud 매크로 속성)을 그 페이지로 확인한다.
+- 커밋 `dc84c1b` (C6 전체), GitHub `origin/main`에 push했다 (사용자 결정 2026-10-28). 커밋할 트리를 따로 꺼내 새 테스트 33개 통과를 확인했다.
