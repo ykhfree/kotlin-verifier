@@ -431,7 +431,8 @@ fun specToReview(
                 "default contract MI${sidecar.setOnce.joinToString("") { " and ${it.id.text}" }} for stray ${s.joinToString { it.id }}"
             },
             // DESIGN-B.md 5.5 rule 1: the set-once declarations and the fresh and throws claims of trusted functions.
-            sidecar.setOnce.takeIf { it.isNotEmpty() }?.let { d -> "set-once ${d.joinToString { "${it.id.text}: ${it.map.text}" }}" },
+            // Under `review intent` the intent part already lists them (DESIGN-C.md 10.14).
+            sidecar.setOnce.takeIf { it.isNotEmpty() && !sidecar.reviewIntent }?.let { d -> "set-once ${d.joinToString { "${it.id.text}: ${it.map.text}" }}" },
             sidecar.trusted.filter { it.fresh != null || it.throws }.takeIf { it.isNotEmpty() }?.let { ts ->
                 ts.joinToString("; ") { t -> "trusted ${t.shortName}: " + listOfNotNull(t.fresh?.let { "returns fresh ${it.text}" }, "throws".takeIf { t.throws }, "effects none".takeIf { t.effectsNone }).joinToString(", ") }
             },

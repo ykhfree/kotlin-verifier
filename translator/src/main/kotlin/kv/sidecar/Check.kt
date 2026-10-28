@@ -84,7 +84,8 @@ private class SidecarChecker(
         s.operations.forEach(::operation)
         s.probes.forEach(::probe)
         probeNames()
-        s.intentClauses().filter { (_, c) -> c is PropertyDecl || c is ProbeDecl || c is AssumeDecl }.forEach { (what, c) -> fingerprint(what, c) }
+        // The clauses of an operation are checked in operation(); here every top-level intent clause.
+        s.intentClauses().filter { (_, c) -> c !is ReviewedItem }.forEach { (what, c) -> fingerprint(what, c) }
         if (s.client) ClientChecks(s, ::err).run() else l1Only()
         if (s.reviewIntent) reviewIntent()
         vocabulary()

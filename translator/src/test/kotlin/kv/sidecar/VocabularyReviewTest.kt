@@ -191,14 +191,16 @@ class VocabularyReviewTest {
 
     @Test
     fun `under review intent the ghost record and the witness of an L1 sidecar are vocabulary`() {
-        val l1 = File(specDir, "keylocallock.common.kv").readText()
-        val s0 = parseSidecar("l1.kv", l1)
+        // The L1 sidecar is under review intent with a signed vocabulary since DESIGN-C.md 10.14.
+        val signedL1 = File(specDir, "keylocallock.common.kv").readText()
+        val s0 = parseSidecar("l1.kv", signedL1)
+        assertTrue(s0.reviewIntent && s0.vocabularyReviews.single().sha256 == reviewFingerprint(s0.vocabularyText))
         assertTrue(s0.vocabulary.any { it.name == "ghost record tok" } && s0.vocabulary.any { it.name == "witness LockInfo.token" }, s0.vocabulary.toString())
-        val signedL1 = "review intent\n$l1\nreview vocabulary\n  reviewed \"n\" sha256 \"${reviewFingerprint(s0.vocabularyText)}\"\n"
         assertEquals(emptyList(), vocabularyErrors(signedL1))
         val frozen = edit(signedL1, "gHeld:   Bool ends", "gHeld:   Bool frozen")
         assertEquals(listOf("stale-review"), vocabularyErrors(frozen).map { it.code })
-        val witness = edit(signedL1, "witness LockInfo.token", "witness LockInfo.expiresAt")
+        // Two spaces: the declaration, not the note that names it.
+        val witness = edit(signedL1, "witness LockInfo.token  ", "witness LockInfo.expiresAt  ")
         assertEquals(listOf("stale-review"), vocabularyErrors(witness).map { it.code })
     }
 }

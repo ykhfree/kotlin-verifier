@@ -36,7 +36,7 @@ fun properties(s: Sidecar): List<Property> =
             }
         }
         s.properties.forEach { add(Property(it.kind.name.lowercase(), null, it.id.text, it.expr.text, it.reviewed, it.pos)) }
-        s.setOnce.forEach { add(Property("set-once", null, it.id.text, it.map.text, null, it.pos)) }
+        s.setOnce.forEach { add(Property("set-once", null, it.id.text, it.map.text, it.reviewed, it.pos)) }
         s.trusted.forEach { t ->
             val claims =
                 listOfNotNull(

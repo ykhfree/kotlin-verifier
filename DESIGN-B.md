@@ -355,7 +355,8 @@ decl        := ... v0 ...
              | "module" FQN                      // B: a class FQN declares an instance module (S = this)
              | "source" STRING                   // B: a directory means every .kt file under it
              | "type" NAME "=" "opaque" [ KCLASS ]  // B: KCLASS binds the abstract type to a Kotlin class
-             | "set-once" ID ":" NAME            // B: every action keeps each mapped key's value (2.4)
+             | "set-once" ID ":" NAME { srcline } [ "reviewed" ... ]  // B: every action keeps each mapped key's value (2.4);
+                                                 // C 10.14: signed like an intent clause
 tclause     := ... v0 ... | "returns" "fresh" NAME | "throws"
 probestep   := NAME { "," NAME } ":=" NAME "(" ARGS ")" | "assert" VEXPR    // B: an operation with exc
 ```

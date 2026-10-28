@@ -49,7 +49,11 @@ class TrustedReviewTest {
 
     private fun resolveAspect(root: File) = Frontend.resolve(File(dir, "specs/aspect.core-spring.kv"), root, Aspects.classpath, ReqShield.kotlincArgs)
 
-    /** The fingerprint of createReqShield in the edited copy, from its [modifier] to its closing brace, computed here. */
+    /**
+     * The fingerprint of createReqShield in the edited copy, computed here. The sidecar is under `review intent`, so the
+     * unit is the contract without comments and its note, then the Kotlin text from [modifier] to the closing brace
+     * (DESIGN-E 12.4, T-A).
+     */
     private fun createReqShieldSha(
         root: File,
         modifier: String = "private",
@@ -57,7 +61,8 @@ class TrustedReviewTest {
         val text = File(root, aspectFile).readText()
         val start = text.indexOf("$modifier fun createReqShield(")
         val end = text.indexOf("\n    }\n", start) + "\n    }".length
-        return sha16(text.substring(start, end).replace(Regex("""\s+"""), " ").trim())
+        val contract = "trusted fun ReqShieldAspect.createReqShield(org.aspectj.lang.ProceedingJoinPoint) returns fresh Shield throws effects none"
+        return sha16("$contract ${text.substring(start, end)}".replace(Regex("""\s+"""), " ").trim())
     }
 
     private fun single(
@@ -75,7 +80,7 @@ class TrustedReviewTest {
         val root = aspectRoot("        return ReqShield(reqShieldConfiguration)\n", "        return ReqShield(reqShieldConfiguration.copy())\n")
         val e = single(resolveAspect(root), "stale-review")
         assertTrue(e.pos.file.endsWith("aspect.core-spring.kv") && e.pos.line == 13 && e.pos.col == 3, e.toString())
-        assertTrue("sha256 \"6e2380555c453306\"" in e.message && "sha256 \"${createReqShieldSha(root)}\"" in e.message && "ReqShieldAspect.kt:116" in e.message, e.message)
+        assertTrue("sha256 \"7a7291901e9799d2\"" in e.message && "sha256 \"${createReqShieldSha(root)}\"" in e.message && "ReqShieldAspect.kt:116" in e.message, e.message)
     }
 
     @Test
@@ -101,7 +106,7 @@ class TrustedReviewTest {
     fun `a changed modifier is stale-review, because the reviewed text starts at the first modifier`() {
         val root = aspectRoot("    private fun createReqShield(", "    internal fun createReqShield(")
         val e = single(resolveAspect(root), "stale-review")
-        assertTrue("sha256 \"6e2380555c453306\"" in e.message && "sha256 \"${createReqShieldSha(root, "internal")}\"" in e.message, e.message)
+        assertTrue("sha256 \"7a7291901e9799d2\"" in e.message && "sha256 \"${createReqShieldSha(root, "internal")}\"" in e.message, e.message)
     }
 
     @Test
@@ -114,9 +119,9 @@ class TrustedReviewTest {
     fun `a trusted fun note without a fingerprint is an error that names the fingerprint to record`() {
         copySpecs()
         val spec = File(dir, "specs/aspect.core-spring.kv")
-        spec.writeText(spec.readText().replace(" sha256 \"6e2380555c453306\"", ""))
+        spec.writeText(spec.readText().replace(" sha256 \"7a7291901e9799d2\"", ""))
         val e = single(resolveAspect(ReqShield.dir), "missing-fingerprint")
-        assertTrue("sha256 \"6e2380555c453306\"" in e.message, e.message)
+        assertTrue("sha256 \"7a7291901e9799d2\"" in e.message, e.message)
     }
 
     @Test
@@ -124,7 +129,7 @@ class TrustedReviewTest {
         val ws = Workspace(dir)
         ws.editSource("coroutine", "$SUPPORT/com/linecorp/cse/reqshield/support/config/LocalLockLimit.kt", "currentSize < limit) return false", "currentSize <= limit) return false")
         val e = single(ws.resolve("coroutine"), "stale-review")
-        assertTrue("trusted fun rejectsNewEntry" in e.message && "sha256 \"c5bffa07e14e90b1\"" in e.message && "LocalLockLimit.kt:86" in e.message, e.message)
+        assertTrue("trusted fun rejectsNewEntry" in e.message && "sha256 \"d00c8149a8a320cb\"" in e.message && "LocalLockLimit.kt:86" in e.message, e.message)
         // Without the support sources the review cannot be checked.
         File(ws.root, SUPPORT).deleteRecursively()
         val missing = ws.resolve("coroutine")

@@ -52,8 +52,10 @@ class VerifyTest {
 
     @Test
     fun `3 - a false sidecar property is FAILED with its ID, sidecar position and the Kotlin action position`() {
-        val reviewed = "  reviewed \"ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed\" sha256 \"1c0ae67dbfe9757d\"\n"
-        ws.editSpec("keylocallock.common.kv", reviewed, reviewed + "  ensures P_false: !has(S, k)\n")
+        val reviewed = "  reviewed \"ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed\" sha256 \"3c68af4c1e630a46\"\n"
+        // Under review intent the new clause is signed as a person would sign it (DESIGN-C.md 10.14).
+        ws.editSpec("keylocallock.common.kv", reviewed, reviewed + "  ensures P_false: !has(S, k)\n    source none \"t\"\n  reviewed \"t\"\n")
+        ws.rereview("keylocallock.common.kv")
         val r = ws.verify("coroutine")
         val text = r.render()
         assertEquals(ModuleVerdict.FAILED, r.verdict, text)
@@ -91,6 +93,7 @@ class VerifyTest {
     @Test
     fun `5 - a type error in a sidecar expression is ERROR with the sidecar position`() {
         ws.editSpec("keylocallock.common.kv", "==> res == NULL", "==> res == true")
+        ws.rereview("keylocallock.common.kv")
         val r = ws.verify("coroutine")
         val text = r.render()
         assertEquals(ModuleVerdict.ERROR, r.verdict, text)

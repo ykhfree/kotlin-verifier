@@ -122,6 +122,9 @@ class SiliconTest {
         }
     }
 
+    /** The sidecar line of P1a_entry, read from the spec so that a note added above it does not move the test. */
+    private val p1aEntryLine = File(System.getProperty("kv.specDir"), "reqshield/keylocallock.common.kv").readLines().indexOfFirst { it.startsWith("  ensures P1a_entry:") } + 1
+
     @Test
     fun `a failure maps to the innermost range, the sidecar property, not the method`() {
         val (m, s) = lowerReqShield("coroutine")
@@ -135,9 +138,9 @@ class SiliconTest {
         assertEquals(Verdict.FAILED, row.verdict)
         val f = row.findings.single()
         assertEquals("P1a_entry", (f.source as Source.Sidecar).id)
-        assertEquals(64, f.at!!.line)
+        assertEquals(p1aEntryLine, f.at!!.line)
         assertEquals(listOf(Verdict.PROVEN), r.rows.filter { it.label != "tryLock" }.map { it.verdict }.distinct())
-        assertTrue("sidecar P1a_entry keylocallock.common.kv:64:" in r.render(), r.render())
+        assertTrue("sidecar P1a_entry keylocallock.common.kv:$p1aEntryLine:" in r.render(), r.render())
     }
 
     @Test
@@ -153,7 +156,7 @@ class SiliconTest {
             )
         val text = buildReport(m, s, emitted, SiliconOutcome.Failed(errors), 1.0).render()
         val lines = text.lines()
-        assertTrue(lines.any { "sidecar P1a_entry keylocallock.common.kv:64:" in it && it.endsWith(" (incomplete quantifiers)") }, text)
+        assertTrue(lines.any { "sidecar P1a_entry keylocallock.common.kv:$p1aEntryLine:" in it && it.endsWith(" (incomplete quantifiers)") }, text)
         assertTrue(lines.any { "sidecar progress_owner keylocallock.common.kv:" in it && !it.endsWith(")") }, text)
     }
 

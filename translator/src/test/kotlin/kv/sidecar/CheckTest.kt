@@ -92,7 +92,8 @@ class CheckTest {
 
     @Test
     fun `a witness names a template-typed field of a sidecar class`() {
-        val errors = check("witness LockInfo.token", "witness LockInfo.expiresAt")
+        // Two spaces: the declaration, not the vocabulary note that names it.
+        val errors = check("witness LockInfo.token  ", "witness LockInfo.expiresAt  ")
         assertEquals("witness-type", errors.single().code)
         assertEquals(lineOf("witness LockInfo.expiresAt") to 18, errors.single().pos.line to errors.single().pos.col)
     }
