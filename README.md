@@ -76,6 +76,13 @@ kv hole skeleton | check                         # LLM이 채우는 불변식 ho
 kv spec snapshot | stale | check | cells         # 자연어 명세 → sidecar 흐름 (DESIGN-C)
 ```
 
+Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
+
+1. API 토큰을 Keychain에 한 번 저장한다. 토큰은 프롬프트에서 입력한다 (명령줄에 쓰지 않는다): `security add-generic-password -s SERVICE -a EMAIL -w`
+2. 페이지를 받는다: `python3 -I translator/scripts/confluence_fetch.py --site https://SITE.atlassian.net --email EMAIL --keychain-service SERVICE --out DIR PAGE_ID...`
+3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 단, `비밀번호: ...`처럼 한국어 이름 뒤의 값은 가려지지 않는다 (`DESIGN-C.md` 10.9).
+4. 받은 폴더(DIR)는 원문 그대로라서 커밋하지 않는다.
+
 ## 폴더 구조
 
 | 경로 | 내용 |
@@ -104,6 +111,6 @@ kv spec snapshot | stale | check | cells         # 자연어 명세 → sidecar 
 ## 열린 과제
 
 - 서명이 덮지 않는 층 1 묶기가 남아 있다: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`는 타입만 본다 (`DESIGN-E.md` 12.10 JG4).
-- Confluence Cloud에서 명세를 가져오는 단계(C6)는 아직 없다.
+- Confluence 가져오기(C6)는 공식 API 스펙에 맞춰 만들었지만, 실제 Confluence 페이지로는 아직 확인하지 않았다 (`DESIGN-C.md` 10.8의 미확인 항목).
 - coroutine 변형의 client 프로토콜(E5)은 결정 UE6이 필요하다.
 - 아직 지원하지 않는 구문이 남아 있다 (`Long.MAX_VALUE`, helper에 넘긴 cell).

@@ -395,3 +395,14 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   3. JG4: 측정한 경우는 ERROR로 드러났다. 묶음 오류를 `kv resolve` 단계에서 잡도록 고치는 것은 품질 개선이다.
   4. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
   5. G-opus-1의 느린 pass 2: 87-127 s, 예산 300 s 안이다.
+
+## 진행 중: C6 Confluence Cloud 가져오기 (2026-10-28 ~)
+
+- 사용자 결정: 지금 연결된 Confluence가 없다. 공식 API 스펙에 맞춰 구현한다. 실제 페이지로 하는 확인(C6 수락 2)은 연결이 생길 때 한다.
+- 스펙 조사 (general-purpose agent): Cloud REST v2 `GET /wiki/api/v2/pages/{id}?body-format=storage`, Basic `email:api_token`(처음 요청부터), 404는 "없음 또는 권한 없음", 429·503의 `Retry-After`(초). storage 값은 prefix 선언 없는 XML 조각이고 HTML entity가 든다. 핵심 인용 44개를 원문과 대조했다. 미확인 항목은 `DESIGN-C.md` 10.8에 적었다.
+- 설계 (메인 세션, `DESIGN-C.md` 10.8): Cloud만 한다. 받기는 `scripts/confluence_fetch.py`, 블록 나누기는 `kv spec snapshot`의 `.xhtml` 입력, 비밀 검사는 스냅숏의 모든 입력에 한다.
+- advisor 권고를 반영했다: 한국어 제목의 slug(지금 규칙은 빈 slug를 만든다), CDATA 안의 entity 보호, namespace를 보지 않고 읽기, base64(`email:token`) 누출 검사. 예측 5개를 결과 전에 등록했다.
+- 구현 나눔: 받기 스크립트와 그 시험은 feature-developer (별도 worktree), 블록 나누기와 비밀 검사는 메인 세션.
+- 구현 완료 (`DESIGN-C.md` 10.9): 받기 스크립트 `confluence_fetch.py` (feature-developer), `.xhtml` 블록 나누기, 한국어 제목 slug, 비밀 검사 (메인 세션). `kv spec snapshot`에 Confluence 페이지를 넣을 수 있다.
+- 결과 (측정): 예측 5개 모두 맞음. 전체 테스트 732개 통과. 파일럿 128블록과 ReqShield core 132블록 스냅숏이 바이트 단위로 같다. 가짜 서버 시험에서 토큰 출현 0번. 고의 고장 16개를 모두 잡았다.
+- 남은 일: C6 수락 2 (실제 Confluence 페이지로 확인). 연결이 생기면 미확인 항목(entity 집합, 중첩 목록, task 완료 값, `ac:adf-extension`, Cloud 매크로 속성)을 그 페이지로 확인한다.

@@ -6,9 +6,10 @@ import kv.json.parseJson
 import kv.sidecar.reviewFingerprint
 import java.io.File
 
-// `kv spec snapshot` (DESIGN-C.md 2.2 step 1, 5.2 rule 1): Markdown files and Kotlin KDoc split into blocks with
-// anchors and fingerprints. The rules are those of the pilot's pilot-c/tools/snapshot.py, and the two output files
-// are the ones it writes: sources.json (what kv spec stale reads) and SOURCES.md (what a person or an LLM reads).
+// `kv spec snapshot` (DESIGN-C.md 2.2 step 1, 5.2 rule 1): Markdown files, Kotlin KDoc and Confluence storage format
+// (C6, 10.8) split into blocks with anchors and fingerprints. The Markdown and KDoc rules are those of the pilot's
+// pilot-c/tools/snapshot.py, and the two output files are the ones it writes: sources.json (what kv spec stale reads)
+// and SOURCES.md (what a person or an LLM reads). A block that holds a secret shape is redacted (10.8, Secrets.kt).
 
 /**
  * One block of a snapshot. [anchor] is `SOURCE#section-slug/N` for Markdown (N counts the blocks of the section) and
@@ -25,12 +26,16 @@ data class Block(
     val sha256: String,
 )
 
-/** One `NAME=FILE` input: a `.kt` file contributes its KDoc, any other file is Markdown. */
+/**
+ * One `NAME=FILE` input: a `.kt` file contributes its KDoc, a `.xhtml` file is a Confluence storage value (NAME is
+ * `conf:<page id>`, DESIGN-C.md 6.2), any other file is Markdown.
+ */
 data class SnapshotInput(
     val name: String,
     val path: String,
 ) {
     val kotlin: Boolean get() = path.endsWith(".kt")
+    val storage: Boolean get() = path.endsWith(".xhtml")
 }
 
 /** A block and the heading SOURCES.md shows for it: the section heading (Markdown) or the declaration line (KDoc). */
@@ -39,13 +44,46 @@ private data class Cut(
     val heading: String,
 )
 
-/** The blocks of [inputs], in input order. */
-fun snapshotBlocks(inputs: List<SnapshotInput>): List<Block> = cuts(inputs).flatMap { (_, cuts) -> cuts.map { it.block } }
+/** The blocks of [inputs], in input order. [warn] gets each warning: an unknown macro, a redacted block. */
+fun snapshotBlocks(
+    inputs: List<SnapshotInput>,
+    warn: (String) -> Unit = {},
+): List<Block> = cuts(inputs, warn).flatMap { (_, cuts) -> cuts.map { it.block } }
 
-private fun cuts(inputs: List<SnapshotInput>): List<Pair<SnapshotInput, List<Cut>>> =
+private fun cuts(
+    inputs: List<SnapshotInput>,
+    warn: (String) -> Unit,
+): List<Pair<SnapshotInput, List<Cut>>> =
     inputs.map { input ->
-        val lines = splitLines(File(input.path).readText())
-        input to if (input.kotlin) kdocCuts(input, lines) else markdownCuts(input, lines)
+        val text = File(input.path).readText()
+        val cuts =
+            when {
+                input.kotlin -> kdocCuts(input, splitLines(text))
+                input.storage -> storageCuts(input, text, warn)
+                else -> markdownCuts(input, splitLines(text))
+            }
+        input to cuts.map { redact(it, warn) }
+    }
+
+/** [cut] with its text replaced if it holds a secret shape; [warn] names the block and the kind, never the value. */
+private fun redact(
+    cut: Cut,
+    warn: (String) -> Unit,
+): Cut {
+    val kind = secretKind(cut.block.text) ?: return cut
+    warn("${cut.block.anchor}: redacted, it holds a $kind (DESIGN-C.md 6.3)")
+    val text = redacted(kind)
+    return cut.copy(block = cut.block.copy(text = text, sha256 = reviewFingerprint(text)))
+}
+
+/** The blocks of a Confluence storage value (DESIGN-C.md 10.8, Storage.kt). */
+private fun storageCuts(
+    input: SnapshotInput,
+    text: String,
+    warn: (String) -> Unit,
+): List<Cut> =
+    storageCuts(input.path, text, ::slug, warn).map { b ->
+        Cut(Block("${input.name}#${b.section}/${b.number}", input.name, input.path, b.first, b.last, b.text, reviewFingerprint(b.text)), b.heading)
     }
 
 /** The lines of [text] without their line breaks (`\n`, `\r\n` or `\r`); a final line break ends the last line. */
@@ -54,7 +92,14 @@ private fun splitLines(text: String): List<String> {
     return if (lines.last().isEmpty()) lines.dropLast(1) else lines
 }
 
-private fun slug(title: String): String = title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+/**
+ * A section's name in an anchor: [title] in lower case, each run of characters other than letters and digits as `-`
+ * (DESIGN-C.md 10.8: a Korean title keeps its letters). An empty result is `h` and the 1-based heading [number].
+ */
+private fun slug(
+    title: String,
+    number: Int,
+): String = title.lowercase().replace(Regex("""[^\p{L}\p{N}]+"""), "-").trim('-').ifEmpty { "h$number" }
 
 private val HEADING = Regex("""^(#{1,6})\s+(.*)$""")
 private val FENCE = Regex("""^\s*```""")
@@ -74,13 +119,14 @@ private fun markdownCuts(
     val out = mutableListOf<Cut>()
     var section = "top"
     var heading = "(top)"
+    var headings = 0
     var counter = 0
     var i = 0
     while (i < lines.size) {
         val line = lines[i]
         val h = HEADING.find(line)
         if (h != null) {
-            section = slug(h.groupValues[2])
+            section = slug(h.groupValues[2], ++headings)
             heading = h.groupValues[2].trim()
             counter = 0
             i++
@@ -151,12 +197,13 @@ private fun kdocCuts(
     return out
 }
 
-/** Writes [dir]/sources.json and [dir]/SOURCES.md for [inputs]; returns the blocks. */
+/** Writes [dir]/sources.json and [dir]/SOURCES.md for [inputs]; returns the blocks. [warn] gets each warning. */
 fun writeSnapshot(
     dir: File,
     inputs: List<SnapshotInput>,
+    warn: (String) -> Unit = {},
 ): List<Block> {
-    val cuts = cuts(inputs)
+    val cuts = cuts(inputs, warn)
     val blocks = cuts.flatMap { (_, c) -> c.map { it.block } }
     dir.mkdirs()
     File(dir, SOURCES_JSON).writeText(sourcesJson(blocks))
@@ -184,6 +231,24 @@ private fun sourcesJson(blocks: List<Block>): String =
         }
     }
 
+/**
+ * ` ("TITLE", version N)` from the `<id>.page.json` that `confluence_fetch.py` writes beside `<id>.xhtml`
+ * (DESIGN-C.md 6.2 rule 4: the page version goes in the snapshot head), or "" if there is none.
+ */
+private fun pageLabel(input: SnapshotInput): String {
+    val page = File(input.path.removeSuffix(".xhtml") + ".page.json")
+    if (!page.isFile) return ""
+    val m =
+        try {
+            parseJson(page.readText()) as? Map<*, *>
+        } catch (e: JsonException) {
+            throw SnapshotException("${page.path}: ${e.message}")
+        } ?: throw SnapshotException("${page.path}: expected a JSON object")
+    val title = m["title"] as? String ?: throw SnapshotException("${page.path}: needs the string title")
+    val version = m["version"] as? Long ?: throw SnapshotException("${page.path}: needs the number version")
+    return " (${json(title)}, version $version)"
+}
+
 private fun sourcesMd(cuts: List<Pair<SnapshotInput, List<Cut>>>): String {
     val md =
         mutableListOf(
@@ -193,7 +258,7 @@ private fun sourcesMd(cuts: List<Pair<SnapshotInput, List<Cut>>>): String {
             "here (a quote may be part of a block; it must not join text from two blocks).\n",
         )
     for ((input, list) in cuts) {
-        md += "\n## ${input.name}\n"
+        md += "\n## ${input.name}${if (input.storage) pageLabel(input) else ""}\n"
         var lastHeading: String? = null
         for ((b, heading) in list) {
             if (input.kotlin) {
