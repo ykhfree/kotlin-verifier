@@ -416,3 +416,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 결과 (측정): 예측 3개 모두 맞음. 전체 테스트 742개 통과. 서명된 core sidecar 사본에 `scope "README.md"`를 더하면 `uncovered-block` 46개 (미리 센 절별 분포와 같음). 고의 고장 6개를 모두 잡았다.
 - 남은 결정 (사용자): 서명된 `reqshield.core.kv`에 범위를 넣을지, 넣는다면 어느 절과 어떤 제외 이유인지.
 - 범위 자료 (측정): sidecar가 이미 다루는 README 절(`waiting-for-another-request-lock-not-acquired`)만 범위로 잡으면 미인용 블록은 1개다 (README 160-161행, 연속 실패 3번 규칙). 이 규칙은 어휘 `GAVE_UP`에 들어 있지만 인용하는 절이 없다.
+- 커밋 `2f82d2d` (C7 전체), GitHub `origin/main`에 push했다 (사용자 결정 2026-10-28). 커밋할 트리를 따로 꺼내 테스트 182개 통과를 확인했다.
