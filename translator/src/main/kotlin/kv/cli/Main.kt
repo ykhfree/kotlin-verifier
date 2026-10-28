@@ -93,8 +93,10 @@ private const val USAGE = """usage:
   kv spec stale --snapshot DIR SIDECAR.kv
       Checks every `source "<anchor>" quote "<quote>"` line of the sidecar (includes too) against the snapshot in DIR
       (DESIGN-C.md 5.3): warning source-context-changed (the block changed, the quote is still in it), warning
-      source-moved (the quote is only in another block), error stale-source (the quote is in no block). Exit 0 if
-      no error, 2 usage error, 4 if a quote is stale or the sidecar has a syntax error.
+      source-moved (the quote is only in another block), error stale-source (the quote is in no block). With a
+      `scope` (C7, 10.10): error uncovered-block (a block in scope that no quote cites and no `exclude` names), error
+      empty-scope; with an `exclude`: error stale-exclude and three warnings. Exit 0 if no error, 2 usage error, 4 if
+      a check reports an error or the sidecar has a syntax error.
   kv spec check [--root DIR [--classpath CP] [--kotlinc "ARGS"]] --snapshot DIR [--cells FILE] [--draft]
                 [--out DIR] [--viper-home DIR] [--assert-timeout MS] [--wall-seconds N] [--assume-fact F] SIDECAR.kv
       Checks a sidecar before a person sees it (DESIGN-C.md 7.1, 4.1): the sidecar checks (with --draft, an
@@ -474,6 +476,13 @@ private fun spec(
                 "kv spec stale: ${report.quotes} quoted source line(s), ${report.withoutBlockFingerprint} without a block fingerprint, ${report.none} 'source none': " +
                     listOf("stale-source", "source-moved", "source-context-changed").joinToString { "${counts[it] ?: 0} $it" },
             )
+            // DESIGN-C.md 10.10 (C7): a second summary line only for a sidecar with a scope or an exclude.
+            if (sidecar.scopes.isNotEmpty() || sidecar.excludes.isNotEmpty()) {
+                out.println(
+                    "kv spec stale: ${sidecar.scopes.size} scope(s), ${sidecar.excludes.size} exclude(s): " +
+                        listOf("uncovered-block", "empty-scope", "stale-exclude", "exclude-context-changed", "exclude-out-of-scope", "exclude-cited").joinToString { "${counts[it] ?: 0} $it" },
+                )
+            }
             if (report.errors > 0) 4 else 0
         }
         "check" -> specCheckCommand(rest, out, err)

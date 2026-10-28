@@ -596,6 +596,49 @@ data class ReviewVocabularyDecl(
     val reviewPos: SPos?,
 ) : Decl
 
+/**
+ * `scope "S"` (DESIGN-C.md 10.10, C7): the snapshot blocks this sidecar answers for. S is a block anchor, a section
+ * (`SOURCE#slug`: its blocks are `S/N`) or a whole source name. [reviewed] is its note, [sha256] the fingerprint the note
+ * records, [reviewPos] the `reviewed` keyword, [unit] the text the note covers: `scope "S"`.
+ */
+data class ScopeDecl(
+    val target: String,
+    override val pos: SPos,
+    val reviewed: String?,
+    val sha256: String?,
+    val reviewPos: SPos?,
+    val unit: String,
+) : Decl {
+    /** True if the block [anchor] of source [source] is in this scope. */
+    fun covers(
+        anchor: String,
+        source: String,
+    ) = spans(target, anchor, source)
+}
+
+/** True if [target] names the block [anchor] of source [source]: the block itself, its section, or its source. */
+fun spans(
+    target: String,
+    anchor: String,
+    source: String,
+) = anchor == target || anchor.startsWith("$target/") || source == target
+
+/**
+ * `exclude "ANCHOR" because "REASON" [sha256 "BLOCK"]` (DESIGN-C.md 10.10, C7): a block in scope that no clause encodes,
+ * on purpose. [blockSha256] is the block's fingerprint at review, state outside the note's [unit]
+ * (`exclude "ANCHOR" because "REASON"`), like a source line's block fingerprint.
+ */
+data class ExcludeDecl(
+    val anchor: String,
+    val reason: String,
+    val blockSha256: String?,
+    override val pos: SPos,
+    val reviewed: String?,
+    val sha256: String?,
+    val reviewPos: SPos?,
+    val unit: String,
+) : Decl
+
 /** A parsed sidecar, includes resolved. [file] is the file the user named. */
 data class Sidecar(
     val file: String,
@@ -627,6 +670,8 @@ data class Sidecar(
     val reviewIntent get() = decls.any { it is ReviewIntentDecl }
 
     val vocabularyReviews get() = decls.filterIsInstance<ReviewVocabularyDecl>()
+    val scopes get() = decls.filterIsInstance<ScopeDecl>()
+    val excludes get() = decls.filterIsInstance<ExcludeDecl>()
 
     /** The vocabulary declarations (DESIGN-E 12.3.1, layer 3) in file order. */
     val vocabulary get() = decls.mapNotNull(::vocabularyItem)
@@ -658,7 +703,7 @@ private fun vocabularyItem(d: Decl): VocabularyItem? {
             is WitnessDecl -> "witness ${d.cls.text}.${d.field.text}" to d.unit
             is ModuleDecl, is SourceDecl, is IncludeDecl, is SetOnceDecl, is StateDecl, is UseDecl, is TrustedDecl,
             is OperationDecl, is PropertyDecl, is HoleDecl, is ProbeDecl, is AssumeDecl, is ReviewIntentDecl,
-            is ReviewVocabularyDecl,
+            is ReviewVocabularyDecl, is ScopeDecl, is ExcludeDecl,
             -> return null
         }
     return VocabularyItem(name, unit, d.pos)
