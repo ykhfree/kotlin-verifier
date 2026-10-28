@@ -926,3 +926,17 @@ decl := ...
 2. 측정 3의 뜻: README 전체를 범위로 잡으면, 46개 블록마다 인용 또는 제외 이유를 정해야 한다. 대부분은 이 sidecar의 모델 밖(설치, 릴리스, 다른 어댑터, 연락처)이다. 서명된 sidecar에 어느 범위를 넣을지는 사용자가 정한다.
 3. 범위를 정할 자료 (측정, 서명된 core sidecar 사본): sidecar가 이미 인용하는 절 `README.md#waiting-for-another-request-lock-not-acquired`를 범위로 잡으면 `uncovered-block`은 1개다: `/2` (README 160-161행, "poll 중 캐시 읽기 실패 3번 연속이면 기다림을 끝낸다"). sidecar는 이 규칙을 어휘(`derived GAVE_UP = ... || consec >= 3`)에 담지만, 이 블록을 인용하는 절은 없다. `README.md#local-lock-map-size`(7개 모두 미인용)는 KeyLocalLock의 내용이라 이 sidecar의 범위가 아니다.
 4. 메시지 개선: `exclude`에 절이나 원본 이름을 쓰면 `stale-exclude` 메시지가 "한 `exclude`는 블록 하나(SOURCE#slug/N)를 가리킨다"고 알린다.
+
+### 10.12 서명된 core sidecar에 범위 넣기 (2026-10-28, 사용자 승인)
+
+1. 더한 것 (`specs/reqshield/reqshield.core.kv`):
+   - `scope "README.md#waiting-for-another-request-lock-not-acquired"`와 메모 (지문 `9dee5e78c92be221`, 메인 세션이 손으로 다시 계산함).
+   - `guard LD_supplier`의 출처 줄: README 블록 `/2`(160-161행)의 "Three consecutive failures are treated as a cache outage and the request falls back to calling the supplier itself right away." (블록 지문 `4a446045254ea7eb`).
+   - `LD_supplier`의 메모 지문 `7ab7e47c408a5ab2` → `ca26eadd855a7371` (메모 문구는 그대로).
+2. 인용을 `LD_supplier`에 단 이유: 어휘(trace 블록)에는 출처 줄을 달 수 없다. `GAVE_UP`(`consec >= 3` 포함)을 쓰는 의도 절은 `LD_supplier` 하나다.
+3. 결과 (측정):
+   - `kv resolve` exit 0. `kv spec stale`: 오류 0, C7 줄 "1 scope(s), 0 exclude(s): 0 uncovered-block".
+   - 생성 Viper 8개는 바이트 단위로 같다. core 위치표 2개는 sidecar 줄 번호만 다르다 (줄을 더했기 때문).
+   - 원본 core는 정확히 RET_hit, RET_recheck, RET_supplier_error에서 FAILED다.
+   - 바뀐 기대값 (회귀 아님): 메모 수 23 → 24 (`ClientCliTest`, `ClientGrammarTest`), `LD_supplier` 지문 (`FingerprintTest`), README 전체 범위 측정 46 → 45 (`CoverageTest`; 이제 `/2`를 인용하므로).
+   - 전체 테스트 743개 통과 (새 테스트: 서명된 sidecar가 자기 범위를 모두 덮음). `mutantsClient` 42회 불일치 0.

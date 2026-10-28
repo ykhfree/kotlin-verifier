@@ -7,10 +7,15 @@
 // Quoted sources are blocks of `kv spec snapshot` (specdraft/reqshield-core/snapshot) over README.md, CLAUDE.md and
 // the KDoc of ReqShield.kt, ReqShieldConfiguration.kt, KeyLock.kt and ClientException.kt. A `//` comment of
 // ReqShield.kt is no snapshot block, so a source that is such a comment is a `source none` line that names its line.
+// On 2026-10-28 the user approved the scope below and the README 160-161 source line of LD_supplier (DESIGN-C 10.12).
 review intent
 
 module com.linecorp.cse.reqshield.ReqShield client
 source "core/src/main/kotlin"
+
+// ---- Scope (C7, DESIGN-C 10.10): kv spec stale reports a block of this README section that no clause cites ----
+scope "README.md#waiting-for-another-request-lock-not-acquired"
+  reviewed "ykhfree 2026-10-28: this sidecar answers for every block of the README section on a request that waits for another request's lock" sha256 "9dee5e78c92be221"
 
 // ---- Types ----
 type Key   = opaque                                       // the cache key the call gets
@@ -104,7 +109,8 @@ operation getAndSet = fun ReqShield.getAndSetReqShieldData {
       (PHASE == UPDATE && mode != ONLY_CREATE_CACHE ==> holds(Lease(k, UPDATE, _)))
     source "ReqShield.kt#handleLockFailure" quote "The supplier is never called from the polling loop - it is called on this" sha256 "ebcb6b54f2429b11"
     source "CLAUDE.md#project-overview/1" quote "ensuring only one request for the same cache key is processed at a time" sha256 "4c399b7f21c48357"
-    reviewed "ykhfree 2026-10-27: a supplier call on a collapsing path holds that path's lock, except the creation fallback after the wait gave up" sha256 "7ab7e47c408a5ab2"
+    source "README.md#waiting-for-another-request-lock-not-acquired/2" quote "Three consecutive failures are treated as a cache outage and the request falls back to calling the supplier itself right away." sha256 "4a446045254ea7eb"
+    reviewed "ykhfree 2026-10-27: a supplier call on a collapsing path holds that path's lock, except the creation fallback after the wait gave up" sha256 "ca26eadd855a7371"
   ensures MODE_create: mode == ONLY_UPDATE_CACHE ==> ntryC == 0
     source "CLAUDE.md#work-modes/3" quote "on a cache miss every request calls the supplier and writes the cache without a lock" sha256 "b74493bbb6f1dcf8"
     source none "ReqShield.kt:88, a code comment: ONLY_UPDATE_CACHE collapses requests on cache update only, so the creation runs without a lock"

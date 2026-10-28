@@ -113,11 +113,13 @@ class ClientGrammarTest {
         // DESIGN-E 12.3: one note signs the 7 vocabulary declarations (approved 2026-10-27, recorded 2026-10-28).
         assertEquals("92a6a3bbf1f4b44b", s.vocabularyReviews.single().sha256)
         assertEquals(7, s.vocabulary.size)
-        // The same text without its notes: a draft passes; the signed reading needs each of the 23 notes.
+        // DESIGN-C.md 10.12: one scope, signed 2026-10-28.
+        assertEquals(listOf("README.md#waiting-for-another-request-lock-not-acquired"), s.scopes.map { it.target })
+        // The same text without its notes: a draft passes; the signed reading needs each of the 24 notes.
         val unsigned = parseSidecar(file.path, file.readLines().filterNot { it.trimStart().startsWith("reviewed \"") }.joinToString("\n"))
         assertEquals(emptyList(), checkSidecar(unsigned, draft = true))
         val missing = checkSidecar(unsigned, draft = false).filter { it.code == "unreviewed" }
-        assertEquals(23, missing.size, missing.joinToString("\n"))
+        assertEquals(24, missing.size, missing.joinToString("\n"))
         assertEquals(6, missing.count { it.message.startsWith("trusted") })
     }
 

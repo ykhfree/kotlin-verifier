@@ -125,32 +125,47 @@ class CoverageTest {
         assertEquals(emptyList(), checkSidecar(parseSidecar("s.kv", reread)).filter { "exclude" in it.message })
     }
 
+    /** The signed core sidecar. Since 2026-10-28 it has a scope and cites README block waiting.../2 (DESIGN-C.md 10.12). */
+    private val core = File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv")
+
+    private val coreSnapshot = File(System.getProperty("kv.specDir"), "../specdraft/reqshield-core/snapshot")
+
     @Test
-    fun `scope README_md on a copy of the signed core sidecar - 46 uncovered blocks, as counted by hand`() {
-        val snap = File(System.getProperty("kv.specDir"), "../specdraft/reqshield-core/snapshot")
-        val copy = File(dir, "core.kv").apply { writeText(File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv").readText() + "\nscope \"README.md\"\n") }
+    fun `scope README_md on a copy of the signed core sidecar - 45 uncovered blocks, as counted by hand`() {
+        val snap = coreSnapshot
+        val copy = File(dir, "core.kv").apply { writeText(core.readText() + "\nscope \"README.md\"\n") }
         val out = ByteArrayOutputStream()
         val exit = runCli(listOf("spec", "stale", "--snapshot", snap.path, copy.path), PrintStream(out), PrintStream(ByteArrayOutputStream()))
         assertEquals(4, exit)
         val uncovered = out.toString().lines().filter { "error[uncovered-block]" in it }
-        assertEquals(46, uncovered.size)
+        assertEquals(45, uncovered.size)
         val bySection = uncovered.groupingBy { Regex("""block README\.md#([^ ]+)/\d+ """).find(it)!!.groupValues[1] }.eachCount()
-        // DESIGN-C.md 10.10 prediction 3, the per-section count registered before the tool existed.
+        // DESIGN-C.md 10.10 prediction 3, the per-section count registered before the tool existed (46). Since 10.12 the
+        // sidecar cites waiting-for-another-request-lock-not-acquired/2, so that section's 1 is gone.
         val expected =
             "top 1, req-shield 1, requirements 4, usage 2, release-versions 2, dev-snapshot-versions 3, integration-tests-with-redis-testcontainers 3, " +
                 "kotlin-with-reactor-3-8-spring-boot-4 2, webflux-null-handling 1, cache-key-layout 3, global-lock-guidance 4, local-lock-map-size 7, " +
-                "cache-eviction-semantics 2, waiting-for-another-request-lock-not-acquired 1, thread-pools-and-schedulers 4, webflux-adapter 2, " +
+                "cache-eviction-semantics 2, thread-pools-and-schedulers 4, webflux-adapter 2, " +
                 "kotlin-coroutine-adapter 1, contributing 1, license 1, how-to-reach-us 1"
         assertEquals(expected, bySection.entries.joinToString { "${it.key} ${it.value}" })
-        assertTrue(out.toString().lines().any { it == "kv spec stale: 1 scope(s), 0 exclude(s): 46 uncovered-block, 0 empty-scope, 0 stale-exclude, 0 exclude-context-changed, 0 exclude-out-of-scope, 0 exclude-cited" }, out.toString())
+        assertTrue(out.toString().lines().any { it == "kv spec stale: 2 scope(s), 0 exclude(s): 45 uncovered-block, 0 empty-scope, 0 stale-exclude, 0 exclude-context-changed, 0 exclude-out-of-scope, 0 exclude-cited" }, out.toString())
     }
 
     @Test
     fun `without a scope or an exclude, kv spec stale prints no C7 line`() {
-        val snap = File(System.getProperty("kv.specDir"), "../specdraft/reqshield-core/snapshot")
+        val noScope = File(dir, "core.kv").apply { writeText(core.readText().replace(Regex("""(?m)^scope "[^"]*"\n {2}reviewed "[^"]*" sha256 "[0-9a-f]{16}"\n"""), "")) }
+        check("scope \"" !in noScope.readText()) { "the scope was not removed" }
         val out = ByteArrayOutputStream()
-        val exit = runCli(listOf("spec", "stale", "--snapshot", snap.path, File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv").path), PrintStream(out), PrintStream(ByteArrayOutputStream()))
+        val exit = runCli(listOf("spec", "stale", "--snapshot", coreSnapshot.path, noScope.path), PrintStream(out), PrintStream(ByteArrayOutputStream()))
         assertEquals(0, exit, out.toString())
         assertTrue(out.toString().lines().none { "scope(s)" in it }, out.toString())
+    }
+
+    @Test
+    fun `the signed core sidecar covers its scope - no C7 finding (DESIGN-C 10 point 12)`() {
+        val out = ByteArrayOutputStream()
+        val exit = runCli(listOf("spec", "stale", "--snapshot", coreSnapshot.path, core.path), PrintStream(out), PrintStream(ByteArrayOutputStream()))
+        assertEquals(0, exit, out.toString())
+        assertTrue(out.toString().lines().any { it.startsWith("kv spec stale: 1 scope(s), 0 exclude(s): 0 uncovered-block") }, out.toString())
     }
 }

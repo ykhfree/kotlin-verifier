@@ -132,7 +132,7 @@ class FingerprintTest {
                 "reqshield.core.kv: assume A4" to "d4f37ee0db6d53c7",
                 "reqshield.core.kv: assume A5" to "f6820a13679b2999",
                 "reqshield.core.kv: guard LD_write of getAndSet" to "c4c14c27307e737d",
-                "reqshield.core.kv: guard LD_supplier of getAndSet" to "7ab7e47c408a5ab2",
+                "reqshield.core.kv: guard LD_supplier of getAndSet" to "ca26eadd855a7371",
                 "reqshield.core.kv: ensures MODE_create of getAndSet" to "b15ab050000139eb",
                 "reqshield.core.kv: ensures MODE_update of getAndSet" to "3abfc83b10817177",
                 "reqshield.core.kv: ensures SUP_once of getAndSet" to "c41cb4b3ad8252fe",
