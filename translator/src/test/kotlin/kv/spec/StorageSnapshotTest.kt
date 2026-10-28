@@ -127,6 +127,16 @@ class StorageSnapshotTest {
     }
 
     @Test
+    fun `a credential with a Korean name is redacted, and a sentence about the password rules is not`() {
+        // DESIGN-C.md 10.13 predictions 1 and 2, written before the patterns.
+        val secret = listOf("비밀번호: hunter22x", "토큰 = abcd1234ef", "API 키： key12345678", "관리자비밀번호=pa55word1", "비밀번호는 Hunter22x입니다")
+        val rule = listOf("비밀번호는 최소 8자 이상이어야 한다", "토큰은 요청마다 새로 발급한다", "비밀번호는 12345678자리", "토큰: 필수")
+        val md = file("ko.md", (secret + rule).joinToString("\n\n", postfix = "\n"))
+        val texts = snapshotBlocks(listOf(SnapshotInput("ko", md.path))).map { it.text }
+        assertEquals(secret.map { "[redacted by kv spec snapshot: assigned-credential]" } + rule, texts)
+    }
+
+    @Test
     fun `code that names a token without a digit in its value is no secret`() {
         val md = file("k.md", "token = nextToken()\n\npassword: required\n")
         assertEquals(listOf("token = nextToken()", "password: required"), snapshotBlocks(listOf(SnapshotInput("k", md.path))).map { it.text })

@@ -80,7 +80,7 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 
 1. API 토큰을 Keychain에 한 번 저장한다. 토큰은 프롬프트에서 입력한다 (명령줄에 쓰지 않는다): `security add-generic-password -s SERVICE -a EMAIL -w`
 2. 페이지를 받는다: `python3 -I translator/scripts/confluence_fetch.py --site https://SITE.atlassian.net --email EMAIL --keychain-service SERVICE --out DIR PAGE_ID...`
-3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 단, `비밀번호: ...`처럼 한국어 이름 뒤의 값은 가려지지 않는다 (`DESIGN-C.md` 10.9).
+3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 한국어 이름(`비밀번호: ...`, `토큰 = ...`)도 잡는다. 단, `비밀번호는 ...`처럼 조사 뒤의 값은 ASCII 글자와 숫자를 모두 담을 때만 가린다 (`DESIGN-C.md` 10.13).
 4. 받은 폴더(DIR)는 원문 그대로라서 커밋하지 않는다.
 
 명세에 새 문단이 생겼을 때 빠뜨리지 않으려면, sidecar에 범위를 적는다 (`DESIGN-C.md` 10.10):

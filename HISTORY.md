@@ -432,7 +432,7 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 
 바로 할 수 있는 것:
 1. L1 sidecar를 `review intent`로 옮기기 (새로 찾음): KeyLocalLock과 aspect의 sidecar 8개는 `review intent` 아래에 있지 않다. 출처 줄은 `keylocallock.common.kv`에 6개, `aspect.common.kv`에 1개, 나머지 6개 파일에 0개다 (측정, grep). 그래서 서명 검사와 범위 검사(C7)가 이 모듈들에는 적용되지 않는다. 예: README `local-lock-map-size` 절(KeyLocalLock 내용)의 7개 블록이 모두 인용되지 않았다. 절마다 출처와 사용자 서명이 필요하다. 시작 전에 범위(KeyLocalLock만, 또는 aspect까지)를 사용자가 정한다.
-2. 한국어 비밀 키워드: 비밀 검사의 `assigned-credential`은 영어 키워드만 안다. `비밀번호: ...`, `토큰 = ...`은 가려지지 않는다 (`DESIGN-C.md` 10.9 5번). 규모 작음.
+2. ~~한국어 비밀 키워드~~: 2026-10-28에 끝냈다 (`DESIGN-C.md` 10.13).
 3. JG4: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`가 통과한다. 잰 한 경우는 `kv verify`에서 ERROR로 드러났다. 오류를 앞 단계에서 내는 품질 개선이다.
 4. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
 5. G-opus-1의 느린 pass 2: 87-127 s, 예산 300 s 안이다. 원인은 재지 않았다.
@@ -446,3 +446,10 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 2. Data Center 받기: 사용자 결정 UC6이 Cloud다.
 
 권고: 2번(한국어 비밀 키워드)을 먼저 하고, 그다음 1번(L1 sidecar 전환)을 한다.
+
+## 한국어 비밀 키워드 (2026-10-28, 끝)
+
+- 사용자 결정: 비밀 검사에 한국어 키워드를 더한다. 설계와 예측 3개는 `DESIGN-C.md` 10.13 (결과 전 등록). 판단: 조사 형태(`비밀번호는 ...`)는 값이 ASCII 글자와 숫자를 모두 담을 때만 가린다. "비밀번호는 최소 8자 이상" 같은 규칙 문장을 가리지 않기 위해서다.
+- 구현 (메인 세션, orchestration-policy 규칙 1: 바꿀 곳을 이미 읽었고 바꿀 내용이 정해짐): `Secrets.kt`에 한국어 키워드 정규식 2개 (`:`·`=` 형태, 조사 형태).
+- 결과 (측정, `DESIGN-C.md` 10.13): 예측 3개 모두 맞음. 가려야 할 5개는 가려지고, 규칙 문장 4개는 그대로다. 파일럿 128블록과 core 132블록 스냅숏이 바이트 단위로 같다. 전체 테스트 744개 통과. 고의 고장 3개를 모두 잡았다.
+- 남은 한계: 조사 형태는 ASCII 글자와 숫자가 든 값이면 비밀이 아니어도 가린다 (예: `암호는 AES256GCM이다`). 경고에 anchor가 나오므로 사람이 확인할 수 있다.
