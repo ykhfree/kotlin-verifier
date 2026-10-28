@@ -861,3 +861,68 @@ LLM 비용 합계는 약 21만 토큰, 9분이다 (파일럿 1단계 하나가 2
 4. 함정: Gradle 테스트 작업은 `translator/scripts/`를 입력으로 보지 않는다. 스크립트만 고쳤으면 `--rerun`이 필요하다.
 5. 한계: `assigned-credential`의 키워드는 영어뿐이다 (`password`, `secret`, `api key`, `token` 등). 그래서 `비밀번호: hunter22x`처럼 한국어로 쓴 값은 가려지지 않는다. 모양으로 찾는 종류(비밀 키, AWS, Atlassian, GitHub, Slack, Anthropic, OpenAI, JWT)는 언어와 관계없다.
 6. 남은 일: 수락 2 (실제 페이지 하나로 받기와 스냅숏, 그리고 10.8의 미확인 항목 확인). 연결이 생기면 한다.
+
+### 10.10 C7 범위 검사 상세 설계 (2026-10-28)
+
+사용자 결정 (2026-10-28): C7을 한다. 목적: 명세에 새 문단이 생겼는데 어느 절도 그것을 인용하지 않으면 알린다 (JC5). Confluence 페이지는 계속 바뀌므로 C6과 함께 쓴다.
+
+**문법 (7.2 스케치를 구체화)**
+
+```text
+decl := ...
+      | "scope" STRING { "reviewed" STRING [ "sha256" STRING ] }
+      | "exclude" STRING "because" STRING [ "sha256" STRING ] { "reviewed" STRING [ "sha256" STRING ] }
+```
+
+1. `scope "S"`: 이 sidecar가 책임지는 스냅숏 범위다. 블록 B가 범위 안에 있는 조건은 셋 중 하나다: B의 anchor가 S와 같다; B의 anchor가 `S/`로 시작한다 (S는 절, 예: `README.md#waiting`); B의 원본 이름이 S와 같다 (S는 원본 전체, 예: `conf:123`).
+2. `exclude "ANCHOR" because "REASON"`: 범위 안의 블록 하나를 일부러 담지 않는다. REASON은 5.4의 이유(모델 밖, 언어로 쓸 수 없음, 정보용 예시 등)를 글로 쓴다. `sha256`은 서명할 때 그 블록의 지문이다 (출처 줄의 블록 지문과 같은 뜻). 7.2 스케치의 두 문자열 사이에 `because`를 넣어, 어느 문자열이 이유인지 읽을 수 있게 했다.
+3. `reviewed`: 서명 메모다. `scope`의 지문은 `scope "S"`를 덮는다. `exclude`의 지문은 `exclude "ANCHOR" because "REASON"`만 덮는다. 블록 지문 `sha256`은 서명 단위 밖이다: 출처 줄의 블록 지문처럼 상태이기 때문이다. 그래서 `exclude-context-changed` 뒤에 블록을 다시 읽고 블록 지문만 고치면, 다시 서명할 필요가 없다.
+
+**검사 (`checkSidecar`, 스냅숏 없이)**
+
+| 조건 | 오류 | `--draft`이면 |
+|---|---|---|
+| 같은 `scope` 문자열이 둘 | `duplicate-decl` | 오류 |
+| 같은 `exclude` anchor가 둘 | `duplicate-decl` | 오류 |
+| `review intent` 아래에서 메모 없는 `scope`, `exclude` | `unreviewed` | 오류 아님 |
+| 메모에 지문이 없음 / 지문이 다름 | `missing-fingerprint` / `stale-review` | 오류 아님 / 오류 |
+| `review intent` 아래에서 블록 지문 없는 `exclude` | `missing-block-fingerprint` | 오류 아님 |
+
+`scope`를 서명하는 이유: `scope` 줄을 지우면 책임 범위가 조용히 줄어든다. 서명이 없으면 그것을 알 수 없다. 반대로, 서명이 지키지 못하는 것이 있다. 서명된 `scope` 줄을 통째로 지우면 메모도 함께 사라진다. 이 위험은 의도 절을 지우는 경우와 같고, 이 설계는 다루지 않는다.
+
+**검사 (`kv spec stale`, 스냅숏과 함께; 5.3 표의 마지막 줄)**
+
+| 조건 | 판정 |
+|---|---|
+| 범위 안의 블록을 어느 출처 줄의 anchor도 가리키지 않고, `exclude`도 없다 | 오류 `uncovered-block` (종료 코드 4) |
+| `scope`에 맞는 블록이 하나도 없다 (오타, 원본 이름 바뀜) | 오류 `empty-scope` |
+| `exclude`의 anchor가 스냅숏에 없다 | 오류 `stale-exclude` |
+| `exclude`의 블록 지문이 다르다 | 경고 `exclude-context-changed` (사람이 그 블록을 다시 읽고 여전히 뺄지 정한다) |
+| `exclude`의 블록이 어느 `scope`에도 없다 | 경고 `exclude-out-of-scope` |
+| `exclude`의 블록을 출처 줄도 가리킨다 | 경고 `exclude-cited` |
+
+1. "가리킨다"는 `source "ANCHOR" quote "..."` 줄의 anchor가 블록 anchor와 같다는 뜻이다. 인용이 다른 블록으로 옮겨 간 경우(`source-moved`)에는 새 블록이 `uncovered-block`이 된다. anchor를 고치면 둘 다 사라진다.
+2. `source none` 줄은 어느 블록도 덮지 않는다. 범위 안의 블록은 인용하거나 `exclude`해야 한다. 어떤 절이 블록의 뜻을 담는다면, 그 절은 그 블록을 인용해야 한다.
+3. `uncovered-block`과 `empty-scope`는 `scope`가 있을 때만 검사한다. `exclude`의 검사(`stale-exclude`와 경고 3종)는 `exclude`가 있으면 늘 한다: 사용자가 직접 쓴 선언이기 때문이다. 둘 다 없으면 C7 검사는 돌지 않는다. 그래서 기존 sidecar의 판정은 그대로다.
+4. 서명된 `reqshield.core.kv`에는 이번에 `scope`를 넣지 않는다. 넣으려면 범위와 제외 목록에 사용자 서명이 필요하다. 대신 사본으로 측정한다 (예측 3).
+
+**예측 (구현 전 등록)**
+
+1. 기존 테스트는 모두 통과한다. `scope`가 없는 sidecar의 `kv spec stale` 출력은 요약 줄 밖에서 그대로다.
+2. 수락 기준 (8절 C7): 범위 안 절에 새 블록을 더한 스냅숏 사본에서 `uncovered-block`이 정확히 1개 나온다.
+3. 서명된 `reqshield.core.kv` 사본에 `scope "README.md"` 한 줄을 더하고 core 스냅숏으로 돌리면, `uncovered-block`이 정확히 46개 나온다. 근거: core 스냅숏의 README 블록은 48개이고, sidecar가 인용한 README anchor는 2개다 (도구 없이 Python으로 셈). 절별: top 1, req-shield 1, requirements 4, usage 2, release-versions 2, dev-snapshot-versions 3, integration-tests-with-redis-testcontainers 3, kotlin-with-reactor-3-8-spring-boot-4 2, webflux-null-handling 1, cache-key-layout 3, global-lock-guidance 4, local-lock-map-size 7, cache-eviction-semantics 2, waiting-for-another-request-lock-not-acquired 1, thread-pools-and-schedulers 4, webflux-adapter 2, kotlin-coroutine-adapter 1, contributing 1, license 1, how-to-reach-us 1. 이 값은 사용자가 범위를 정할 때의 자료다.
+
+### 10.11 C7 결과 (2026-10-28, 메인 세션 기록)
+
+구현 (메인 세션): `ScopeDecl`·`ExcludeDecl`(`Ast.kt`), 파서, `checkSidecar`의 중복·서명 검사(`Check.kt`), `kv spec stale`의 범위 규칙(`Stale.kt`의 `coverage`), CLI 요약 줄, 테스트 도우미 `rereviewed`. 테스트 `CoverageTest` 10개.
+
+| 예측 (10.10) | 결과 (측정) |
+|---|---|
+| 1. 기존 테스트 통과, `scope` 없는 sidecar의 출력은 그대로 | 맞음. 전체 742개 통과. `scope`와 `exclude`가 없으면 C7 요약 줄도 나오지 않는다 (요약 줄도 그대로) |
+| 2. 범위 안 절에 새 블록을 더한 사본에서 `uncovered-block` 정확히 1개 | 맞음 |
+| 3. 서명된 core sidecar 사본에 `scope "README.md"`를 더하면 `uncovered-block` 46개 | 맞음. 절별 분포 20개 절도 미리 센 값과 같다 |
+
+1. 고의 고장 6개(절 범위 규칙, 접두사 오인, 한 블록 두 번 보고, `exclude` 무시, 블록 지문이 서명 단위에 듦, `empty-scope` 끔)를 테스트가 모두 잡았다.
+2. 측정 3의 뜻: README 전체를 범위로 잡으면, 46개 블록마다 인용 또는 제외 이유를 정해야 한다. 대부분은 이 sidecar의 모델 밖(설치, 릴리스, 다른 어댑터, 연락처)이다. 서명된 sidecar에 어느 범위를 넣을지는 사용자가 정한다.
+3. 범위를 정할 자료 (측정, 서명된 core sidecar 사본): sidecar가 이미 인용하는 절 `README.md#waiting-for-another-request-lock-not-acquired`를 범위로 잡으면 `uncovered-block`은 1개다: `/2` (README 160-161행, "poll 중 캐시 읽기 실패 3번 연속이면 기다림을 끝낸다"). sidecar는 이 규칙을 어휘(`derived GAVE_UP = ... || consec >= 3`)에 담지만, 이 블록을 인용하는 절은 없다. `README.md#local-lock-map-size`(7개 모두 미인용)는 KeyLocalLock의 내용이라 이 sidecar의 범위가 아니다.
+4. 메시지 개선: `exclude`에 절이나 원본 이름을 쓰면 `stale-exclude` 메시지가 "한 `exclude`는 블록 하나(SOURCE#slug/N)를 가리킨다"고 알린다.

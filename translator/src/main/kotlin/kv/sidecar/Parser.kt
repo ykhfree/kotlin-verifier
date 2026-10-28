@@ -436,6 +436,22 @@ private class SidecarParser(
                 HoleDecl(n, body, pos, bodyPos, loop)
             }
             "probe" -> probe(start, indent)
+            // DESIGN-C.md 10.10 (C7): the blocks this sidecar answers for, and a block it leaves out on purpose.
+            "scope" -> {
+                val target = string()
+                val unit = text.substring(start, i)
+                val (note, sha, at) = topReview()
+                ScopeDecl(target, pos, note, sha, at, unit)
+            }
+            "exclude" -> {
+                val anchor = string()
+                keyword("because")
+                val reason = string()
+                val unit = text.substring(start, i)
+                val block = if (peekWord() == "sha256") name().let { string() } else null
+                val (note, sha, at) = topReview()
+                ExcludeDecl(anchor, reason, block, pos, note, sha, at, unit)
+            }
             "review" -> {
                 val what = name("'intent' or 'vocabulary'")
                 when (what.text) {
@@ -448,7 +464,7 @@ private class SidecarParser(
                     else -> fail(i - what.text.length, "expected 'intent' or 'vocabulary'")
                 }
             }
-            "reviewed" -> fail(start, "'reviewed' must follow a trusted fun, an invariant, a lemma, a probe or 'review vocabulary' without a note, or a clause of an operation")
+            "reviewed" -> fail(start, "'reviewed' must follow a trusted fun, an invariant, a lemma, a probe, a scope, an exclude or 'review vocabulary' without a note, or a clause of an operation")
             else -> fail(start, "unknown declaration '$kw'")
         }
     }

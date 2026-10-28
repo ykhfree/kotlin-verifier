@@ -407,3 +407,12 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 결과 (측정): 예측 5개 모두 맞음. 전체 테스트 732개 통과. 파일럿 128블록과 ReqShield core 132블록 스냅숏이 바이트 단위로 같다. 가짜 서버 시험에서 토큰 출현 0번. 고의 고장 16개를 모두 잡았다.
 - 남은 일: C6 수락 2 (실제 Confluence 페이지로 확인). 연결이 생기면 미확인 항목(entity 집합, 중첩 목록, task 완료 값, `ac:adf-extension`, Cloud 매크로 속성)을 그 페이지로 확인한다.
 - 커밋 `dc84c1b` (C6 전체), GitHub `origin/main`에 push했다 (사용자 결정 2026-10-28). 커밋할 트리를 따로 꺼내 새 테스트 33개 통과를 확인했다.
+
+## 진행 중: C7 범위 검사 (2026-10-28 ~)
+
+- 사용자 결정: C7(`scope`, `exclude`, `uncovered-block`)을 한다. 목적: 명세의 새 문단을 어느 절도 인용하지 않으면 알린다.
+- 설계 (메인 세션, `DESIGN-C.md` 10.10): `scope "S"`(절, 원본 전체, 또는 블록), `exclude "ANCHOR" because "REASON"`(블록 지문과 서명), `kv spec stale`의 `uncovered-block`·`empty-scope`·`stale-exclude` 오류와 경고 3종. 서명된 `reqshield.core.kv`에는 이번에 `scope`를 넣지 않는다 (사용자 서명이 필요). 예측 3개를 결과 전에 등록했다.
+- 구현 완료 (메인 세션, `DESIGN-C.md` 10.11): `scope`, `exclude`, `kv spec stale`의 `uncovered-block`·`empty-scope`·`stale-exclude`와 경고 3종.
+- 결과 (측정): 예측 3개 모두 맞음. 전체 테스트 742개 통과. 서명된 core sidecar 사본에 `scope "README.md"`를 더하면 `uncovered-block` 46개 (미리 센 절별 분포와 같음). 고의 고장 6개를 모두 잡았다.
+- 남은 결정 (사용자): 서명된 `reqshield.core.kv`에 범위를 넣을지, 넣는다면 어느 절과 어떤 제외 이유인지.
+- 범위 자료 (측정): sidecar가 이미 다루는 README 절(`waiting-for-another-request-lock-not-acquired`)만 범위로 잡으면 미인용 블록은 1개다 (README 160-161행, 연속 실패 3번 규칙). 이 규칙은 어휘 `GAVE_UP`에 들어 있지만 인용하는 절이 없다.

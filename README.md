@@ -83,6 +83,15 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 단, `비밀번호: ...`처럼 한국어 이름 뒤의 값은 가려지지 않는다 (`DESIGN-C.md` 10.9).
 4. 받은 폴더(DIR)는 원문 그대로라서 커밋하지 않는다.
 
+명세에 새 문단이 생겼을 때 빠뜨리지 않으려면, sidecar에 범위를 적는다 (`DESIGN-C.md` 10.10):
+
+```
+scope "conf:123456"                                              // 이 페이지 전체를 책임진다
+exclude "conf:123456#배경/1" because "정보용 설명" sha256 "..."   // 일부러 담지 않는 블록과 그 이유
+```
+
+`kv spec stale`은 범위 안의 블록을 어느 절도 인용하지 않고 제외 목록에도 없으면 `uncovered-block` 오류를 낸다. `review intent` 아래에서는 `scope`와 `exclude`에도 서명(`reviewed`)이 필요하다.
+
 ## 폴더 구조
 
 | 경로 | 내용 |

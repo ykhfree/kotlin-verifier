@@ -88,6 +88,7 @@ private class SidecarChecker(
         if (s.client) ClientChecks(s, ::err).run() else l1Only()
         if (s.reviewIntent) reviewIntent()
         vocabulary()
+        scopes()
         return errors
     }
 
@@ -140,6 +141,40 @@ private class SidecarChecker(
         }
         if (note?.reviewed == null) return
         fingerprint("the vocabulary", note.sha256, note.reviewPos ?: note.pos, s.vocabularyText, "the vocabulary ($names) now has")
+    }
+
+    /**
+     * DESIGN-C.md 10.10 (C7): each `scope` and each excluded anchor once. Under `review intent` both need a note, and an
+     * `exclude` its block fingerprint; a note's fingerprint is checked as an intent clause's is.
+     */
+    private fun scopes() {
+        fun twice(
+            items: List<Pair<String, SPos>>,
+            what: String,
+        ) {
+            val seen = mutableMapOf<String, SPos>()
+            items.forEach { (key, pos) -> seen.put(key, pos)?.let { err(pos, "duplicate-decl", "a second $what \"$key\"; the first is at $it") } }
+        }
+        twice(s.scopes.map { it.target to it.pos }, "scope")
+        twice(s.excludes.map { it.anchor to it.pos }, "exclude of")
+        fun note(
+            what: String,
+            pos: SPos,
+            reviewed: String?,
+            sha256: String?,
+            reviewPos: SPos?,
+            unit: String,
+        ) {
+            if (reviewed != null) return fingerprint(what, sha256, reviewPos ?: pos, unit, "its text now has")
+            if (s.reviewIntent && !draft) err(pos, "unreviewed", "$what needs a 'reviewed' note: under 'review intent' the scope of the spec counts only after a person reads it (DESIGN-C.md 10.10)")
+        }
+        s.scopes.forEach { note("scope \"${it.target}\"", it.pos, it.reviewed, it.sha256, it.reviewPos, it.unit) }
+        s.excludes.forEach { note("exclude \"${it.anchor}\"", it.pos, it.reviewed, it.sha256, it.reviewPos, it.unit) }
+        if (s.reviewIntent && !draft) {
+            s.excludes.filter { it.blockSha256 == null }.forEach {
+                err(it.pos, "missing-block-fingerprint", "exclude \"${it.anchor}\" has no block fingerprint: under 'review intent' it records sha256 \"<fp>\" of the block (sources.json of kv spec snapshot), so that kv spec stale sees a changed block (DESIGN-C.md 10.10)")
+            }
+        }
     }
 
     private fun singletons() {
