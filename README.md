@@ -119,7 +119,8 @@ exclude "conf:123456#배경/1" because "정보용 설명" sha256 "..."   // 일�
 
 ## 열린 과제
 
-- 서명이 덮지 않는 층 1 묶기가 남아 있다: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`는 타입만 본다 (`DESIGN-E.md` 12.10 JG4).
+- `free` 묶기는 서명이 덮지 않는다. `kv resolve`는 한 값을 두 번 묶는 것(`free-duplicate`)과, client에서 읽히지 않는 경로에 묶은 것(`free-unused`)을 잡는다 (`DESIGN-C.md` 10.16). 두 묶기를 맞바꾼 경우와 L1의 `param`·`local` 오묶기는 아직 FAILED로만 드러난다.
+- 묶인 Kotlin 지역 변수의 계산식을 바꿔도(예: `val now = nowToEpochTime() + lockTimeoutMillis`) PROVEN이 그대로다. 도구가 `free` 값의 계산을 번역하지 않기 때문이다 (`DESIGN-v0.md` 2.12 규칙 1, `DESIGN-C.md` 10.16).
 - Confluence 가져오기(C6)는 공식 API 스펙에 맞춰 만들었지만, 실제 Confluence 페이지로는 아직 확인하지 않았다 (`DESIGN-C.md` 10.8의 미확인 항목).
 - coroutine 변형의 client 프로토콜(E5)은 결정 UE6이 필요하다.
 - 아직 지원하지 않는 구문이 남아 있다 (`Long.MAX_VALUE`, helper에 넘긴 cell).

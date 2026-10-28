@@ -1081,3 +1081,37 @@ decl := ...
 1. 실제 실행 (`aicode/round2` 사본, T-haiku-1, `class LockInfo LockInfo`): HEAD 스크립트는 "binding failure: ... error[stale-review]: the vocabulary changed"다. 고친 스크립트는 "FAILED sweep (property), tryLock (property)"이고, 두 행 모두 `ends_only_if P3a`다. 이것은 `ReserveVerifyTest` AT3의 단언과 같다. `restamped`는 어휘 메모 하나(`291a2e826122f824` → `fc02a90ab69d4fb6`)다.
 2. 새 테스트: `RestampTest` 3개, `AicodeScriptTest`의 맞춤 테스트에 단언을 더했다. 가짜 `kv`는 이제 `kv spec ...`을 실제 CLI로 넘기고, 테스트는 사본에 실제 `checkSidecar`를 돌린다.
 3. 고의 고장 3개를 모두 잡았다: `aicode.py`의 restamp 호출 제거, 모든 파일을 읽기 전에 쓰기, 신뢰 메모도 다시 찍기.
+
+### 10.16 JG4: `free` 묶기 오류를 `kv resolve`에서 내기 (2026-10-29, 사용자 승인, 결과 전 등록)
+
+배경 (deep-reasoner 측정, 사본 38회, 한 번에 한 줄을 같은 타입의 다른 값으로 묶음):
+1. 거짓 PROVEN은 0이었다. FAILED 10, ERROR 20, resolve 오류 8이었다.
+2. 문제: FAILED는 코드 결함처럼 보이고, ERROR는 잘못된 `free` 줄을 가리키지 않는다. 예: `free maxAttempt`를 `decisionForUpdate`에 묶으면, client lowering이 `maxAttempt`를 선언하지 않는다 (`ClientLowering.kt`는 같은 경로를 번역한 읽기에만 sidecar 이름을 준다). 그러면 Silicon이 "undeclared identifier"를 내고 모듈은 ERROR다.
+3. critic 검토 뒤 advisor 권고: JG4는 B1 + B2c(좁힘)로 한다. 묶기의 서명(A안)은 이번에 하지 않는다 (사용자 결정 2026-10-29).
+
+설계:
+1. **B1** `free-duplicate`: 한 연산의 `free` 항목 둘이 같은 대상에 묶이면 `kv resolve` 오류다. 대상은 local, 매개변수, 속성(client는 속성 경로 전체), call이다. 오류는 두 번째 항목의 줄에 난다.
+2. **B2c** `free-unused` (client 모듈): sidecar 텍스트(절, guard, derived 값, hole)가 쓰는 `free` 이름을 어느 지원 단위(entry와 그 task들을 합침)도 선언하지 않으면, `kv resolve`가 그 `free` 줄에 오류를 낸다. 메시지는 같은 타입의 이름 없는 읽기의 코드 위치를 말한다. 미지원 구문 안에서만 읽히는 경우는 오류를 내지 않는다 (판정은 INCOMPLETE 그대로).
+
+예측 (구현 전 등록):
+1. 서명된 sidecar 9개: 새 오류 0. 생성 Viper와 판정은 그대로다. 변이 33/30/42회 불일치 0. 서명 지문 변경 0.
+2. B1이 잡는 것: L1(tryLock `now = this.lockTimeoutMillis`), L2(`timeout = local now`), C4, C5(`maxAttempt`·`mode`가 서로의 경로에 묶임).
+3. B2c가 잡는 것: c1(`maxAttempt = ...decisionForUpdate`), C2, C3, C7. 모두 지금은 Silicon ERROR다.
+4. 잡지 못하는 것 (그대로 FAILED 또는 ERROR): 두 묶기를 맞바꾼 경우(L8, C6), L1 모듈의 `param`·`local` 오묶기(L4, L6, L7).
+5. 기존 테스트: 바뀌는 것이 없다 (deep-reasoner의 grep 근거, 실행 전).
+
+결과 (2026-10-29, 측정):
+1. 구현 (orchestration-policy): B1은 메인 세션이 했다 (`frontend/Resolver.kt`, `duplicateFree`). B2c는 feature-developer가 격리된 worktree에서 했다 (`lower/ClientLowering.kt`, `freeUnused`). 메인 세션이 diff를 검토하고 가져왔다.
+2. 오류 형식:
+   - `free-duplicate`: `free tryLock.timeout binds the value that free tryLock.now binds (lockTimeoutMillis); each free item of an operation names its own value`
+   - `free-unused` (c1 실제 출력): `free getAndSet.maxAttempt: this.reqShieldConfig.decisionForUpdate is read by no translated code, but maxAttempt is used by POLL_bound, derived GAVE_UP, hole loop ReqShield.handleLockFailure; unnamed translated reads of a Kotlin Int: ReqShield.kt:181:27 (this.reqShieldConfig.maxAttemptGetCache) (DESIGN-C 10.16)`
+3. 예측 1 맞음: 여섯 L1 모듈의 생성 Viper와 위치표가 바이트 단위로 같다 (be1b4df의 worktree와 비교). client Viper는 `ClientGateTest`가 같음을 확인한다. 변이 33/30/42회 불일치 0. 서명 지문 변경 0.
+4. 예측 2 맞음: L1, L2(세 변형 모두), C4, C5(원본과 고친 core)가 `free-duplicate`로 `kv resolve` exit 1이다.
+5. 예측 3은 하나가 틀렸다: c1, C2, C7은 `free-unused`로 잡힌다. C3(`free maxAttempt = param timeToLiveMillis`)는 잡히지 않고, 전처럼 Silicon ERROR다. 이유: client lowering은 매개변수에 sidecar 이름을 주지 않는다 (`name__line`으로 선언). 그래서 B2c는 `this.` 출처만 검사한다. 이 경우에 "read by no translated code"라는 메시지가 틀리기 때문이다.
+6. 예측 4 맞음: L4, L6, L8, C6은 `kv resolve` exit 0이다 (FAILED 또는 ERROR 그대로). L7은 core에서만 resolve되고 (FAILED), coroutine과 reactor에서는 전처럼 `unresolved`다.
+7. 예측 5 맞음: 기존 테스트는 하나도 바꾸지 않았다. 새 테스트 11개: `FreeDuplicateTest` 4, `FreeUnusedTest` 6, `ClientCliTest` 1. 전체 테스트 766개 통과.
+8. 고의 고장: B1 검사를 끄면 `FreeDuplicateTest` 4개가 모두 실패한다. B2c는 4개(검사 호출 제거, 미지원 단위 건너뛰기 제거, "텍스트가 이름을 쓰는가" 조건 제거, task 무시)를 모두 잡았다. 세 번째를 깨면 기존 테스트 11개도 실패한다. 그래서 이 좁힘이 필요하다.
+9. 남은 한계:
+   - client `param` 출처의 `free`는 lowering이 이름을 주지 않는다. 절이 그 이름을 쓰면 지금도 Silicon "undeclared identifier"다 (C3). 고치거나 금지해야 한다.
+   - 맞바꾼 두 묶기(L8, C6)와 L1의 `param`·`local` 오묶기(L4, L6, L7)는 잡지 못한다. 이것을 잡는 길은 묶기의 서명(A안)뿐이고, 그것도 서명 뒤 편집만 잡는다. 사용자 결정 (2026-10-29): 이번에는 하지 않는다.
+   - 묶인 Kotlin 지역 변수의 계산식을 바꾸는 편집(K1-K3: `val now = nowToEpochTime() + lockTimeoutMillis`, sweep의 `now + 1000`, `System.nanoTime()`)은 PROVEN 그대로다 (deep-reasoner 측정). `DESIGN-v0.md` 2.12 규칙 1의 설계 결과이고, JG4 밖이다.
