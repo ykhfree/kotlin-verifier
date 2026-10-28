@@ -20,10 +20,10 @@ class ClientCliTest {
 
     private val sidecar = File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv")
 
-    /** The sidecar without its signatures: every `reviewed` note removed, the vocabulary note too (DESIGN-E 12.3). */
+    /** The sidecar without its signatures: every `reviewed` note removed, the vocabulary and scope notes too. */
     private fun unsigned(): File {
         val lines = sidecar.readLines().filterNot { it.trimStart().startsWith("reviewed \"") }
-        check(sidecar.readLines().size - lines.size == 23) { "the signed sidecar has 23 notes" }
+        check(sidecar.readLines().size - lines.size == 24) { "the signed sidecar has 24 notes" }
         return File(dir, "reqshield.core.kv").apply { writeText(lines.joinToString("\n", postfix = "\n")) }
     }
 
@@ -48,7 +48,8 @@ class ClientCliTest {
         val copy = unsigned()
         val (exit, _, err) = kv("resolve", copy.path)
         assertEquals(1, exit)
-        assertEquals(23, err.lines().count { "error[unreviewed]" in it }, err)
+        assertEquals(24, err.lines().count { "error[unreviewed]" in it }, err)
+        assertEquals(1, err.lines().count { "error[unreviewed]: scope \"README.md#waiting-for-another-request-lock-not-acquired\"" in it }, err)
         assertEquals(1, err.lines().count { "error[unreviewed]: the vocabulary (type Key, type Token, enum LockType, enum Mode, class Data, obligation Lease, trace)" in it }, err)
         val (draftExit, _, draftErr) = kv("resolve", "--draft", copy.path)
         assertEquals(0, draftExit, draftErr)

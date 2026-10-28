@@ -417,3 +417,10 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 남은 결정 (사용자): 서명된 `reqshield.core.kv`에 범위를 넣을지, 넣는다면 어느 절과 어떤 제외 이유인지.
 - 범위 자료 (측정): sidecar가 이미 다루는 README 절(`waiting-for-another-request-lock-not-acquired`)만 범위로 잡으면 미인용 블록은 1개다 (README 160-161행, 연속 실패 3번 규칙). 이 규칙은 어휘 `GAVE_UP`에 들어 있지만 인용하는 절이 없다.
 - 커밋 `2f82d2d` (C7 전체), GitHub `origin/main`에 push했다 (사용자 결정 2026-10-28). 커밋할 트리를 따로 꺼내 테스트 182개 통과를 확인했다.
+
+### 사용자 결정 (2026-10-28): 서명된 core sidecar에 범위 넣기
+
+- 사용자가 승인한 텍스트 (메인 세션이 보여 줌): `scope "README.md#waiting-for-another-request-lock-not-acquired"`와 그 메모, `guard LD_supplier`에 README 160-161행(연속 실패 3번이면 바로 supplier를 부름)의 출처 줄, `LD_supplier` 지문 다시 기록 (메모 문구는 그대로).
+- 인용을 `LD_supplier`에 다는 이유: 어휘(trace 블록)에는 출처 줄을 달 수 없다. `GAVE_UP`을 쓰는 의도 절은 `LD_supplier` 하나다.
+- 예측: 판정은 바뀌지 않는다 (원본 core FAILED 세 절, 고친 사본 PROVEN, 변이 42회 불일치 0). 생성 Viper는 바이트 단위로 같고, core 위치표만 sidecar 줄 번호가 바뀐다. `kv spec stale`의 오류는 0개다.
+- 결과 (측정, `DESIGN-C.md` 10.12): 범위 메모 지문 `9dee5e78c92be221`, `LD_supplier` 지문 `ca26eadd855a7371`. `kv spec stale` 오류 0 (`uncovered-block` 0). 생성 Viper 8개 바이트 동일, core 위치표만 sidecar 줄 번호가 다름. 원본 core는 세 절에서 FAILED 그대로. 전체 테스트 743개 통과, `mutantsClient` 42회 불일치 0. 예측 모두 맞음.
