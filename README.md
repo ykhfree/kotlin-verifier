@@ -73,7 +73,7 @@ CLI 명령 (`kv`를 인자 없이 실행하면 전체 사용법이 나온다):
 kv discover | resolve | lower | emit | verify   # 소스 → 증명의 각 단계
 kv mutation-sites                                # 변이를 넣을 위치
 kv hole skeleton | check                         # LLM이 채우는 불변식 hole
-kv spec snapshot | stale | check | cells         # 자연어 명세 → sidecar 흐름 (DESIGN-C)
+kv spec snapshot | stale | restamp | check | cells   # 자연어 명세 → sidecar 흐름 (DESIGN-C)
 ```
 
 Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
