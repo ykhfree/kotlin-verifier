@@ -24,6 +24,7 @@ import kv.sidecar.SidecarException
 import kv.sidecar.SidecarLoader
 import kv.sidecar.checkHoleEdit
 import kv.sidecar.holeSkeleton
+import kv.sidecar.restamped
 import kv.spec.DRAFT_LINE
 import kv.spec.SOURCES_JSON
 import kv.spec.SnapshotException
@@ -97,6 +98,12 @@ private const val USAGE = """usage:
       `scope` (C7, 10.10): error uncovered-block (a block in scope that no quote cites and no `exclude` names), error
       empty-scope; with an `exclude`: error stale-exclude and three warnings. Exit 0 if no error, 2 usage error, 4 if
       a check reports an error or the sidecar has a syntax error.
+  kv spec restamp SIDECAR.kv...
+      Rewrites each file with every `reviewed` note stamped with the fingerprint of its subject as it is now (intent
+      clauses, the vocabulary, scope and exclude; trusted declarations keep theirs), and prints each note it changed.
+      This re-signs without a person: it is for copies whose edits are declared elsewhere, such as the binding
+      adaptations of scripts/aicode.py (AI-CODE.md 6.1). Exit 0, 2 usage error, 4 if a file has a syntax error (no
+      file is written then).
   kv spec check [--root DIR [--classpath CP] [--kotlinc "ARGS"]] --snapshot DIR [--cells FILE] [--draft]
                 [--out DIR] [--viper-home DIR] [--assert-timeout MS] [--wall-seconds N] [--assume-fact F] SIDECAR.kv
       Checks a sidecar before a person sees it (DESIGN-C.md 7.1, 4.1): the sidecar checks (with --draft, an
@@ -424,7 +431,7 @@ private fun hole(
     }
 }
 
-/** `kv spec snapshot`, `kv spec stale`, `kv spec check` and `kv spec cells` (DESIGN-C.md 7.1). */
+/** `kv spec snapshot`, `kv spec stale`, `kv spec restamp`, `kv spec check` and `kv spec cells` (DESIGN-C.md 7.1). */
 private fun spec(
     args: List<String>,
     out: PrintStream,
@@ -486,6 +493,25 @@ private fun spec(
             if (report.errors > 0) 4 else 0
         }
         "check" -> specCheckCommand(rest, out, err)
+        "restamp" -> {
+            if (rest.isEmpty()) return usage("spec restamp needs at least one sidecar file")
+            val files = rest.map(::File)
+            files.firstOrNull { !it.isFile }?.let { return usage("no file ${it.path}") }
+            val results =
+                try {
+                    files.map { it to restamped(it.path, it.readText()) }
+                } catch (e: SidecarException) {
+                    e.errors.forEach { err.println(it) }
+                    return 4
+                }
+            for ((file, result) in results) {
+                val (text, changed) = result
+                if (changed.isNotEmpty()) file.writeText(text)
+                changed.forEach { out.println("${file.path}:${it.line}: restamped ${it.what}: sha256 ${it.old?.let { o -> "\"$o\"" } ?: "none"} -> \"${it.new}\"") }
+                out.println("kv spec restamp: ${file.path}: ${changed.size} note(s) restamped")
+            }
+            0
+        }
         "cells" -> {
             val target = if (rest.firstOrNull() == "--out") rest.getOrNull(1)?.let(::File) ?: return usage("--out needs a value") else null
             val files = if (target != null) rest.drop(2) else rest

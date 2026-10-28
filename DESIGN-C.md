@@ -1062,3 +1062,22 @@ decl := ...
    - 메모가 덮지 않는 것: `set-once`의 메모는 `set-once P_stable: m`라는 텍스트를 서명한다. 도구가 만드는 식(`Emitter.kt`)과 `m`의 층 1 묶기(JG4)는 덮지 않는다.
    - progress_free, progress_live, progress_owner는 `source none`이다. 그 사실을 KDoc만 말하고, 변형마다 KDoc이 다르기 때문이다. 변형마다 sidecar를 나누면 KDoc을 인용할 수 있다. 다른 새 `source none`은 이유가 다르다: P2는 모델 사실, progress_ok는 코드의 동작, 두 probe는 요구가 아닌 시나리오다.
    - aspect에는 범위가 없다. 새 README 절이 aspect 내용을 담아도 `uncovered-block`은 나오지 않는다.
+
+### 10.15 AI-CODE 맞춤의 서명 회귀 고침 (2026-10-29, 사용자 승인)
+
+회귀 (10.14가 만듦, JG4 분석 중 발견):
+1. `scripts/aicode.py`는 `bindings.txt`의 맞춤을 sidecar 사본에 적용한다 (`AI-CODE.md` 6.1). `class LockInfo LockInfo` 맞춤은 `class LockInfo = ...` 줄을 바꾼다.
+2. 10.14부터 이 줄은 서명된 어휘 메모가 덮는다. 그래서 사본은 `stale-review`가 되고, 실행은 "binding failure"로 멈춘다.
+3. 영향 (측정, grep): `aicode/`의 `bindings.txt` 68개 중 39개가 이 맞춤을 쓴다. `local` 맞춤을 쓰는 것은 0개다.
+4. 테스트가 잡지 못한 이유: `AicodeScriptTest`는 가짜 `kv`를 쓴다. 10.14의 `ReserveVerifyTest`는 같은 원인으로 실패했고, 테스트에서 `rereview`를 불러 고쳤다. 하네스는 고치지 않았다.
+
+사용자 결정 (2026-10-29): 하네스가 선언된 맞춤을 적용한 사본에서 메모 지문을 다시 찍는다. 사본은 서명된 원본이 아니고, 맞춤 목록은 결과에 남는다.
+
+고친 것:
+1. `kv spec restamp SIDECAR.kv...` (새 CLI): 테스트의 `rereviewed`를 main 코드(`sidecar/Restamp.kt`)로 옮겼다. 의도 절, 어휘, `scope`, `exclude`의 메모를 지금 텍스트의 지문으로 다시 찍고, 바뀐 메모를 한 줄씩 출력한다. 신뢰 선언의 메모는 건드리지 않는다 (그 지문은 Kotlin 텍스트를 담아서 `kv resolve`만 계산한다). 한 파일이라도 구문 오류면 어느 파일도 쓰지 않고 exit 4다. 테스트의 `rereviewed`는 이 함수를 부른다.
+2. `aicode.py`: 맞춤을 적용한 뒤, 바뀐 사본 파일에 `kv spec restamp`를 부른다. 다시 찍은 메모는 `tool.restamped`에 기록한다.
+
+결과 (측정):
+1. 실제 실행 (`aicode/round2` 사본, T-haiku-1, `class LockInfo LockInfo`): HEAD 스크립트는 "binding failure: ... error[stale-review]: the vocabulary changed"다. 고친 스크립트는 "FAILED sweep (property), tryLock (property)"이고, 두 행 모두 `ends_only_if P3a`다. 이것은 `ReserveVerifyTest` AT3의 단언과 같다. `restamped`는 어휘 메모 하나(`291a2e826122f824` → `fc02a90ab69d4fb6`)다.
+2. 새 테스트: `RestampTest` 3개, `AicodeScriptTest`의 맞춤 테스트에 단언을 더했다. 가짜 `kv`는 이제 `kv spec ...`을 실제 CLI로 넘기고, 테스트는 사본에 실제 `checkSidecar`를 돌린다.
+3. 고의 고장 3개를 모두 잡았다: `aicode.py`의 restamp 호출 제거, 모든 파일을 읽기 전에 쓰기, 신뢰 메모도 다시 찍기.

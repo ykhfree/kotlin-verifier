@@ -2,11 +2,8 @@ package kv
 
 import kv.frontend.Frontend
 import kv.frontend.FrontendResult
-import kv.sidecar.SPos
 import kv.sidecar.SidecarException
-import kv.sidecar.intentClauses
-import kv.sidecar.parseSidecar
-import kv.sidecar.reviewFingerprint
+import kv.sidecar.restamped
 import java.io.File
 
 /** In-process compile harness: compiles Kotlin snippets with the kv plugin and returns what it found. */
@@ -38,35 +35,15 @@ object Harness {
 }
 
 /**
- * B6: sidecar [text] with every reviewed intent clause stamped with the fingerprint of its text and source lines as
- * they are now, as if a person read the clause again; a note without one gets one. The `review vocabulary` note gets
- * the fingerprint of the vocabulary as it is now (DESIGN-E 12.3), and so do the notes of `scope` and `exclude`
- * (DESIGN-C.md 10.10). Trusted funs keep theirs. For
- * fixtures and edits whose subject is not the fingerprint; a text that does not parse is returned unchanged.
+ * B6: sidecar [text] after [restamped], as if a person read every signed clause again. For fixtures and edits whose
+ * subject is not the fingerprint; a text that does not parse is returned unchanged.
  */
-fun rereviewed(text: String): String {
-    val s =
-        try {
-            parseSidecar("fixture.kv", text)
-        } catch (e: SidecarException) {
-            return text
-        }
-    val lines = text.split("\n").toMutableList()
-    fun stamp(
-        at: SPos,
-        recorded: String?,
-        reviewed: String,
-    ) {
-        val now = "sha256 \"${reviewFingerprint(reviewed)}\""
-        val n = at.line - 1
-        lines[n] = recorded?.let { lines[n].replace("sha256 \"$it\"", now) } ?: "${lines[n]} $now"
+fun rereviewed(text: String): String =
+    try {
+        restamped("fixture.kv", text).first
+    } catch (e: SidecarException) {
+        text
     }
-    for ((_, item) in s.intentClauses()) item.reviewPos?.let { stamp(it, item.sha256, item.reviewedText) }
-    s.vocabularyReviews.forEach { v -> v.reviewPos?.let { stamp(it, v.sha256, s.vocabularyText) } }
-    s.scopes.forEach { d -> d.reviewPos?.let { stamp(it, d.sha256, d.unit) } }
-    s.excludes.forEach { d -> d.reviewPos?.let { stamp(it, d.sha256, d.unit) } }
-    return lines.joinToString("\n")
-}
 
 /** [file] after [rereviewed]. */
 fun rereview(file: File) = file.writeText(rereviewed(file.readText()))

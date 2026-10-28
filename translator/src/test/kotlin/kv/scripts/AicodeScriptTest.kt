@@ -1,6 +1,8 @@
 package kv.scripts
 
 import kv.ReqShield
+import kv.sidecar.SidecarLoader
+import kv.sidecar.checkSidecar
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -52,7 +54,7 @@ class AicodeScriptTest {
     private fun aicode(vararg args: String): Pair<Int, String> = run("python3", "-I", script.path, "--env", File(dir, "env.json").path, *args)
 
     /**
-     * A fake kv install. `kv hole ...` runs the real CLI. `kv verify` prints [failedReport] (exit 1), or [provenReport]
+     * A fake kv install. `kv hole ...` and `kv spec ...` run the real CLI. `kv verify` prints [failedReport] (exit 1), or [provenReport]
      * (exit 0) if the hole holds the text MARK-PROVEN or the root's KeyLocalLock.kt still checks the token. In mode
      * "binding" it fails to bind (exit 4) until the sidecar says `local currentTime`, and then proves. Every call is
      * logged to kv.log.
@@ -73,7 +75,7 @@ class AicodeScriptTest {
                 |d = "${dir.path}"
                 |with open(os.path.join(d, "kv.log"), "a") as f:
                 |    f.write(" ".join(sys.argv[1:3]) + "\n")
-                |if sys.argv[1] == "hole":
+                |if sys.argv[1] in ("hole", "spec"):
                 |    sys.exit(subprocess.call(["$java", "-cp", open(os.path.join(d, "cp.txt")).read(), "kv.cli.MainKt"] + sys.argv[1:]))
                 |common = open(os.path.join(os.path.dirname(sys.argv[-1]), "keylocallock.common.kv")).read()
                 |if "$mode" == "binding" and "= local currentTime" not in common:
@@ -269,6 +271,8 @@ class AicodeScriptTest {
         assertEquals(coroutine.replace("source \"$IMPL\"", "source \"impl/KeyLocalLock.kt\""), File(work, "tool/B/spec/keylocallock.coroutine.kv").readText())
         assertEquals(renamed, File(work, "tool/B/root/impl/KeyLocalLock.kt").readText())
         assertFalse(File(work, "tool/B/root/$IMPL").exists())
+        // A local and a source line are signed by no note, so nothing is re-signed.
+        assertEquals("[]", field("B", "tool", "restamped"))
         // Any other form is refused, and so is an adaptation that matches no `free ... = local` line.
         bindings.writeText("state m = locks\n")
         val (other, otherOut) = aicode("tool", "B")
@@ -282,7 +286,15 @@ class AicodeScriptTest {
         assertEquals("1", field("B", "binding_adaptations"))
         val placed = common.replace("class LockInfo = KeyLocalLock.LockInfo", "class LockInfo = LockInfo")
         assertTrue(placed != common)
-        assertEquals(placed, File(work, "tool/B/spec/keylocallock.common.kv").readText())
+        // The class line is signed vocabulary (DESIGN-C.md 10.14): the copy is re-signed for it, and only the
+        // vocabulary note's fingerprint differs from the adapted text. The real sidecar checks then pass on the copy.
+        val copy = File(work, "tool/B/spec/keylocallock.common.kv").readText()
+        val vocabularySha = Regex("""(review vocabulary\n  reviewed "[^"]*" sha256 ")([0-9a-f]{16})""")
+        assertTrue(copy != placed)
+        assertEquals(vocabularySha.replace(placed) { it.groupValues[1] }, vocabularySha.replace(copy) { it.groupValues[1] })
+        assertEquals(emptyList(), checkSidecar(SidecarLoader.load(File(work, "tool/B/spec/keylocallock.coroutine.kv"))))
+        val restamped = field("B", "tool", "restamped")
+        assertTrue("restamped the vocabulary" in restamped && restamped.count { it == ',' } == 0, restamped)
         bindings.writeText("class Missing LockInfo\n")
         val (noClass, noClassOut) = aicode("tool", "B")
         assertTrue(noClass == 2 && "matches 0 places" in noClassOut, noClassOut)

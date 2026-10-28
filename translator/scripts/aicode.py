@@ -827,6 +827,16 @@ def adapt(texts, bindings):
     return texts
 
 
+def restamp(kv, files):
+    """Runs `kv spec restamp` on FILES; the lines that name each note it re-signed."""
+    if not files:
+        return []
+    code, out, err = run([kv, "spec", "restamp"] + files, TOOL_TIMEOUT)
+    if code != 0:
+        raise ScriptError("kv spec restamp exited %s: %s" % (code, (err or out).strip()))
+    return [l for l in out.splitlines() if ": restamped " in l]
+
+
 def parse_tool(code, out, err, base):
     """The tool record of one kv verify run (AI-CODE.md 6.1-6.2)."""
     def rel(text):
@@ -875,10 +885,14 @@ def cmd_tool(env, args):
     shutil.rmtree(base, ignore_errors=True)
     bindings_path = os.path.join(env.impl_dir(args.id), "bindings.txt")
     bindings = read_bindings(bindings_path) if os.path.exists(bindings_path) else []
-    texts = adapt({n: read(os.path.join(env.specs, n)) for n in SIDECARS}, bindings)
+    originals = {n: read(os.path.join(env.specs, n)) for n in SIDECARS}
+    texts = adapt(originals, bindings)
     spec = os.path.join(base, "spec")
     for name, text in texts.items():
         write(os.path.join(spec, name), text)
+    # A `class` adaptation edits the signed vocabulary (DESIGN-C.md 10.14), so the copy is re-signed for the declared
+    # adaptations; the signed original does not change (AI-CODE.md 6.1).
+    restamped = restamp(env.kv, [os.path.join(spec, n) for n in texts if texts[n] != originals[n]])
     # The implementation goes where the (adapted) first `source` names it, KeyLock.kt where the second does.
     original_sources = SOURCE.findall(read(os.path.join(env.specs, SIDECAR)))
     sources = SOURCE.findall(texts[SIDECAR])
@@ -898,6 +912,7 @@ def cmd_tool(env, args):
     result = parse_tool(code, out, err, base)
     result["seconds"] = round(time.time() - start, 1)
     result["adaptations"] = [" ".join(b) for b in bindings]
+    result["restamped"] = restamped
     logs = env.logs_dir(args.id)
     write(os.path.join(logs, "tool.report"), (out + ("\n--- stderr ---\n" + err if err.strip() else "")).replace(base + os.sep, ""))
     shutil.rmtree(os.path.join(logs, "tool-spec"), ignore_errors=True)

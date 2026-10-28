@@ -469,3 +469,9 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - 전체 테스트 752개 통과.
 - 남은 한계: KDoc만 말하는 3개 절은 `source none`이다. aspect에는 범위가 없다. `set-once` 메모는 도구가 만드는 식을 덮지 않는다.
 - 커밋 `8e90c55` (push 안 함).
+
+## AI-CODE 맞춤의 서명 회귀 고침 (2026-10-29, 끝)
+
+- 발견: JG4 분석 중 deep-reasoner와 critic이 찾았다. 10.14(`8e90c55`)가 L1 어휘를 서명한 뒤, `aicode.py`의 `class LockInfo LockInfo` 맞춤이 사본을 `stale-review`로 만든다. `bindings.txt` 68개 중 39개가 영향을 받는다 (측정, grep). `AicodeScriptTest`는 가짜 `kv`를 써서 잡지 못했다.
+- 사용자 결정: 하네스가 선언된 맞춤을 적용한 사본에서 메모 지문을 다시 찍는다.
+- 고친 것과 결과: `DESIGN-C.md` 10.15. `kv spec restamp`(새 CLI)를 더했고, `aicode.py`가 이것을 부른다. 실제 T-haiku-1 실행은 HEAD에서 "binding failure"였고, 고친 뒤 "FAILED sweep, tryLock (P3a)"이다. 전체 테스트 755개 통과. 고의 고장 3개를 모두 잡았다.
