@@ -455,7 +455,7 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 남은 한계: 조사 형태는 ASCII 글자와 숫자가 든 값이면 비밀이 아니어도 가린다 (예: `암호는 AES256GCM이다`). 경고에 anchor가 나오므로 사람이 확인할 수 있다.
 - 커밋 `8faa158` (push 안 함, 2026-10-28).
 
-## L1 sidecar를 `review intent`로 옮기기 (2026-10-28, 끝)
+## L1 sidecar를 `review intent`로 옮기기 (2026-10-28 ~ 29, 끝)
 
 - 사용자 결정: aspect까지 옮긴다. orchestration-policy를 쓴다. 설계, 서명할 항목, 예측 5개는 `DESIGN-C.md` 10.14 (결과 전 등록).
 - 진행 (orchestration-policy):
@@ -468,3 +468,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - 예측 5는 종류만 맞았다. 바뀐 기대값으로 고친 테스트는 34개(14개 클래스)이고, 예측은 6곳이었다.
   - 전체 테스트 752개 통과.
 - 남은 한계: KDoc만 말하는 3개 절은 `source none`이다. aspect에는 범위가 없다. `set-once` 메모는 도구가 만드는 식을 덮지 않는다.
+- 커밋 `8e90c55` (push 안 함).

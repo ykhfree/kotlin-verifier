@@ -1038,7 +1038,7 @@ decl := ...
    - sidecar 사본을 고치는 테스트: 새로 서명되는 절을 고치면 `stale-review`, 메모 없는 절을 더하면 `unreviewed`·`unsourced`, 어휘를 고치면 어휘 메모의 `stale-review`. 대상: `VerifyTest.kt:56`(P_false 더함), `:93`(progress_live), `ReserveVerifyTest.kt:93`(class LockInfo), `DecisionProbeTest.kt:110-111`(줄 단위 리터럴), `VerifyCliTest.kt:111`(지문 리터럴). 고치는 방법: 사람이 다시 서명하는 것처럼 `rereview`를 부르거나, 리터럴을 새 텍스트로 바꾼다.
    - JG5 메시지: `SourceLineTest.kt:94`.
 
-#### 10.14.4 결과 (2026-10-28, 측정)
+#### 10.14.4 결과 (2026-10-28 ~ 29, 측정)
 
 사용자 승인 (2026-10-28): 10.14.2의 표 전부와 JG5 (a). 메모의 날짜는 2026-10-28이다.
 
@@ -1050,7 +1050,7 @@ decl := ...
 3. 예측 1 맞음: 여섯 모듈의 생성 Viper는 바이트 단위로 같다. 단, 머리 주석의 sidecar 절대 경로는 다르다. 기준을 다른 폴더(HEAD의 worktree)에서 만들었기 때문이다. 위치표는 sidecar 줄 번호만 다르다.
 4. 예측 2 맞음: 여섯 모듈 모두 PROVEN. `mutantsReqShield` 33회, `mutantsAspect` 30회, `mutantsClient` 42회에서 불일치 0.
 5. 예측 3 맞음: `kv spec stale`은 여섯 모듈 모두 exit 0이고 오류가 없다. KeyLocalLock은 인용 15개, `source none` 9개, 범위 1개, 제외 4개, `uncovered-block` 0. aspect는 인용 3개, `source none` 3개.
-6. 예측 4 맞음: 서명 전 오류 수가 예측과 같다 (KeyLocalLock 28, aspect 9에 JG5 뒤 2개). T-A의 `stale-review`는 `--root`로 묶을 때 정확히 5개다.
+6. 예측 4 맞음: 서명 전 오류 수가 예측과 같다. KeyLocalLock 28개, aspect는 JG5 코드 뒤에 11개(9개와 `set-once P_stable`의 2개)다. 새 `kv`로 `review intent`만 넣은 사본을 다시 쟀다. T-A의 `stale-review`는 `--root`로 묶을 때 정확히 5개다.
 7. 예측 5는 종류는 맞고, 범위는 작게 잡았다. 처음 전체 실행에서 752개 중 34개가 실패했다(14개 클래스). 모두 예측한 세 종류 중 하나였고, 로직 결함을 가리키는 실패는 없었다.
    - 고정한 값: 지문, sidecar 줄 번호, 메모 줄 리터럴 (`FingerprintTest`, `TrustedReviewTest`, `VerifyCliTest`, `CellsTest`, `SiliconTest`, `AspectVerifyTest`, `CheckTest`).
    - 새로 서명된 절이나 어휘를 고침 → `stale-review` (`VerifyTest`, `ReserveVerifyTest`, `SpecCheckPilotTest`, `SidecarResolveTest`, `AspectSidecarTest`).
