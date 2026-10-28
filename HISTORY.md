@@ -431,7 +431,7 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 이 목록이 392행의 우선도 목록을 대신한다. C6, C7, core sidecar의 범위는 끝났다.
 
 바로 할 수 있는 것:
-1. L1 sidecar를 `review intent`로 옮기기 (새로 찾음): KeyLocalLock과 aspect의 sidecar 8개는 `review intent` 아래에 있지 않다. 출처 줄은 `keylocallock.common.kv`에 6개, `aspect.common.kv`에 1개, 나머지 6개 파일에 0개다 (측정, grep). 그래서 서명 검사와 범위 검사(C7)가 이 모듈들에는 적용되지 않는다. 예: README `local-lock-map-size` 절(KeyLocalLock 내용)의 7개 블록이 모두 인용되지 않았다. 절마다 출처와 사용자 서명이 필요하다. 시작 전에 범위(KeyLocalLock만, 또는 aspect까지)를 사용자가 정한다.
+1. ~~L1 sidecar를 `review intent`로 옮기기~~: 2026-10-28에 끝냈다 (`DESIGN-C.md` 10.14).
 2. ~~한국어 비밀 키워드~~: 2026-10-28에 끝냈다 (`DESIGN-C.md` 10.13).
 3. JG4: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`가 통과한다. 잰 한 경우는 `kv verify`에서 ERROR로 드러났다. 오류를 앞 단계에서 내는 품질 개선이다.
 4. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
@@ -453,3 +453,18 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 구현 (메인 세션, orchestration-policy 규칙 1: 바꿀 곳을 이미 읽었고 바꿀 내용이 정해짐): `Secrets.kt`에 한국어 키워드 정규식 2개 (`:`·`=` 형태, 조사 형태).
 - 결과 (측정, `DESIGN-C.md` 10.13): 예측 3개 모두 맞음. 가려야 할 5개는 가려지고, 규칙 문장 4개는 그대로다. 파일럿 128블록과 core 132블록 스냅숏이 바이트 단위로 같다. 전체 테스트 744개 통과. 고의 고장 3개를 모두 잡았다.
 - 남은 한계: 조사 형태는 ASCII 글자와 숫자가 든 값이면 비밀이 아니어도 가린다 (예: `암호는 AES256GCM이다`). 경고에 anchor가 나오므로 사람이 확인할 수 있다.
+- 커밋 `8faa158` (push 안 함, 2026-10-28).
+
+## L1 sidecar를 `review intent`로 옮기기 (2026-10-28, 끝)
+
+- 사용자 결정: aspect까지 옮긴다. orchestration-policy를 쓴다. 설계, 서명할 항목, 예측 5개는 `DESIGN-C.md` 10.14 (결과 전 등록).
+- 진행 (orchestration-policy):
+  - JG5(`set-once`의 메모)는 설계가 두 갈래였다 → deep-reasoner(규칙 3). 권고: `set-once`를 의도 절로 만든다.
+  - 계획을 정하기 전에 advisor에게 물었다. 두 가지를 고쳤다. 공유 파일은 변형마다 다른 KDoc을 인용하지 않는다. sidecar를 고치는 테스트를 미리 분류해서 예측에 넣는다.
+  - 사용자가 10.14.2의 표 전부와 JG5 (a)를 승인했다.
+  - JG5 코드, sidecar 편집, 테스트 수정은 메인 세션이 했다 (규칙 1, 4).
+- 결과 (측정, `DESIGN-C.md` 10.14.4):
+  - 예측 1-4 맞음: 생성 Viper가 같다. 판정은 그대로다. 변이 33/30/42회에서 불일치 0. `kv spec stale` 오류 0, `uncovered-block` 0.
+  - 예측 5는 종류만 맞았다. 바뀐 기대값으로 고친 테스트는 34개(14개 클래스)이고, 예측은 6곳이었다.
+  - 전체 테스트 752개 통과.
+- 남은 한계: KDoc만 말하는 3개 절은 `source none`이다. aspect에는 범위가 없다. `set-once` 메모는 도구가 만드는 식을 덮지 않는다.

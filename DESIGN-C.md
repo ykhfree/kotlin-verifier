@@ -388,7 +388,8 @@ decl     := ... v0, B ...
 step     := [ NAME { "," NAME } ":=" ] NAME "(" ARGS ")"     // C: a call of an operation without a result
           | "assert" VEXPR
 srcline  := "source" STRING "quote" STRING [ "sha256" STRING ]   // C: after an issue rule, ensures, allowance
-                                                                 // clause, invariant, lemma or probe
+                                                                 // clause, invariant, lemma, probe, assume or
+                                                                 // set-once (10.14)
 decl     := ...
           | "scope" STRING                        // optional C7: a snapshot section this sidecar answers for
           | "exclude" STRING STRING [ "reviewed" ... ]   // optional C7: a block in scope that no clause encodes, and why
@@ -960,3 +961,104 @@ decl := ...
 2. 예측 3 맞음: ReqShield core 스냅숏 132블록을 새 도구로 다시 만들어 바이트 단위로 같다. 파일럿 128블록도 같다 (`SnapshotTest`).
 3. 고의 고장 3개(조사 형태의 ASCII 글자 조건 뺌, `:` 형태 끔, 조사 뒤의 아무 값)를 테스트가 모두 잡았다.
 4. 남은 한계: 조사 형태는 ASCII 글자와 숫자가 든 값이면 비밀이 아니어도 가린다. 예: `암호는 AES256GCM이다`(암호화 방식을 뜻함). 가려진 블록은 경고에 anchor가 나오므로 사람이 확인할 수 있다.
+
+### 10.14 L1 sidecar를 `review intent`로 옮기기 (2026-10-28, 사용자 승인)
+
+사용자 결정 (2026-10-28): KeyLocalLock과 aspect의 sidecar 8개를 `review intent` 아래로 옮긴다 (UC4의 이동). orchestration-policy를 쓴다.
+
+#### 10.14.1 설계
+
+1. `review intent`는 `keylocallock.common.kv`와 `aspect.common.kv`에 한 줄씩 넣는다. 모듈 파일 6개가 이 두 파일을 include하므로 여섯 모듈 모두에 적용된다.
+2. 출처는 ReqShield core 스냅숏(`specdraft/reqshield-core/snapshot`)의 블록이다. 인용할 README·CLAUDE.md 블록 11개의 지문은 파일럿 스냅숏(`pilot-c/packet`)과 같다 (측정).
+3. 공유 파일의 출처는 세 변형에 공통인 텍스트(README, CLAUDE.md)만 인용한다. `KeyLock.kt`의 KDoc은 인용하지 않는다. 이유: 스냅숏에는 core의 KDoc만 있고, reactor의 KDoc은 문구가 다르고(`Emits ... completes EMPTY`), coroutine에는 KDoc이 없다 (측정, diff). 그래서 KDoc에만 있는 사실은 `source none`에 core KDoc의 줄을 적는다. 이것은 `reqshield.core.kv`의 `//` 주석 출처와 같은 관례다.
+4. JG5 (`DESIGN-E.md` 12.10): 맨 위의 `set-once`를 의도 절로 만든다 (deep-reasoner 권고 (a)). `assume`처럼 출처 줄과 `reviewed` 메모를 받는다. 이유: `P_stable`은 어휘가 아니라 주장이다. `DESIGN-B.md:108`이 `P_same`, `P_once`와 같은 문장(`CLAUDE.md:27`)을 출처로 적었고, 모든 action이 그것을 보장하고, `kv spec check`의 칸 O1r, O1s를 정한다. 코드 변경:
+   - `Ast.kt`: `SetOnceDecl`이 `IntentClause`가 된다. `intentClauses()`가 `set-once P_stable`을 내고, `else` 가지를 없애 모든 선언을 분류하게 한다 (`vocabularyItem`과 같은 방식).
+   - `Parser.kt`: `set-once` 뒤에 `topSources()`와 `topReview()`. `unit`은 그 전에 잡는다.
+   - `Check.kt:87`: 지문 검사가 `set-once`도 본다.
+   - `Report.kt:434`: `review intent` 아래에서는 `set-once`를 두 번 싣지 않는다.
+5. 범위: KeyLocalLock은 `scope "README.md#local-lock-map-size"`. 블록 `/1`, `/2`, `/4`는 인용하고, `/3`, `/5`, `/6`, `/7`은 이유와 함께 제외한다. aspect는 범위를 두지 않는다. 이유: README에 메서드별 캐시 map을 다루는 절이 없고, `CLAUDE.md#key-components`는 라이브러리 전체를 다룬다.
+
+#### 10.14.2 서명할 항목
+
+표시: **새 메모** = 사용자가 문구를 읽고 승인한다. **출처만** = 출처 줄만 더한다. 메모 문구는 그대로이고 지문만 다시 기록한다. **T-A** = 신뢰 선언의 지문이 계약 텍스트까지 덮게 되어 다시 기록한다. 문구는 그대로다.
+
+`keylocallock.common.kv` (의도 절 21개 중 바뀌는 16개, 어휘, 범위):
+
+| 절 | 표시 | 출처 | 메모 (새 메모만) |
+|---|---|---|---|
+| issue rule of tryLock | 출처만 | `README.md#global-lock-guidance/2` "Every lock acquisition carries an ownership token." | |
+| ensures P1a | 새 메모 | `CLAUDE.md#key-components/2` "`tryLock` returns an ownership token", `CLAUDE.md#reqshieldconfiguration-parameters/4` "`lockTimeoutMillis`: Lock acquisition timeout" | a returned token is new and issued for this key, its acquisition is held, and its lease ends lockTimeoutMillis after the call's clock reading |
+| ensures P1a_entry | 새 메모 | `README.md#local-lock-map-size/1` "keeps one entry per `(cache key, lock type)` it is currently locking" | a backed token is the token that its key's map entry carries |
+| ends_only_if P3a of tryLock | 출처만 | `README.md#global-lock-guidance/2` "a slow holder whose lock already expired" | |
+| unbacked_only_if P3b | 출처만 | `README.md#local-lock-map-size/4` "a request for a **new** key is handed a permit that no map entry backs." | |
+| ensures progress_free | 새 메모 | `source none`: core KDoc `KeyLock.kt:30` (null only when another holder owns the lock); the variants differ | a call for a key with no entry that the cap does not refuse gets a token that an entry carries |
+| ensures progress_live | 새 메모 | `source none`: 위와 같음 | a call for a key whose entry is held and not past its lease gets no token |
+| ensures cap_unbacked | 새 메모 | `README.md#local-lock-map-size/4` (P3b와 같은 인용) | at the cap a new key gets a token that no entry carries, and no entry is made |
+| ensures expired_takeover | 새 메모 | `README.md#global-lock-guidance/2` "a slow holder whose lock already expired can no longer release the lock of the next holder" | a call for a key whose entry is past its lease takes the lock over and gets a token that the entry carries |
+| ensures P1 of unLock | 새 메모 | `CLAUDE.md#key-components/2` "`unLock` only releases when the token matches", `README.md#local-lock-map-size/2` "An entry is dropped as soon as the lock is released" | a successful release presented the token of the key's held entry; it ends that acquisition and drops the entry |
+| ends_only_if P3a of unLock | 출처만 | `README.md#global-lock-guidance/2` "Only the holder that acquired the lock can release it" | |
+| ensures progress_owner | 새 메모 | `source none`: core KDoc `KeyLock.kt:40` (false only when the lock is not held or the token does not match); the variants differ | a release with the token of the key's entry succeeds |
+| ends_only_if P3a of sweep | 출처만 | `README.md#local-lock-map-size/2` "cleanup monitor once `lockTimeoutMillis` has passed" | |
+| invariant P2 | 새 메모 | `source none`: a model fact; KeyLocalLock makes each entry's Semaphore with one permit (`KeyLocalLock.kt:206`, core) | an entry's semaphore holds 0 or 1 permits |
+| lemma P3c | 새 메모 | `CLAUDE.md#key-components/2` "Locking mechanism (local or global) to prevent concurrent cache operations" | at most one acquisition per key is held at a time among the tokens that an entry backs |
+| the probe | 새 메모 | `source none`: a non-vacuity scenario, not a requirement | a first call gets a backed token, a second call for the live key gets none, the release succeeds, and a stale release fails |
+| review vocabulary | 새 메모 | (출처 없음) | the KeyLocalLock vocabulary: types Key and Token, class LockInfo with its four fields, ghost record tok with its field kinds, witness LockInfo.token |
+| scope `README.md#local-lock-map-size` | 새 메모 | | this sidecar answers for every block of the README section on the local lock map |
+| exclude `/3` | 새 메모 | because "configuration: the cap reaches the model only through the trusted fun rejectsNewEntry" | (같은 문구) |
+| exclude `/5` | 새 메모 | because "the soft cap: the model takes the refusal as a free value, so it claims no bound on the map size" | (같은 문구) |
+| exclude `/6` | 새 메모 | because "logging, outside the model" | (같은 문구) |
+| exclude `/7` | 새 메모 | because "how LocalLockLimit reads the configured value, outside KeyLocalLock" | (같은 문구) |
+| trusted nowToEpochTime, rejectsNewEntry | T-A | | |
+
+그대로인 절 5개: refusal_keeps_entry, no_entry_created (unLock, sweep), entry_lease, entry_held. 이미 출처와 메모가 있다.
+
+`aspect.common.kv`와 모듈 파일 3개:
+
+| 절 | 표시 | 출처 | 메모 (새 메모만) |
+|---|---|---|---|
+| set-once P_stable | 새 메모 (JG5) | `CLAUDE.md#key-components/5` "One `ReqShield` instance per annotated method" | a mapped method keeps its ReqShield |
+| ensures P_same | 새 메모 | 위와 같음 | a call that does not throw returns the ReqShield that the map holds for its method |
+| ensures progress_ok | 새 메모 | `source none`: the code's computeIfAbsent; no sentence states it | a call whose factory does not throw does not throw |
+| invariant P_once | 새 메모 | `CLAUDE.md#key-components/5` (같은 인용) | at most one ReqShield is made per method |
+| the probe | 새 메모 | `source none`: a non-vacuity scenario, not a requirement | the same method gives the same object, and another method gives its own object |
+| review vocabulary | 새 메모 | | the aspect vocabulary: type MethodKey (== is Method.equals) and class Shield with no modeled field |
+| trusted createReqShield (모듈 3개) | T-A | | |
+
+그대로인 절: factory_throw.
+
+#### 10.14.3 예측 (결과 전 등록)
+
+1. 생성 Viper: 여섯 L1 모듈의 Viper는 바이트 단위로 같다. 위치표는 sidecar 줄 번호만 다르다.
+2. 판정: `verifyReqShield`, `verifyAspect`의 판정은 그대로다. `mutantsReqShield` 33회, `mutantsAspect` 30회, `mutantsClient` 42회에서 불일치 0.
+3. `kv spec stale`: 여섯 모듈 모두 오류 0. KeyLocalLock은 범위 1개, 제외 4개, `uncovered-block` 0.
+4. 서명 전 (`review intent`만 넣은 사본, 설치된 `kv`, `--root` 없음, 측정): KeyLocalLock 오류 28개 (`unreviewed` 12, `unsourced` 16), aspect 9개. JG5 코드 뒤에는 aspect에 2개(`set-once P_stable`의 `unreviewed`, `unsourced`)가 더해진다. `--root`로 묶으면 T-A의 `stale-review` 5개가 더해진다 (`DESIGN-E.md:1047`).
+5. 바뀐 기대값 (회귀 아님):
+   - 지문 값을 고정한 테스트: `FingerprintTest` 외. 공유하던 P3a 지문 `1c0ae67dbfe9757d`는 tryLock과 sweep에서 서로 달라진다 (출처가 다르다).
+   - 보고서의 "Spec to review" 줄: `AspectVerifyTest.kt:60` 외.
+   - sidecar 사본을 고치는 테스트: 새로 서명되는 절을 고치면 `stale-review`, 메모 없는 절을 더하면 `unreviewed`·`unsourced`, 어휘를 고치면 어휘 메모의 `stale-review`. 대상: `VerifyTest.kt:56`(P_false 더함), `:93`(progress_live), `ReserveVerifyTest.kt:93`(class LockInfo), `DecisionProbeTest.kt:110-111`(줄 단위 리터럴), `VerifyCliTest.kt:111`(지문 리터럴). 고치는 방법: 사람이 다시 서명하는 것처럼 `rereview`를 부르거나, 리터럴을 새 텍스트로 바꾼다.
+   - JG5 메시지: `SourceLineTest.kt:94`.
+
+#### 10.14.4 결과 (2026-10-28, 측정)
+
+사용자 승인 (2026-10-28): 10.14.2의 표 전부와 JG5 (a). 메모의 날짜는 2026-10-28이다.
+
+1. JG5 코드: 위 4번의 변경 그대로다. 새 테스트 8개(`SetOnceReviewTest`)가 통과한다. 고의 고장 3개(`intentClauses()`에서 `set-once`를 뺌, `Check.kt`의 지문 검사를 옛 필터로 되돌림, `unit`을 출처 줄 뒤에 잡음)를 각각 6개, 1개, 4개 테스트가 잡았다.
+2. 서명: 지문은 도구가 낸 값을 그대로 적었다 (`missing-fingerprint`, `stale-review` 메시지). 바뀐 지문은 승인한 항목과 정확히 같다.
+   - `keylocallock.common.kv`: 22개 (새 메모 17개, 출처만 더한 메모 5개).
+   - `aspect.common.kv`: 새 메모 6개.
+   - T-A: 5개. `nowToEpochTime` `aa569e5b9740b13b` → `a4f8bac168692c9e`, `rejectsNewEntry` `c5bffa07e14e90b1` → `d00c8149a8a320cb`, `createReqShield` core-spring `6e2380555c453306` → `7a7291901e9799d2`, webflux `8f53b3fc79cdbdbe` → `e23fb5f9beedd75e`, coroutine `cef1d3afd0eb0aec` → `3f9a5ea8a088a3f0`.
+3. 예측 1 맞음: 여섯 모듈의 생성 Viper는 바이트 단위로 같다. 단, 머리 주석의 sidecar 절대 경로는 다르다. 기준을 다른 폴더(HEAD의 worktree)에서 만들었기 때문이다. 위치표는 sidecar 줄 번호만 다르다.
+4. 예측 2 맞음: 여섯 모듈 모두 PROVEN. `mutantsReqShield` 33회, `mutantsAspect` 30회, `mutantsClient` 42회에서 불일치 0.
+5. 예측 3 맞음: `kv spec stale`은 여섯 모듈 모두 exit 0이고 오류가 없다. KeyLocalLock은 인용 15개, `source none` 9개, 범위 1개, 제외 4개, `uncovered-block` 0. aspect는 인용 3개, `source none` 3개.
+6. 예측 4 맞음: 서명 전 오류 수가 예측과 같다 (KeyLocalLock 28, aspect 9에 JG5 뒤 2개). T-A의 `stale-review`는 `--root`로 묶을 때 정확히 5개다.
+7. 예측 5는 종류는 맞고, 범위는 작게 잡았다. 처음 전체 실행에서 752개 중 34개가 실패했다(14개 클래스). 모두 예측한 세 종류 중 하나였고, 로직 결함을 가리키는 실패는 없었다.
+   - 고정한 값: 지문, sidecar 줄 번호, 메모 줄 리터럴 (`FingerprintTest`, `TrustedReviewTest`, `VerifyCliTest`, `CellsTest`, `SiliconTest`, `AspectVerifyTest`, `CheckTest`).
+   - 새로 서명된 절이나 어휘를 고침 → `stale-review` (`VerifyTest`, `ReserveVerifyTest`, `SpecCheckPilotTest`, `SidecarResolveTest`, `AspectSidecarTest`).
+   - 메모 없는 절이나 probe를 더함 → `unreviewed`·`unsourced` (`DecisionProbeTest`, `VerifyTest`, `AspectSidecarTest`).
+   - 고친 방법: 사람이 다시 서명하는 것처럼 `rereview`를 부르거나, 더한 절에 시험용 출처와 메모를 달거나, 리터럴을 새 텍스트로 바꿨다. `TrustedReviewTest`의 지문 계산은 T-A 단위(계약 텍스트 다음 Kotlin 텍스트)로 바꿨다. `SiliconTest`는 줄 번호 64를 고정하는 대신 sidecar에서 `P1a_entry`의 줄을 읽는다.
+   - `FingerprintTest`의 출처 줄을 지운 경우는 이제 `stale-review`와 `unsourced` 두 오류가 맞다 (`review intent`가 출처 줄을 요구한다).
+8. 전체 테스트 752개 통과 (744개 + `SetOnceReviewTest` 8개).
+9. 남은 한계:
+   - 메모가 덮지 않는 것: `set-once`의 메모는 `set-once P_stable: m`라는 텍스트를 서명한다. 도구가 만드는 식(`Emitter.kt`)과 `m`의 층 1 묶기(JG4)는 덮지 않는다.
+   - progress_free, progress_live, progress_owner는 `source none`이다. 그 사실을 KDoc만 말하고, 변형마다 KDoc이 다르기 때문이다. 변형마다 sidecar를 나누면 KDoc을 인용할 수 있다. 다른 새 `source none`은 이유가 다르다: P2는 모델 사실, progress_ok는 코드의 동작, 두 probe는 요구가 아닌 시나리오다.
+   - aspect에는 범위가 없다. 새 README 절이 aspect 내용을 담아도 `uncovered-block`은 나오지 않는다.

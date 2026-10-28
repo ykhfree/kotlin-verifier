@@ -36,17 +36,20 @@ class SidecarResolveTest {
         f.writeText(text.replace(old, new))
     }
 
-    /** Removes the `reviewed` note on the line right after the one that ends with [clause], whatever the note says. */
+    /**
+     * Removes the `reviewed` note of the clause on the line that ends with [clause], whatever the note says. The clause's
+     * source lines, which come before the note, stay.
+     */
     private fun dropReviewedAfter(
         file: String,
         clause: String,
     ) {
         val f = File(dir, file)
         val text = f.readText()
-        val pattern = Regex(Regex.escape(clause) + "\n *reviewed \"[^\"]*\"( sha256 \"[0-9a-f]*\")?\n")
+        val pattern = Regex(Regex.escape(clause) + "\n((?: *source [^\n]*\n)*) *reviewed \"[^\"]*\"( sha256 \"[0-9a-f]*\")?\n")
         val matches = pattern.findAll(text).count()
         check(matches == 1) { "'$clause' followed by a reviewed note occurs $matches times in $file" }
-        f.writeText(text.replace(pattern, clause + "\n"))
+        f.writeText(text.replace(pattern) { clause + "\n" + it.groupValues[1] })
     }
 
     /** 1-based line and column of [fragment] in the copied spec [file], within the line that contains [line]. */
@@ -176,6 +179,7 @@ class SidecarResolveTest {
     fun `reports a class field whose Kotlin property does not exist`() {
         copySpecs()
         edit("keylocallock.common.kv", "expiresAt: Long          = expiresAt", "expiresAt: Long          = expiryTime")
+        kv.rereview(File(dir, "keylocallock.common.kv"))
         val e = assertSingleError(resolve("coroutine"), "missing-kotlin-field", "keylocallock.common.kv", at("keylocallock.common.kv", "= expiryTime", "expiryTime"))
         assertTrue("KeyLocalLock.LockInfo has no property 'expiryTime'" in e.message, e.message)
     }
@@ -185,6 +189,7 @@ class SidecarResolveTest {
         copySpecs()
         edit("keylocallock.common.kv", "free t: Token = param token", "free token: Token = param token")
         edit("keylocallock.common.kv", "t = t1)", "token = t1)", count = 2)
+        kv.rereview(File(dir, "keylocallock.common.kv"))
         val e = assertSingleError(resolve("coroutine"), "name-clash", "keylocallock.common.kv", at("keylocallock.common.kv", "free token", "token"))
         assertTrue("field of LockInfo" in e.message, e.message)
     }

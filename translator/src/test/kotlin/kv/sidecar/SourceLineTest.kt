@@ -91,7 +91,7 @@ class SourceLineTest {
 
     @Test
     fun `a source line where no intent clause is before it is an error`() {
-        val misplaced = "a source line must follow an issue rule, an ensures, an allowance clause, an invariant, a lemma or a probe"
+        val misplaced = "a source line must follow an issue rule, an ensures, an allowance clause, an invariant, a lemma, a probe, an assume or a set-once"
         val afterFree = syntaxError("operation op = fun C.op {\n  free now = local now\n  source \"R#a\" quote \"x\"\n}")
         assertEquals(3 to 3, afterFree.pos.line to afterFree.pos.col)
         assertTrue(misplaced in afterFree.message, afterFree.message)

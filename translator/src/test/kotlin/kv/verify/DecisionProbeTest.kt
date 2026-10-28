@@ -107,8 +107,9 @@ class DecisionProbeTest {
         val ws = workspace("weak", decisions)
         // tryLock's strict boundary is in two clauses: progress_live keeps a live entry at now == expiresAt, and P3a
         // ends a token only after its lease. Drop the first and widen the second (re-signed, as a person would).
-        ws.editSpec(common, "  ensures progress_live: old(has(S, k)) && old(S.m[k].isHeld) && now <= old(S.m[k].expiresAt) ==> res == NULL\n", "")
-        ws.editSpec(common, "ends_only_if P3a: now > old(tok(qt).gLease)\n  reviewed \"ykhfree 2026-10-23: README: only an expired", "ends_only_if P3a: now >= old(tok(qt).gLease)\n  reviewed \"ykhfree 2026-10-23: README: only an expired")
+        val spec = File(ws.specs, common).readText()
+        ws.editSpec(common, Regex("(?m)^  ensures progress_live:.*\n(    source .*\n)*  reviewed .*\n").find(spec)!!.value, "")
+        ws.editSpec(common, "ends_only_if P3a: now > old(tok(qt).gLease)\n    source \"README.md#global-lock-guidance/2\"", "ends_only_if P3a: now >= old(tok(qt).gLease)\n    source \"README.md#global-lock-guidance/2\"")
         ws.rereview(common)
         val r = ws.verify("coroutine")
         val text = r.render()
@@ -118,7 +119,10 @@ class DecisionProbeTest {
         assertTrue(listOf("init", "tryLock", "unLock", "sweep").all { r.row(it).verdict == Verdict.PROVEN }, text)
     }
 
-    /** Three named probes, two of them calling sweep, which has no result, without outs (the haiku pilot's call). */
+    /**
+     * Three named probes, two of them calling sweep, which has no result, without outs (the haiku pilot's call). The
+     * spec is under review intent (DESIGN-C.md 10.14), so each probe has a fixture source line and note.
+     */
     private val sweeps =
         """
         |
@@ -128,17 +132,23 @@ class DecisionProbeTest {
         |  ok := unLock(key, t = x)
         |  assert ok
         |}
+        |  source none "test fixture"
+        |  reviewed "test fixture, not a signature"
         |probe sweep_after_lease_end(key: Key, a: Int) requires a >= 0 {
         |  x := tryLock(key, now = a, timeout = 3000, rej = false, limit = 0)
         |  sweep(key, now = a + 3001)
         |  ok := unLock(key, t = x)
         |  assert ok
         |}
+        |  source none "test fixture"
+        |  reviewed "test fixture, not a signature"
         |probe no_sweep(key: Key, a: Int) requires a >= 0 {
         |  x := tryLock(key, now = a, timeout = 3000, rej = false, limit = 0)
         |  ok := unLock(key, t = x)
         |  assert ok
         |}
+        |  source none "test fixture"
+        |  reviewed "test fixture, not a signature"
         |
         """.trimMargin()
 
@@ -171,7 +181,7 @@ class DecisionProbeTest {
     @Test
     fun `each probe that calls an unsupported operation is its own UNSUPPORTED row, and the others run`() {
         Silicon.check(Silicon.defaultHome())
-        val ws = workspace("unsupported", "\nprobe uses_unlock(key: Key) {\n  ok := unLock(key, t = 0)\n}\nprobe only_trylock(key: Key) {\n  x := tryLock(key, now = 0, timeout = 1, rej = false, limit = 0)\n  assert x != NULL\n}\n")
+        val ws = workspace("unsupported", "\nprobe uses_unlock(key: Key) {\n  ok := unLock(key, t = 0)\n}\n  source none \"test fixture\"\n  reviewed \"test fixture, not a signature\"\nprobe only_trylock(key: Key) {\n  x := tryLock(key, now = 0, timeout = 1, rej = false, limit = 0)\n  assert x != NULL\n}\n  source none \"test fixture\"\n  reviewed \"test fixture, not a signature\"\n")
         // FreeTypeVerifyTest: a String of unknown abstraction makes unLock UNSUPPORTED.
         ws.editKotlin("coroutine", "            if (existing == null) return@compute null\n", "            if (existing == null) return@compute null\n            val seen = key\n")
         val r = ws.verify("coroutine")
@@ -187,7 +197,7 @@ class DecisionProbeTest {
 
     @Test
     fun `a call without outs of an operation with a result is an emit error`() {
-        val ws = workspace("bad", "\nprobe drop(key: Key, a: Int) {\n  tryLock(key, now = a, timeout = 3000, rej = false, limit = 0)\n}\n")
+        val ws = workspace("bad", "\nprobe drop(key: Key, a: Int) {\n  tryLock(key, now = a, timeout = 3000, rej = false, limit = 0)\n}\n  source none \"test fixture\"\n  reviewed \"test fixture, not a signature\"\n")
         val e = assertFailsWith<SidecarException> { ws.emit("coroutine") }
         assertTrue("operation tryLock returns the result; the probe call names 0 out(s)" in e.errors.single().message, e.message)
     }

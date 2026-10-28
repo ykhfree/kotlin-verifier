@@ -2,6 +2,11 @@
 // the B additions (DESIGN-B.md 5.1). Expressions are Viper text over DESIGN-v0.md 4.6 and DESIGN-B.md 5.1.
 // The module files aspect.core-spring.kv, aspect.webflux.kv and aspect.coroutine.kv add module, source and the
 // trusted fun, whose body differs per module.
+// On 2026-10-28 the user approved the move under `review intent` (DESIGN-C.md 10.14): every intent clause, the set-once
+// included, has a source line and a note, the vocabulary is signed, and the trusted fingerprints of the module files
+// cover the contract too. Quoted sources are blocks of `kv spec snapshot` (specdraft/reqshield-core/snapshot). There is
+// no scope: no README section is about the per-method map, and CLAUDE.md#key-components covers the whole library.
+review intent
 
 // ---- Abstract types ----
 type MethodKey = opaque java.lang.reflect.Method                    // == is Method.equals
@@ -9,9 +14,15 @@ type MethodKey = opaque java.lang.reflect.Method                    // == is Met
 // ---- Module state ----
 state m: Map<MethodKey, Shield> = reqShieldMap
 set-once P_stable: m                    // a mapped method keeps its ReqShield (checked in every action)
+  source "CLAUDE.md#key-components/5" quote "One `ReqShield` instance per annotated method" sha256 "c90f752489aa4e54"
+  reviewed "ykhfree 2026-10-28: a mapped method keeps its ReqShield" sha256 "a0d3dc9284e8a9ef"
 
 // ---- Classes reachable from the state ----
 class Shield = ReqShield { }            // ReqShield<T>: no field is modeled; each module file imports its ReqShield
+
+// The vocabulary note covers the type and the class declaration of this sidecar (DESIGN-E 12.3).
+review vocabulary
+  reviewed "ykhfree 2026-10-28: the aspect vocabulary: type MethodKey (== is Method.equals) and class Shield with no modeled field" sha256 "5446cbbd7ae05591"
 
 // ---- Trusted models (built-in, DESIGN-B.md 2.3) ----
 use jdk.ConcurrentHashMap.computeIfAbsent
@@ -27,7 +38,11 @@ operation getOrCreate = fun ReqShieldAspect.getOrCreateReqShield {
   free thrown = call createReqShield    // named, so the probe can fix it
   result res
   ensures P_same: !exc ==> res != null && has(S, k) && S.m[k] == res
+    source "CLAUDE.md#key-components/5" quote "One `ReqShield` instance per annotated method" sha256 "c90f752489aa4e54"
+  reviewed "ykhfree 2026-10-28: a call that does not throw returns the ReqShield that the map holds for its method" sha256 "4c3eae5f584ea521"
   ensures progress_ok: !thrown ==> !exc
+    source none "the code's computeIfAbsent; no sentence states it"
+  reviewed "ykhfree 2026-10-28: a call whose factory does not throw does not throw" sha256 "32acbf2df32b41a0"
   // DESIGN-C.md 10.4: the factory runs only for an unmapped method; if it throws, the call throws and caches nothing.
   ensures factory_throw: (exc <==> thrown && !old(has(S, k))) && (exc ==> !has(S, k))
     source none "user decision 2026-10-26 (DESIGN-C 10.4): no sentence states it; the code's computeIfAbsent behavior"
@@ -37,6 +52,8 @@ operation getOrCreate = fun ReqShieldAspect.getOrCreateReqShield {
 // ---- State properties ----
 invariant P_once: forall qr1: Ref, qr2: Ref :: { qr1 in S.created, qr2 in S.created }
     qr1 in S.created && qr2 in S.created && qr1.gFor == qr2.gFor ==> qr1 == qr2
+  source "CLAUDE.md#key-components/5" quote "One `ReqShield` instance per annotated method" sha256 "c90f752489aa4e54"
+reviewed "ykhfree 2026-10-28: at most one ReqShield is made per method" sha256 "cb1f3d7e530b3fce"
 
 // ---- Inductive invariant: written by an LLM (E3 workflow), checked by the tool ----
 hole MI_INV """
@@ -54,3 +71,5 @@ probe(k1: MethodKey, k2: MethodKey) requires k1 != k2 {
   assert has(S, k1) && S.m[k1] == r1                     // trigger for P_stable (DESIGN-B.md 6.1 note 3)
   assert !e3 && r3 != r1
 }
+  source none "a non-vacuity scenario, not a requirement"
+reviewed "ykhfree 2026-10-28: the same method gives the same object, and another method gives its own object" sha256 "f3f68380847a6c16"

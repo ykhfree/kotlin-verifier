@@ -105,7 +105,9 @@ class AspectSidecarTest {
     @Test
     fun `reports set-once on a state that is not a map`() {
         copySpecs()
-        edit("keylocallock.core.kv", "state seq: Counter            = tokenCounter\n", "state seq: Counter            = tokenCounter\nset-once P_seq: seq\n")
+        // Signed as a person would (review intent, DESIGN-C.md 10.14), so only the error under test remains.
+        edit("keylocallock.core.kv", "state seq: Counter            = tokenCounter\n", "state seq: Counter            = tokenCounter\nset-once P_seq: seq\n  source none \"t\"\n  reviewed \"t\"\n")
+        kv.rereview(File(dir, "keylocallock.core.kv"))
         val errors = checkSidecar(SidecarLoader.load(File(dir, "keylocallock.core.kv")))
         val e = assertSingleError(errors, "set-once", "keylocallock.core.kv", at("keylocallock.core.kv", "set-once P_seq: seq", ": seq").let { (l, c) -> l to c + 2 })
         assertTrue("which is a Counter" in e.message, e.message)
@@ -115,6 +117,7 @@ class AspectSidecarTest {
     fun `reports an opaque type bound to a key class the trusted model table does not know`() {
         copySpecs()
         edit("aspect.common.kv", "opaque java.lang.reflect.Method", "opaque java.lang.Class")
+        kv.rereview(File(dir, "aspect.common.kv"))
         val e = assertSingleError(resolve("core-spring").errors, "unknown-key-class", "aspect.common.kv", at("aspect.common.kv", "type MethodKey", "java.lang.Class"))
         assertTrue("java.lang.reflect.Method" in e.message, e.message)
     }
@@ -140,6 +143,7 @@ class AspectSidecarTest {
     fun `reports a class name that neither the package nor an import of the module file resolves`() {
         copySpecs()
         edit("aspect.common.kv", "class Shield = ReqShield { }", "class Shield = ReqShieldX { }")
+        kv.rereview(File(dir, "aspect.common.kv"))
         val e = assertSingleError(resolve("coroutine").errors, "unresolved", "aspect.common.kv", at("aspect.common.kv", "class Shield", "ReqShieldX"))
         assertTrue("the imports of ReqShieldAspect.kt" in e.message, e.message)
     }

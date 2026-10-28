@@ -86,12 +86,21 @@ data class TypeDecl(
     val unit: String,
 ) : Decl
 
-/** `set-once ID : NAME` (DESIGN-B.md 2.4): every action keeps each mapped key's value of state map [map]. */
+/**
+ * `set-once ID : NAME` (DESIGN-B.md 2.4): every action keeps each mapped key's value of state map [map]. It is a claim,
+ * so it is signed like an intent clause (DESIGN-C.md 10.14, JG5): source lines, then a `reviewed` note.
+ */
 data class SetOnceDecl(
     val id: Name,
     val map: Name,
     override val pos: SPos,
-) : Decl
+    override val reviewed: String? = null,
+    override val sha256: String? = null,
+    override val reviewPos: SPos? = null,
+    override val unit: String = "",
+    override val sources: List<SourceLine> = emptyList(),
+) : Decl,
+    IntentClause
 
 sealed interface StateKind {
     data class MapOf(
@@ -311,7 +320,7 @@ data class SourceNone(
 
 /**
  * An intent clause (DESIGN-C.md 2.1, layer 4): an issue rule, an `ensures`, an allowance clause, an `invariant`, a
- * `lemma` or a probe. [reviewed] is its note, [sha256] the fingerprint the note records, [reviewPos] the `reviewed`
+ * `lemma`, a probe or a `set-once` (DESIGN-C.md 10.14). [reviewed] is its note, [sha256] the fingerprint the note records, [reviewPos] the `reviewed`
  * keyword, [unit] the clause text from its keyword through the end of its expression or body, and [sources] its
  * source lines.
  */
@@ -711,7 +720,9 @@ private fun vocabularyItem(d: Decl): VocabularyItem? {
 
 /**
  * Every intent clause of [this] in file order, with the name messages give it: `the issue rule of tryLock`,
- * `ensures progress_live of tryLock`, `ends_only_if P3a of sweep`, `invariant P2`, `lemma P3c`, `the probe` or `probe NAME`.
+ * `ensures progress_live of tryLock`, `ends_only_if P3a of sweep`, `invariant P2`, `lemma P3c`, `the probe`,
+ * `probe NAME`, `assume ID` or `set-once ID`. The `when` has no else branch, so a new kind of declaration must be
+ * classified here.
  */
 fun Sidecar.intentClauses(): List<Pair<String, IntentClause>> =
     decls.flatMap { d ->
@@ -720,7 +731,11 @@ fun Sidecar.intentClauses(): List<Pair<String, IntentClause>> =
             is PropertyDecl -> listOf("${d.kind.name.lowercase()} ${d.id.text}" to d)
             is ProbeDecl -> listOf((if (d.name == null) "the probe" else d.label) to d)
             is AssumeDecl -> listOf("assume ${d.id.text}" to d)
-            else -> emptyList()
+            is SetOnceDecl -> listOf("set-once ${d.id.text}" to d)
+            is ModuleDecl, is SourceDecl, is IncludeDecl, is TypeDecl, is EnumDecl, is StateDecl, is ClassDecl, is UseDecl,
+            is TrustedDecl, is GhostRecordDecl, is WitnessDecl, is ObligationDecl, is TraceDecl, is HoleDecl,
+            is ReviewIntentDecl, is ReviewVocabularyDecl, is ScopeDecl, is ExcludeDecl,
+            -> emptyList()
         }
     }
 

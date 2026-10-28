@@ -183,6 +183,8 @@ class SpecCheckPilotTest {
         val clause = "ensures progress_free: !old(has(S, k)) && !rej ==> res != NULL && tok(res).gBacked"
         require(common.readText().split(clause).size == 2)
         common.writeText(common.readText().replace(clause, "ensures progress_free: !old(has(S, k)) && !rej ==> res"))
+        // Re-signed as a person would (review intent, DESIGN-C.md 10.14), so the type error is the only error.
+        kv.rereview(common)
         val bad = check(File(d, "keylocallock.coroutine.kv"), root = false, cells = false, name = "typed-bad")
         val text = bad.render()
         assertEquals(1, bad.errorCount, text)

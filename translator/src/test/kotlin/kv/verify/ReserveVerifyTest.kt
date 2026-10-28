@@ -91,6 +91,8 @@ class ReserveVerifyTest {
         // bindings.txt: `class LockInfo LockInfo` (T-haiku-1, T-haiku-4).
         if ("class LockInfo LockInfo" in File(repo, "aicode/round2/impl/$id/bindings.txt").takeIf { it.exists() }?.readText().orEmpty()) {
             ws.editSpec("keylocallock.common.kv", "class LockInfo = KeyLocalLock.LockInfo", "class LockInfo = LockInfo")
+            // The binding is part of the signed vocabulary (DESIGN-C.md 10.14); re-signed as a person would.
+            ws.rereview("keylocallock.common.kv")
         }
         return ws.verify("coroutine")
     }

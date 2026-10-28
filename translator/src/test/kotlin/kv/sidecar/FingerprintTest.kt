@@ -82,13 +82,25 @@ class FingerprintTest {
 
     private fun lineOf(fragment: String) = File(dir, "keylocallock.common.kv").readLines().indexOfFirst { fragment in it } + 1
 
+    private val p3a = "  ends_only_if P3a: qt == t && res\n"
+    private val quote = "Only the holder that acquired the lock can release it"
+    private val sourceLine = "source \"README.md#global-lock-guidance/2\" quote \"$quote\" sha256 \"ffd91c43c843b5f8\""
+
+    /** The fingerprint of unLock's P3a with [line] as its source line, computed here from the normalized text. */
+    private fun withSource(line: String) = sha16("ends_only_if P3a: qt == t && res $line")
+
+    /** unLock's P3a as signed on 2026-10-28 (DESIGN-C.md 10.14): its source line, then its note. */
+    private val note = "  reviewed \"ykhfree 2026-10-23: README: only the holder that acquired the lock can release it\" sha256 \"${withSource(sourceLine)}\"\n"
+    private val signed = "$p3a    $sourceLine\n$note"
+
     @Test
     fun `a changed allowance clause is stale-review, with the fingerprint of the new text`() {
         val errors = check("ends_only_if P3a: qt == t && res", "ends_only_if P3a: qt == t || res")
         val e = errors.single()
         assertEquals("stale-review", e.code, e.toString())
-        assertEquals(lineOf("ends_only_if P3a: qt == t || res") + 1 to 3, e.pos.line to e.pos.col)
-        assertTrue("sha256 \"d679f5c705a959be\"" in e.message && "sha256 \"${sha16("ends_only_if P3a: qt == t || res")}\"" in e.message, e.message)
+        // The note follows the source line.
+        assertEquals(lineOf("ends_only_if P3a: qt == t || res") + 2 to 3, e.pos.line to e.pos.col)
+        assertTrue("sha256 \"3d4d5f9434a6cee5\"" in e.message && "sha256 \"${sha16("ends_only_if P3a: qt == t || res $sourceLine")}\"" in e.message, e.message)
     }
 
     @Test
@@ -96,7 +108,8 @@ class FingerprintTest {
         val e = check("gLease = now + timeout }", "gLease = now + timeout + 1 }").single()
         assertEquals("stale-review", e.code, e.toString())
         assertTrue("the issue rule of tryLock" in e.message, e.message)
-        assertTrue(sha16("issue res { gKey = k; gBacked = carried(S, k, res); gLease = now + timeout + 1 }") in e.message, e.message)
+        val source = "source \"README.md#global-lock-guidance/2\" quote \"Every lock acquisition carries an ownership token.\" sha256 \"ffd91c43c843b5f8\""
+        assertTrue(sha16("issue res { gKey = k; gBacked = carried(S, k, res); gLease = now + timeout + 1 } $source") in e.message, e.message)
     }
 
     @Test
@@ -113,19 +126,37 @@ class FingerprintTest {
             }
         assertEquals(
             listOf(
-                // Signed on 2026-10-26 (DESIGN-C.md 10.4).
+                // The L1 sidecars under review intent (DESIGN-C.md 10.14, 2026-10-28): every clause has a source line.
+                // factory_throw (10.4), refusal_keeps_entry, entry_lease and entry_held (10, UC2 and UC3) and the two
+                // no_entry_created (10.4) kept their fingerprints; the 2026-10-23 notes of the issue rule, P3a and P3b
+                // were re-recorded with their new source lines (note text unchanged); the others are new.
+                "aspect.common.kv: set-once P_stable" to "a0d3dc9284e8a9ef",
+                "aspect.common.kv: ensures P_same of getOrCreate" to "4c3eae5f584ea521",
+                "aspect.common.kv: ensures progress_ok of getOrCreate" to "32acbf2df32b41a0",
                 "aspect.common.kv: ensures factory_throw of getOrCreate" to "debfb2380fd3b4fa",
-                "keylocallock.common.kv: the issue rule of tryLock" to "023e62e52c1fc231",
-                "keylocallock.common.kv: ends_only_if P3a of tryLock" to "1c0ae67dbfe9757d",
-                "keylocallock.common.kv: unbacked_only_if P3b of tryLock" to "23aa1de7c7b2dde4",
-                // Signed on 2026-10-25 with source lines (DESIGN-C.md 10, UC2 and UC3).
+                "aspect.common.kv: invariant P_once" to "cb1f3d7e530b3fce",
+                "aspect.common.kv: the probe" to "f3f68380847a6c16",
+                "keylocallock.common.kv: the issue rule of tryLock" to "96c214a31662eaee",
+                "keylocallock.common.kv: ensures P1a of tryLock" to "c76edf11a3116538",
+                "keylocallock.common.kv: ensures P1a_entry of tryLock" to "c31c25acde4a0c8e",
+                "keylocallock.common.kv: ends_only_if P3a of tryLock" to "3dd0a68bbaa68ef4",
+                "keylocallock.common.kv: unbacked_only_if P3b of tryLock" to "a185c9abbb1779b1",
+                "keylocallock.common.kv: ensures progress_free of tryLock" to "b0a991950143c582",
+                "keylocallock.common.kv: ensures progress_live of tryLock" to "3ec02c509bb76274",
+                "keylocallock.common.kv: ensures cap_unbacked of tryLock" to "05566188e07547db",
+                "keylocallock.common.kv: ensures expired_takeover of tryLock" to "d8fa38990be32fdb",
                 "keylocallock.common.kv: ensures refusal_keeps_entry of tryLock" to "94198e9729f7b868",
-                "keylocallock.common.kv: ends_only_if P3a of unLock" to "d679f5c705a959be",
+                "keylocallock.common.kv: ensures P1 of unLock" to "5f05845a7165e5f1",
+                "keylocallock.common.kv: ends_only_if P3a of unLock" to "3d4d5f9434a6cee5",
+                "keylocallock.common.kv: ensures progress_owner of unLock" to "b751dc61762dbef0",
                 "keylocallock.common.kv: ensures no_entry_created of unLock" to "509d721ad1aca002",
-                "keylocallock.common.kv: ends_only_if P3a of sweep" to "1c0ae67dbfe9757d",
+                "keylocallock.common.kv: ends_only_if P3a of sweep" to "3c68af4c1e630a46",
                 "keylocallock.common.kv: ensures no_entry_created of sweep" to "509d721ad1aca002",
+                "keylocallock.common.kv: invariant P2" to "e253d83565837981",
                 "keylocallock.common.kv: invariant entry_lease" to "c2ae43c5a13c3c35",
                 "keylocallock.common.kv: invariant entry_held" to "be2c7e636d7ac55a",
+                "keylocallock.common.kv: lemma P3c" to "d6ff0d0c25088bbe",
+                "keylocallock.common.kv: the probe" to "6b996ce1ab3885c4",
                 // Signed on 2026-10-27, every clause with source lines (DESIGN-E 2.5, the client module).
                 "reqshield.core.kv: assume A1" to "35eb5c3e1a8b21ef",
                 "reqshield.core.kv: assume A3" to "fde6bbe239879d87",
@@ -147,35 +178,27 @@ class FingerprintTest {
             notes.map { (what, c) -> what to c.sha256 },
         )
         for ((what, c) in notes) {
-            // The five notes of 2026-10-23 have no source lines, so their reviewed text did not change with C0.
-            if (c.sources.isEmpty()) assertEquals(c.unit, c.reviewedText, what) else assertTrue(c.reviewedText.startsWith(c.unit), what)
+            // Since DESIGN-C.md 10.14 every signed clause has source lines: the reviewed text is the clause, then them.
+            assertTrue(c.sources.isNotEmpty() && c.reviewedText.startsWith(c.unit), what)
             assertEquals(c.sha256, reviewFingerprint(c.reviewedText), what)
         }
-        assertEquals(5, notes.count { (_, c) -> c.sources.isEmpty() })
     }
 
-    private val p3a = "  ends_only_if P3a: qt == t && res\n"
-    private val quote = "Only the holder that acquired the lock can release it"
-    private val sourceLine = "source \"README.md#global-lock-guidance/2\" quote \"$quote\" sha256 \"ffd91c43c843b5f8\""
-
-    /** The fingerprint of unLock's P3a with [line] as its source line, computed here from the normalized text. */
-    private fun withSource(line: String) = sha16("ends_only_if P3a: qt == t && res $line")
-
     @Test
-    fun `adding a source line to a signed clause is stale-review, with the fingerprint of the clause and the line`() {
-        val e = check(p3a, "$p3a    $sourceLine\n").single()
+    fun `adding a source line to a signed clause is stale-review, with the fingerprint of the clause and the lines`() {
+        val second = "source \"CLAUDE.md#key-components/2\" quote \"`unLock` only releases when the token matches\" sha256 \"58d3866dfcb69dcf\""
+        val e = check("$p3a    $sourceLine\n", "$p3a    $sourceLine\n    $second\n").single()
         assertEquals("stale-review", e.code, e.toString())
-        assertEquals(lineOf("only the holder that acquired") to 3, e.pos.line to e.pos.col)
-        assertTrue("ends_only_if P3a of unLock" in e.message && "the clause text and its source lines now have sha256 \"${withSource(sourceLine)}\"" in e.message, e.message)
+        assertEquals(lineOf("only the holder that acquired the lock can release it\" sha256") to 3, e.pos.line to e.pos.col)
+        assertTrue("ends_only_if P3a of unLock" in e.message && "the clause text and its source lines now have sha256 \"${withSource("$sourceLine $second")}\"" in e.message, e.message)
     }
 
     @Test
     fun `a signed clause's source line is part of its review - a changed quote, anchor or removed line is stale-review`() {
-        val signed = "$p3a    $sourceLine\n  reviewed \"ykhfree 2026-10-23: README: only the holder that acquired the lock can release it\" sha256 \"${withSource(sourceLine)}\"\n"
-        val note = "  reviewed \"ykhfree 2026-10-23: README: only the holder that acquired the lock can release it\" sha256 \"d679f5c705a959be\"\n"
-        assertEquals(emptyList(), check(p3a + note, signed))
+        // The spec holds exactly this text, so its note fingerprint is the one computed here.
+        assertEquals(emptyList(), check(signed, signed))
         // A whitespace-only change keeps the review.
-        assertEquals(emptyList(), check(p3a + note, signed.replace("quote \"$quote\"", "quote   \"$quote\"")))
+        assertEquals(emptyList(), check(signed, signed.replace("quote \"$quote\"", "quote   \"$quote\"")))
         val edits =
             listOf(
                 "quote" to signed.replace("can release it\" sha256 \"ffd9", "may release it\" sha256 \"ffd9"),
@@ -184,17 +207,19 @@ class FingerprintTest {
                 "removed line" to signed.replace("    $sourceLine\n", ""),
             )
         for ((what, edited) in edits) {
-            val e = check(p3a + note, edited).single()
-            assertEquals("stale-review", e.code, "$what: $e")
+            val errors = check(signed, edited)
+            // Under review intent a clause without a source line is also unsourced.
+            assertEquals(if (what == "removed line") listOf("stale-review", "unsourced") else listOf("stale-review"), errors.map { it.code }, "$what: $errors")
+            val e = errors.first()
             assertTrue("records sha256 \"${withSource(sourceLine)}\"" in e.message, "$what: ${e.message}")
         }
     }
 
     @Test
     fun `a reviewed clause without a fingerprint is an error that names the fingerprint to record`() {
-        val e = check("README: only the holder that acquired the lock can release it\" sha256 \"d679f5c705a959be\"", "README: only the holder that acquired the lock can release it\"").single()
+        val e = check(note, note.replace(" sha256 \"${withSource(sourceLine)}\"", "")).single()
         assertEquals("missing-fingerprint", e.code, e.toString())
-        assertEquals(lineOf("only the holder that acquired") to 3, e.pos.line to e.pos.col)
-        assertTrue("sha256 \"d679f5c705a959be\"" in e.message, e.message)
+        assertEquals(lineOf("only the holder that acquired the lock can release it\"") to 3, e.pos.line to e.pos.col)
+        assertTrue("sha256 \"${withSource(sourceLine)}\"" in e.message, e.message)
     }
 }

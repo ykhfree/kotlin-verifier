@@ -202,7 +202,8 @@ class CellsTest {
         val noIssue =
             edited(
                 "  issue res { gKey = k; gBacked = carried(S, k, res); gLease = now + timeout }\n" +
-                    "  reviewed \"ykhfree 2026-10-23: README Global lock guidance: every lock acquisition carries an ownership token\" sha256 \"023e62e52c1fc231\"\n",
+                    "    source \"README.md#global-lock-guidance/2\" quote \"Every lock acquisition carries an ownership token.\" sha256 \"ffd91c43c843b5f8\"\n" +
+                    "  reviewed \"ykhfree 2026-10-23: README Global lock guidance: every lock acquisition carries an ownership token\" sha256 \"96c214a31662eaee\"\n",
                 "",
             )
         assertEquals("issuing operation: none, so no set-up: only prefix E", noIssue.notes[1])

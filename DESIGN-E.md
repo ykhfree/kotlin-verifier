@@ -906,7 +906,7 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 2. 의도 절과 `assume`은 자기 메모가 있다.
 3. 신뢰 선언은 자기 메모가 있다. 계약 텍스트는 12.4절에서 다룬다.
 4. `hole`은 층 5다. Silicon이 검사한다.
-5. `set-once`(L1)는 성질 ID를 가진 절이다. 지금 메모를 받지 않는다. L1 sidecar가 `review intent`로 옮길 때 정한다 (12.10 JG5).
+5. `set-once`(L1)는 성질 ID를 가진 절이다. 2026-10-28에 의도 절이 되었다: 출처 줄과 자기 메모를 받는다 (JG5, `DESIGN-C.md` 10.14).
 6. `review intent`는 정책 표시다.
 
 규칙은 모듈 종류가 아니라 `review intent`에 묶는다. 이유는 둘이다:
@@ -1260,7 +1260,7 @@ review vocabulary
 | JG2 | 어휘 메모의 위치 관례 | `trace` 블록 바로 뒤. 문법은 위치를 따지지 않는다 |
 | JG3 | 보고서의 "Spec to review" 줄에 어휘 메모를 싣는가 | 싣지 않는다. 범위를 좁힌다 |
 | JG4 | 층 1 묶기의 같은 위험: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`는 타입만 본다 (`frontend/Resolver.kt:381-393`) | 이 설계는 다루지 않는다. 측정하지 않았다 |
-| JG5 | L1 sidecar가 `review intent`로 옮길 때 `set-once`의 메모 | 그 이동 때 정한다 |
+| JG5 | L1 sidecar가 `review intent`로 옮길 때 `set-once`의 메모 | 그 이동 때 정한다. 결정 (2026-10-28, 사용자 승인): 의도 절로 만든다 (`DESIGN-C.md` 10.14) |
 | JG6 | 이 설계에 critic 검토를 받는가 | 틈 1의 V-A와 V-C가 가깝다. 다만 되돌리는 비용은 작다 (sidecar 3줄과 검사 하나). 메인 세션이 정한다 |
 
 ### 12.11 이 agent의 기록

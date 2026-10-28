@@ -47,7 +47,7 @@ fun parseCells(
 private val TRUSTED_CLAUSES = setOf("returns", "ghost", "ensures", "effects", "reviewed", "throws", "creates", "consumes")
 
 /** A source line in a place where none may be. */
-private const val MISPLACED_SOURCE = "a source line must follow an issue rule, an ensures, an allowance clause, an invariant, a lemma or a probe (DESIGN-C.md 5.2)"
+private const val MISPLACED_SOURCE = "a source line must follow an issue rule, an ensures, an allowance clause, an invariant, a lemma, a probe, an assume or a set-once (DESIGN-C.md 5.2)"
 
 /** The start of a line that ends an expression above it: `source "`, `source none` or `reviewed "`. */
 private val TRAILER_LINE = Regex("""^(source[ \t]+("|none(?!\w))|reviewed[ \t]+")""")
@@ -310,7 +310,11 @@ private class SidecarParser(
                 i += "-once".length
                 val id = name("a property ID")
                 expect(":")
-                SetOnceDecl(id, name("a state name"), pos)
+                val map = name("a state name")
+                val unit = text.substring(start, i)
+                val sources = topSources()
+                val (note, sha, at) = topReview()
+                SetOnceDecl(id, map, pos, note, sha, at, unit, sources)
             }
             "state" -> {
                 val n = name("a state name")
@@ -464,7 +468,7 @@ private class SidecarParser(
                     else -> fail(i - what.text.length, "expected 'intent' or 'vocabulary'")
                 }
             }
-            "reviewed" -> fail(start, "'reviewed' must follow a trusted fun, an invariant, a lemma, a probe, a scope, an exclude or 'review vocabulary' without a note, or a clause of an operation")
+            "reviewed" -> fail(start, "'reviewed' must follow a trusted fun, an invariant, a lemma, a probe, an assume, a set-once, a scope, an exclude or 'review vocabulary' without a note, or a clause of an operation")
             else -> fail(start, "unknown declaration '$kw'")
         }
     }

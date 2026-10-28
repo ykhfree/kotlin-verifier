@@ -108,7 +108,7 @@ class VerifyCliTest {
     @Test
     fun `--draft accepts an unsigned intent clause and marks the report`() {
         Silicon.check(Silicon.defaultHome())
-        ws.editSpec("keylocallock.common.kv", "  reviewed \"ykhfree 2026-10-23: README: only the holder that acquired the lock can release it\" sha256 \"d679f5c705a959be\"\n", "")
+        ws.editSpec("keylocallock.common.kv", "  reviewed \"ykhfree 2026-10-23: README: only the holder that acquired the lock can release it\" sha256 \"3d4d5f9434a6cee5\"\n", "")
         val (signed, _, signedErr) = verify("core")
         assertEquals(4, signed, signedErr)
         assertTrue("error[unreviewed]" in signedErr, signedErr)
