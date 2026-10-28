@@ -86,8 +86,10 @@ private const val USAGE = """usage:
       inhale, exhale, refute, method, function, predicate, axiom, domain, field, import). Exit 0 accepted,
       1 rejected (each reason with its AFTER.kv line and column).
   kv spec snapshot --out DIR NAME=FILE...
-      Splits each FILE into blocks with anchors and fingerprints (DESIGN-C.md 5.2): a .kt file gives its KDoc, any
-      other file is Markdown. Writes DIR/sources.json and DIR/SOURCES.md. NAME is the anchor's source name.
+      Splits each FILE into blocks with anchors and fingerprints (DESIGN-C.md 5.2): a .kt file gives its KDoc, a
+      .xhtml file is a Confluence storage value (C6, 10.8; NAME conf:<page id>), any other file is Markdown. Writes
+      DIR/sources.json and DIR/SOURCES.md. NAME is the anchor's source name. A block that holds a secret shape (a
+      key, a token, a password) is replaced by a redaction note, and a warning names its anchor (DESIGN-C.md 6.3).
   kv spec stale --snapshot DIR SIDECAR.kv
       Checks every `source "<anchor>" quote "<quote>"` line of the sidecar (includes too) against the snapshot in DIR
       (DESIGN-C.md 5.3): warning source-context-changed (the block changed, the quote is still in it), warning
@@ -439,7 +441,12 @@ private fun spec(
             val inputs = rest.drop(2).map { a -> if ('=' in a) SnapshotInput(a.substringBefore('='), a.substringAfter('=')) else return usage("'$a' is not NAME=FILE") }
             inputs.firstOrNull { !File(it.path).isFile }?.let { return usage("no file ${it.path}") }
             val dir = File(rest[1])
-            val blocks = writeSnapshot(dir, inputs)
+            val blocks =
+                try {
+                    writeSnapshot(dir, inputs) { err.println("kv: warning: $it") }
+                } catch (e: SnapshotException) {
+                    return usage(e.message!!)
+                }
             out.println("kv: wrote ${File(dir, SOURCES_JSON).path} and ${File(dir, "SOURCES.md").path}: ${blocks.size} blocks")
             0
         }

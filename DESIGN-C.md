@@ -760,3 +760,104 @@ LLM 비용 합계는 약 21만 토큰, 9분이다 (파일럿 1단계 하나가 2
 4. 파일럿 자료에서 규칙 6은 C16(D9)을 질문으로 더한다. DESIGN-C 3.3이 "서명된 sidecar와 비교할 때만 드러나는 빈틈"이라 부른 칸이 이제 질문이 된다.
 
 메인 세션 결정: 방식 b에서는 규칙 6을 이전 결정의 open 칸으로만 제한한다 (hole 없는 참조의 OPEN은 대개 "hole이 정함"이라는 뜻이다; 실제 실행에서 잡음 4칸). 파일럿 재현 기록을 다시 만든다. UC1은 프로토콜 설정에 넣지 않는다. FEEDBACK은 `kv verify`의 첫 실패 줄만 쓴다.
+
+### 10.8 C6 상세 설계 (2026-10-28, 실제 연결 없이 API 스펙 기준)
+
+사용자 결정 (2026-10-28): 지금 연결된 Confluence가 없다. 그래서 공식 API 스펙에 맞춰 구현한다. 실제 페이지로 하는 확인(8절 C6 수락 2)은 연결이 생길 때 한다.
+스펙 근거: 공식 문서 조사 (Cloud REST v2 "Get page by id", basic auth, Data Center 11.0 storage format, 5.9 매크로 문서). 요약과 인용 44개는 이 세션 scratchpad의 `c6/SPEC.md`에 있다 (저장소 밖). 아래 "미확인"은 공식 문서로 확인하지 못한 것이다.
+
+범위:
+1. Cloud만 한다 (UC6). Data Center 받기는 미룬다.
+2. 받기는 Python 스크립트, 블록 나누기는 Kotlin `kv spec snapshot`이다 (6.2).
+
+**받기: `translator/scripts/confluence_fetch.py` (표준 라이브러리만)**
+
+1. 명령: `confluence_fetch.py --site https://SITE.atlassian.net --email EMAIL --keychain-service NAME --out DIR PAGE_ID...`
+2. 토큰: 실행할 때 `security find-generic-password -s NAME -a EMAIL -w`로 읽는다. 토큰은 화면, 로그, 파일, 예외 메시지에 쓰지 않는다.
+3. 요청: `GET {site}/wiki/api/v2/pages/{id}?body-format=storage`. `Authorization: Basic base64(email:token)`을 처음 요청부터 보낸다 (Confluence는 인증 challenge를 보내지 않는다).
+4. `--site`는 `https://`여야 한다. 예외는 `localhost`와 `127.0.0.1`의 `http://`뿐이다 (시험용 가짜 서버). 토큰이 평문 HTTP로 다른 호스트에 가지 않게 하기 위해서다.
+5. 출력: 페이지마다 두 파일.
+   - `DIR/<id>.xhtml`: `body.storage.value` 원문 (UTF-8).
+   - `DIR/<id>.page.json`: `id`, `title`, `status`, `version`(번호), `createdAt`(버전 시각), `site`, `fetchedAt`.
+6. 오류와 종료 코드:
+   - 401: 인증 실패 (email 또는 토큰 확인). 종료 코드 2.
+   - 404: "페이지가 없거나 권한이 없다" (이 엔드포인트는 403을 문서화하지 않는다). 종료 코드 2.
+   - 429와 503: `Retry-After`(초, 정수)만큼 기다린 뒤 다시 한다. 없으면 1, 2, 4초를 기다린다. 최대 3번 다시 한다. 기다림 한 번의 상한은 60초다.
+   - `body.storage.value`가 없음: 종료 코드 2.
+   - Keychain 읽기 실패: 종료 코드 3.
+
+**블록 나누기: `kv spec snapshot`의 `.xhtml` 입력**
+
+1. `NAME=FILE`에서 FILE이 `.xhtml`이면 storage format이다. NAME은 `conf:<페이지 id>`를 쓴다 (6.2 4번).
+2. 읽기:
+   - HTML 4 named entity 252개를 숫자 참조로 바꾼 뒤 XML로 읽는다. `<![CDATA[ ... ]]>` 안은 바꾸지 않는다 (code 매크로 본문은 원문 그대로다). 표에 없는 entity는 그 이름을 담은 오류다. DTD는 읽지 않는다 (외부 entity 차단).
+   - namespace를 보지 않고 읽는다 (`IS_NAMESPACE_AWARE = false`). 그래서 `ac:structured-macro`는 콜론이 든 요소 이름이다. namespace URI(미확인)가 필요 없고, 처음 보는 prefix도 오류가 아니다.
+   - 값은 최상위 요소가 여럿인 조각이다. 그래서 합성 root 하나로 감싼다. root는 첫 줄 앞에 줄바꿈 없이 붙인다. 그래서 블록의 줄 번호는 파일의 줄 번호와 같다.
+3. 절: `h1`-`h6`이 절을 시작한다. 제목 자체는 블록이 아니다. 첫 제목 앞은 절 `top`이다. anchor는 Markdown과 같다: `NAME#<제목 slug>/<번호>`.
+   - slug 규칙을 넓힌다 (Markdown에도 쓴다): 소문자로 바꾼 뒤 글자(`\p{L}`)와 숫자(`\p{N}`) 밖의 묶음을 `-`로 바꾼다. 지금 규칙(`[^a-z0-9]`)은 한국어 제목을 빈 slug로 만들어 anchor가 겹친다. 그래도 비면 `h<제목 번호>`를 쓴다. ASCII 제목의 slug는 그대로다.
+4. 블록:
+
+| 요소 | 블록 | 텍스트 |
+|---|---|---|
+| `p`, `pre`, `blockquote` | 하나 | 안의 글자. `br`은 줄바꿈 |
+| `ul`, `ol`의 최상위 `li` | 항목마다 하나 | `- 글자` 또는 `1. 글자`. 안의 목록은 다음 줄에 두 칸 들여쓰기 |
+| `table`의 `tr` | 행마다 하나 | 칸의 글자를 ` | `로 잇는다 |
+| `code` 매크로 | 하나 | `ac:plain-text-body`의 원문 그대로 |
+| `info`, `tip`, `note`, `warning` 매크로 | 하나 | 첫 줄 `NAME: 제목`(제목이 없으면 `NAME:`), 다음 줄부터 본문 |
+| `expand` 매크로 | 하나 | 첫 줄 `expand: 제목`, 다음 줄부터 본문 |
+| `ac:task` | 하나 | `[ ] 글자` 또는 `[x] 글자` (완료 값 `complete`는 미확인) |
+| 그 밖의 매크로 | 하나 | 안의 글자. 표준 오류에 경고 한 줄 |
+| `ac:layout`, `ac:layout-section`, `ac:layout-cell`, `div` | 없음 (투명) | 안의 요소를 차례로 나눈다 |
+| `ac:adf-extension` | `ac:adf-content`를 투명하게 나눈다. 없으면 `ac:adf-fallback` | 구조는 미확인 (제3자 자료) |
+| `hr`, `ac:image`, `ac:emoticon` | 없음 | |
+
+5. 글자: 줄 안의 공백 묶음은 공백 하나로 바꾼다. NBSP(U+00A0)는 공백이다 (10.1 "유니코드 공백 정규화"를 읽는 단계에서 한다; 지문 규칙은 그대로). 줄의 양 끝 공백은 자른다. 링크는 링크 본문, 없으면 `ri:page`의 `ri:content-title`이다. 빈 블록은 만들지 않는다.
+6. 줄 번호: 블록 요소의 시작 줄과 끝 줄이다.
+7. SOURCES.md: 같은 폴더의 `<id>.page.json`이 있으면 원본 제목 줄에 페이지 제목과 버전을 적는다.
+
+**비밀 검사 (6.3 2번): `kv spec snapshot`의 모든 입력**
+
+1. 블록 텍스트가 비밀 모양의 정규식에 걸리면, 블록 텍스트를 `[redacted by kv spec snapshot: KIND]`로 바꾼다. 지문도 바뀐 텍스트로 만든다. 원문은 어느 파일에도 쓰지 않는다.
+2. 표준 오류에 가린 블록의 anchor와 KIND를 적는다. 값은 적지 않는다.
+3. KIND: 비밀 키 머리(`-----BEGIN ... PRIVATE KEY-----`), AWS 접근 키, Atlassian API 토큰, GitHub 토큰, Slack 토큰, Anthropic 키, OpenAI 형식 키, JWT, `password`/`secret`/`api key`/`token` 뒤의 `:` 또는 `=`와 8자 이상의 값.
+4. 기존 스냅숏(파일럿 128블록, ReqShield core)이 바이트 단위로 같아야 한다. 걸리는 블록이 생기면 규칙을 좁힌다.
+
+**시험**
+
+1. 수락 1: storage fixture(제목, 문단, 중첩 목록, 표, code·info·expand 매크로, task, layout, entity, NBSP, 모르는 매크로)가 기대한 블록을 낸다.
+2. 수락 3: JDK `HttpServer` 가짜 서버와 PATH의 가짜 `security`로 스크립트를 끝까지 돌린다. fixture 토큰과 base64(`email:token`)(Authorization 헤더의 값)이 표준 출력, 표준 오류, 출력 파일, 스냅숏 어디에도 없다. 401, 404, 429 경로도 같다. 429 경로의 가짜 서버는 `Retry-After: 0`을 보낸다.
+3. 수락 4: 키 모양의 문자열이 든 fixture 블록이 가려진다. 가린 목록에 값이 없다.
+4. 수락 2 (실제 페이지)는 미룬다. 연결이 생기면 미확인 항목(namespace URI, entity 집합, 중첩 목록, task 완료 값, `ac:adf-extension`, Cloud 매크로 속성)을 그 페이지로 확인한다.
+
+**미루는 것**
+
+1. 인용 안의 `"` (10.1 "C6에서 필요해지면"): 실제 페이지가 필요를 보일 때까지 미룬다.
+2. 받은 `.xhtml`과 `.page.json`은 원문 그대로다. 비밀 검사는 LLM으로 가는 길(스냅숏)만 지킨다. 그래서 받은 폴더는 저장소에 커밋하지 않는다.
+
+**예측 (구현 전 등록)**
+
+1. 파일럿 스냅숏(128블록)과 `specdraft/reqshield-core/snapshot`은 비밀 검사와 slug 규칙을 넣은 뒤에도 바이트 단위로 같다.
+2. 기존 테스트는 모두 통과한다.
+3. fixture의 블록 수는 요소 표대로다 (fixture와 함께 등록한다).
+4. 가짜 서버 시험에서 토큰과 base64(`email:token`)의 출현은 0번이다.
+5. 비밀 fixture의 KIND마다 블록 하나가 가려지고, 가린 목록에 값이 나오지 않는다.
+
+### 10.9 C6 결과 (2026-10-28, 메인 세션 기록)
+
+구현: 받기 스크립트와 그 시험은 feature-developer(별도 worktree), 블록 나누기와 비밀 검사는 메인 세션이 했다.
+새 파일: `translator/scripts/confluence_fetch.py`, `kv/spec/Storage.kt`, `kv/spec/Secrets.kt`, 리소스 `kv/spec/html4-entities.txt`, 테스트 `StorageSnapshotTest`(8개), `ConfluenceFetchTest`(12개), fixture `confluence/page.xhtml`.
+
+| 예측 (10.8) | 결과 (측정) |
+|---|---|
+| 1. 파일럿 128블록과 ReqShield core 스냅숏이 바이트 단위로 같다 | 맞음. core 132블록을 새 도구로 다시 만들어 `diff -r`이 비었다. 가려진 블록은 없다 |
+| 2. 기존 테스트는 모두 통과 | 맞음. 전체 732개 통과 |
+| 3. fixture 블록 수가 요소 표대로 | 맞음. 결과 전에 적은 18블록, 줄 번호 3곳, 경고 2개가 모두 같았다 |
+| 4. 토큰과 base64(`email:token`)의 출현 0번 | 맞음. 받기 12가지 경우와 받은 페이지의 스냅숏에서 0번 |
+| 5. 비밀 KIND마다 블록 하나가 가려지고 값은 나오지 않음 | 맞음. 9종 모두 가려졌고, sources.json, SOURCES.md, 경고에 값이 없다 |
+
+1. 기대값을 적다가 고친 것: 글자가 없는 모르는 매크로(예: `jira`)는 블록이 없어서 경고도 사라졌다. 이제 블록이 없어도 경고한다.
+2. 받기 스크립트의 판단: 첫 실패 페이지에서 멈추고, 앞 페이지의 파일은 남긴다. 리다이렉트는 따라가지 않는다 (urllib는 리다이렉트할 때 Authorization 헤더를 새 주소로 옮긴다). `--site`는 scheme과 host만 받는다. `Retry-After`가 정수가 아니면 없는 것으로 본다. SPEC.md의 "jitter"는 10.8을 따라 넣지 않았다.
+3. 고의 고장: 스냅숏 쪽 5개(CDATA 보호, slug, 가리기, 숫자 조건, NBSP)와 받기 쪽 11개를 테스트가 모두 잡았다.
+4. 함정: Gradle 테스트 작업은 `translator/scripts/`를 입력으로 보지 않는다. 스크립트만 고쳤으면 `--rerun`이 필요하다.
+5. 한계: `assigned-credential`의 키워드는 영어뿐이다 (`password`, `secret`, `api key`, `token` 등). 그래서 `비밀번호: hunter22x`처럼 한국어로 쓴 값은 가려지지 않는다. 모양으로 찾는 종류(비밀 키, AWS, Atlassian, GitHub, Slack, Anthropic, OpenAI, JWT)는 언어와 관계없다.
+6. 남은 일: 수락 2 (실제 페이지 하나로 받기와 스냅숏, 그리고 10.8의 미확인 항목 확인). 연결이 생기면 한다.
