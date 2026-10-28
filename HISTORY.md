@@ -487,13 +487,14 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - 사용자 결정: 회귀를 다시 찍기로 먼저 고친다 (10.15, `be1b4df`). JG4는 B1 + B2c로 한다. A안은 하지 않는다.
   - B1은 메인 세션이, B2c는 feature-developer가 worktree에서 구현했다.
 - 결과 (측정, `DESIGN-C.md` 10.16): 예측 5개 중 4개가 맞았다. 예측 3에서 C3(client `param` 출처)는 잡히지 않았다. Viper는 같고, 변이 33/30/42회에서 불일치 0이다. 전체 테스트 766개 통과.
+- 커밋 `399d166` (push 안 함).
 
 ## 남은 일 (2026-10-29 기준, 메인 세션 의견, 사용자 결정 전)
 
 이 목록이 위의 2026-10-28 목록을 대신한다.
 
 바로 할 수 있는 것:
-1. client `param` 출처의 `free` 이름 (새로 찾음, `DESIGN-C.md` 10.16 결과 9): client lowering이 매개변수에 sidecar 이름을 주지 않는다. 그래서 절이 그 이름을 쓰면 Silicon "undeclared identifier"다. lowering을 고치거나 `param`을 금지한다. 지금 서명된 sidecar는 `param`을 쓰지 않는다.
+1. client `param` 출처의 `free` 이름 (새로 찾음, `DESIGN-C.md` 10.16 결과 9): client lowering이 매개변수에 sidecar 이름을 주지 않는다. 그래서 절이 그 이름을 쓰면 Silicon "undeclared identifier"다. lowering을 고치거나 `param`을 금지한다. 지금 서명된 client sidecar(`reqshield.core.kv`)는 `param`을 쓰지 않는다.
 2. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
 3. G-opus-1의 느린 pass 2: 87-127 s, 예산 300 s 안이다. 원인은 재지 않았다.
 
