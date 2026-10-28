@@ -433,7 +433,7 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 바로 할 수 있는 것:
 1. ~~L1 sidecar를 `review intent`로 옮기기~~: 2026-10-28에 끝냈다 (`DESIGN-C.md` 10.14).
 2. ~~한국어 비밀 키워드~~: 2026-10-28에 끝냈다 (`DESIGN-C.md` 10.13).
-3. JG4: `free` 값을 같은 타입의 다른 속성에 묶어도 `kv resolve`가 통과한다. 잰 한 경우는 `kv verify`에서 ERROR로 드러났다. 오류를 앞 단계에서 내는 품질 개선이다.
+3. ~~JG4~~: 2026-10-29에 끝냈다 (`DESIGN-C.md` 10.16).
 4. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
 5. G-opus-1의 느린 pass 2: 87-127 s, 예산 300 s 안이다. 원인은 재지 않았다.
 
@@ -475,3 +475,37 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 발견: JG4 분석 중 deep-reasoner와 critic이 찾았다. 10.14(`8e90c55`)가 L1 어휘를 서명한 뒤, `aicode.py`의 `class LockInfo LockInfo` 맞춤이 사본을 `stale-review`로 만든다. `bindings.txt` 68개 중 39개가 영향을 받는다 (측정, grep). `AicodeScriptTest`는 가짜 `kv`를 써서 잡지 못했다.
 - 사용자 결정: 하네스가 선언된 맞춤을 적용한 사본에서 메모 지문을 다시 찍는다.
 - 고친 것과 결과: `DESIGN-C.md` 10.15. `kv spec restamp`(새 CLI)를 더했고, `aicode.py`가 이것을 부른다. 실제 T-haiku-1 실행은 HEAD에서 "binding failure"였고, 고친 뒤 "FAILED sweep, tryLock (P3a)"이다. 전체 테스트 755개 통과. 고의 고장 3개를 모두 잡았다.
+- 커밋 `be1b4df`.
+
+## JG4: `free` 묶기 오류를 `kv resolve`에서 내기 (2026-10-29, 끝)
+
+- 사용자 결정: JG4를 진행한다. orchestration-policy를 쓴다.
+- 진행 (orchestration-policy):
+  - 해법이 정해지지 않았다 → deep-reasoner(규칙 3). 사본 38회를 쟀고, 거짓 PROVEN은 0이었다. 권고는 A-new + B1 + B2c였다.
+  - 서명 방식 후보가 비등했다 → critic(규칙 2). 주요 반대: A는 처음부터 잘못 묶은 경우를 못 잡고, AI-CODE 맞춤과 충돌한다.
+  - advisor 권고: JG4는 B1 + B2c(좁힘)로 하고, A는 따로 정한다.
+  - 사용자 결정: 회귀를 다시 찍기로 먼저 고친다 (10.15, `be1b4df`). JG4는 B1 + B2c로 한다. A안은 하지 않는다.
+  - B1은 메인 세션이, B2c는 feature-developer가 worktree에서 구현했다.
+- 결과 (측정, `DESIGN-C.md` 10.16): 예측 5개 중 4개가 맞았다. 예측 3에서 C3(client `param` 출처)는 잡히지 않았다. Viper는 같고, 변이 33/30/42회에서 불일치 0이다. 전체 테스트 766개 통과.
+
+## 남은 일 (2026-10-29 기준, 메인 세션 의견, 사용자 결정 전)
+
+이 목록이 위의 2026-10-28 목록을 대신한다.
+
+바로 할 수 있는 것:
+1. client `param` 출처의 `free` 이름 (새로 찾음, `DESIGN-C.md` 10.16 결과 9): client lowering이 매개변수에 sidecar 이름을 주지 않는다. 그래서 절이 그 이름을 쓰면 Silicon "undeclared identifier"다. lowering을 고치거나 `param`을 금지한다. 지금 서명된 sidecar는 `param`을 쓰지 않는다.
+2. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
+3. G-opus-1의 느린 pass 2: 87-127 s, 예산 300 s 안이다. 원인은 재지 않았다.
+
+막혀 있는 것:
+1. C6 수락 2 (실제 Confluence 페이지로 확인): Confluence 연결(시험 페이지 id, API 토큰)이 필요하다.
+2. E5 coroutine 변형: UE6 결정이 먼저다. 추정 3-5 인일.
+
+사용자 결정이 필요한 것 (측정 근거 있음):
+1. `free` 묶기의 서명 (A안): 서명 뒤 편집(맞바꾼 두 묶기 포함)을 잡는다. 사용자가 2026-10-29에 이번에는 하지 않기로 했다.
+2. K: 묶인 Kotlin 지역 변수의 계산식 편집은 PROVEN 그대로다 (K1-K3, `DESIGN-C.md` 10.16 결과 9). 설계 한계(`DESIGN-v0.md` 2.12 규칙 1)라서, 고치려면 설계를 바꿔야 한다.
+3. 10.14의 한계: aspect에 범위(scope)가 없다. KDoc만 말하는 3개 절은 `source none`이다 (변형마다 sidecar를 나누면 인용할 수 있다).
+
+미뤄 둔 것 (필요해지면 한다):
+1. 인용 안의 `"` escape: 실제 페이지가 필요를 보일 때 (`DESIGN-C.md` 10.8).
+2. Data Center 받기: 사용자 결정 UC6이 Cloud다.

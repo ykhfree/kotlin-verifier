@@ -1,5 +1,8 @@
 package kv.lower
 
+import kv.emit.VE
+import kv.emit.parseVE
+import kv.emit.walk
 import kv.frontend.RUN_ASYNC
 import kv.frontend.SidecarResolver
 import kv.frontend.unwrapTask
@@ -55,9 +58,15 @@ import kv.model.ClientModel
 import kv.model.ClientModels
 import kv.model.ClientRole
 import kv.model.Role
+import kv.sidecar.EnsuresItem
+import kv.sidecar.FreeSource
+import kv.sidecar.GuardItem
 import kv.sidecar.OperationDecl
 import kv.sidecar.Sidecar
+import kv.sidecar.SidecarError
+import kv.sidecar.SidecarException
 import kv.sidecar.TrustedDecl
+import kv.sidecar.Vexpr
 import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.contracts.description.LogicOperationKind
 import org.jetbrains.kotlin.descriptors.ClassKind
@@ -229,6 +238,9 @@ internal class ClientLowering(
     /** The exception kinds the code throws (DESIGN-E 3.5), found before any catch is lowered. */
     val thrown: List<Thrown> = thrownKinds()
 
+    /** The Kotlin type of each instance value a unit reads, by its source (`this.a.b`), for [freeUnused]. */
+    val instanceTypes = mutableMapOf<String, ClassId?>()
+
     fun idOf(f: FirNamedFunctionSymbol) = "${f.callableId}/${f.valueParameterSymbols.size}"
 
     /** A sidecar value type as KVIR (DESIGN-E 6.2): Int, Bool, a type, an enum or a class, `?` for nullable. */
@@ -314,6 +326,7 @@ internal class ClientLowering(
             }
         val units = entries.map { it.body } + tasks.values.filterNotNull().map { it.body }
         val taskList = tasks.values.filterNotNull().map { t -> t.copy(holds = handedOver(t, units)) }
+        freeUnused(entries, taskList).takeIf { it.isNotEmpty() }?.let { throw SidecarException(it) }
         val ledger = ClientAudit(this, entries, taskList).run()
         return Module(
             id = sidecar.modules.single().fqn.text,
@@ -367,6 +380,51 @@ internal class ClientLowering(
         }
         return holds
     }
+
+    /**
+     * DESIGN-C 10.16 B2c: a `free NAME = this.PATH` item whose NAME no unit of its operation declares, while a guard,
+     * an ensures, a derived value or a loop hole uses NAME. A unit names NAME only at a translated read of PATH, so
+     * NAME would reach Silicon as an undeclared identifier. An operation with an unsupported unit is skipped: the read
+     * may sit in the rejected construct, and the module stays INCOMPLETE.
+     */
+    private fun freeUnused(
+        entries: List<EntryFun>,
+        tasks: List<Task>,
+    ): List<SidecarError> {
+        val errors = mutableListOf<SidecarError>()
+        for (op in sidecar.operations) {
+            val units = entries.filter { it.name == op.name.text }.map { it.status to it.free } + tasks.filter { it.spawnedBy == op.name.text }.map { it.status to it.free }
+            if (units.isEmpty() || units.any { it.first !is Status.Supported }) continue
+            val free = units.flatMap { it.second }.distinctBy { it.local.name }
+            val declared = free.mapNotNull { it.sidecarName }.toSet()
+            for ((item, path) in resolver.clientFree[op.name.text].orEmpty()) {
+                val source = item.source as? FreeSource.This ?: continue
+                val name = item.names.first().text
+                if (name in declared) continue
+                val users = sidecarTexts(op).filter { (_, v) -> name in idsOf(v) }.map { it.first }
+                if (users.isEmpty()) continue
+                val type = path.last().resolvedReturnType.lowerBoundIfFlexible().classId
+                val reads = free.filter { it.sidecarName == null && instanceTypes[it.kotlin] == type }.map { "${it.local.pos.file.substringAfterLast('/')}:${it.local.pos.line}:${it.local.pos.col} (${it.kotlin})" }
+                val hint = if (reads.isEmpty()) "" else "; unnamed translated reads of a Kotlin ${type?.shortClassName}: ${reads.joinToString()}"
+                errors += SidecarError(item.pos, "free-unused", "free ${op.name.text}.$name: this.${source.name.text} is read by no translated code, but $name is used by ${users.joinToString()}$hint (DESIGN-C 10.16)")
+            }
+        }
+        return errors
+    }
+
+    /** The sidecar texts that may use a free name of [op], each with its label: guards, ensures, derived values, loop holes. */
+    private fun sidecarTexts(op: OperationDecl): List<Pair<String, Vexpr>> =
+        op.items.mapNotNull { (it as? GuardItem)?.let { g -> g.id.text to g.expr } ?: (it as? EnsuresItem)?.let { en -> en.id.text to en.expr } } +
+            sidecar.traces.flatMap { it.derived }.map { "derived ${it.name.text}" to it.expr } +
+            sidecar.holes.mapNotNull { h -> h.loop?.let { "hole loop ${it.label}" to Vexpr(h.text, h.textPos) } }
+
+    /** The names [v] reads (DESIGN-E 6.2). A text that does not parse reads none here: kv emit reports its syntax error. */
+    private fun idsOf(v: Vexpr): Set<String> =
+        try {
+            parseVE(v).walk().filterIsInstance<VE.Id>().map { it.name }.toSet()
+        } catch (_: SidecarException) {
+            emptySet()
+        }
 
     /**
      * The abstract types of String values (DESIGN-v0.md 2.13) in the module class: a trusted argument or result fixes
@@ -1862,6 +1920,7 @@ private class ClientUnit(
             val local = if (named != null) Local(key, type, pos) else declare(path.joinToString("_") { it.name.asString() }, type, pos)
             names += local.name
             free[key] = FreeValue(local, InstanceVal(path.joinToString(".") { it.name.asString() }, pos), named?.first?.names?.first()?.text, "this.${path.joinToString(".") { it.name.asString() }}")
+            m.instanceTypes[free.getValue(key).kotlin] = sym.resolvedReturnType.lowerBoundIfFlexible().classId
             return Var(local, pos)
         }
         if (racy(x)) {

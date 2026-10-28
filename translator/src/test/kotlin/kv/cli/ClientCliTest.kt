@@ -101,6 +101,30 @@ class ClientCliTest {
     }
 
     @Test
+    fun `free maxAttempt bound to a path that only a dropped argument reads is free-unused at resolve and verify - DESIGN-C 10_16 c1`() {
+        // ReqShield.kt reads decisionForUpdate only as an argument of the trusted decideToUpdateCache, which the model drops.
+        val line = "free maxAttempt = this.reqShieldConfig.maxAttemptGetCache"
+        val copy = edited(line, "free maxAttempt = this.reqShieldConfig.decisionForUpdate")
+        val at = "${copy.path}:${sidecar.readLines().indexOfFirst { line in it } + 1}:3"
+        val (exit, _, err) = kv("resolve", copy.path)
+        assertEquals(1, exit)
+        val errors = err.lines().filter { "error[" in it }
+        assertEquals(
+            listOf(
+                "$at: error[free-unused]: free getAndSet.maxAttempt: this.reqShieldConfig.decisionForUpdate is read by no translated code, " +
+                    "but maxAttempt is used by POLL_bound, derived GAVE_UP, hole loop ReqShield.handleLockFailure; " +
+                    "unnamed translated reads of a Kotlin Int: ReqShield.kt:181:27 (this.reqShieldConfig.maxAttemptGetCache) (DESIGN-C 10.16)",
+            ),
+            errors,
+            err,
+        )
+        // kv verify resolves first: the same error, verdict ERROR (exit 4), and no Silicon run.
+        val (verifyExit, verifyOut, verifyErr) = kv("verify", copy.path)
+        assertEquals(4, verifyExit, verifyOut)
+        assertEquals(errors, verifyErr.lines().filter { "error[" in it }, verifyErr)
+    }
+
+    @Test
     fun `a comment in a trusted contract, or its note moved before the throws clause, keeps the fingerprint`() {
         val tryLock = "trusted fun KeyLock.tryLock(k: Key, lt: LockType) returns t: Token? creates Lease(k, lt, t) if t != null throws RTE"
         val commented = edited(tryLock, "$tryLock // a new comment")

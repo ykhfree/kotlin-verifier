@@ -392,6 +392,9 @@ class SidecarResolver(
             val fix = if (id == STRING) "a String value names its sidecar type (: Key)" else "a free value is an Int, Long, Boolean or sidecar enum value; only a String takes ': TYPE'"
             return err(item.names[0].pos, "free-type", "$what: '${src.name.text}' is a Kotlin ${typeText(t)}; $fix")
         }
+        // The same path, compared as the lowering compares it (ClientLowering: callableId per segment).
+        fun ids(p: List<FirCallableSymbol<*>>) = p.map { it.callableId.toString() }
+        if (duplicateFree(op, item, ids(path), clientFree[op.name.text].orEmpty().map { it.first to ids(it.second) })) return
         bind(what, item.pos, path.last(), posOf(path.last()))
         clientFree.getOrPut(op.name.text) { mutableListOf() } += item to path
     }
@@ -804,6 +807,7 @@ class SidecarResolver(
                 // DESIGN-B.md 5.3 rule 6: the names bind the first call of the operation; without a call they are
                 // parameters the code does not use (INFO, reported by the lowering).
                 val call = callsIn(operationScope(op, found), fn).firstOrNull()
+                if (call != null && duplicateFree(op, item, call, freeOf[op.name.text].orEmpty().map { it.first to it.second })) return
                 bind(what, item.pos, fn, call?.let { positions.of(it.source) } ?: posOf(fn))
                 if (call != null) freeOf.getOrPut(op.name.text) { mutableListOf() } += item to call
             }
@@ -816,9 +820,27 @@ class SidecarResolver(
         sym: FirCallableSymbol<*>,
         what: String,
     ) {
+        if (duplicateFree(op, item, sym, freeOf[op.name.text].orEmpty().map { it.first to it.second })) return
         bind(what, item.pos, sym)
         freeOf.getOrPut(op.name.text) { mutableListOf() } += item to sym
         freeType(item, sym)
+    }
+
+    /**
+     * JG4 B1 (DESIGN-C.md 10.16): two free items of one operation may not bind one value. Each name of a clause would
+     * then be the same value, and today such a sidecar resolves and fails later with no pointer to the free line.
+     * [bound] holds the items of [op] bound so far with their targets. True if [item] repeats one; the error is reported.
+     */
+    private fun duplicateFree(
+        op: OperationDecl,
+        item: FreeItem,
+        target: Any,
+        bound: List<Pair<FreeItem, Any>>,
+    ): Boolean {
+        val first = bound.find { it.second == target }?.first ?: return false
+        fun names(i: FreeItem) = "free ${op.name.text}.${i.names.joinToString(", ") { it.text }}"
+        err(item.names[0].pos, "free-duplicate", "${names(item)} binds the value that ${names(first)} binds (${first.source.name.text}); each free item of an operation names its own value")
+        return true
     }
 
     /**
