@@ -1,0 +1,1 @@
+(main-session summary) Compiles (1 of 10). Cap refusal returns fresh token, no entry; expired entry (expiresAt <= now) replaced with new LockInfo; late release succeeds if not taken over; monitor ScheduledExecutorService, removes expiresAt <= now; isHeld and semaphore redundant, new entry takes the permit, unLock releases and removes; token sequence increments on every tryLock.

@@ -516,3 +516,30 @@ S1, S2 수정의 확인 (메인 세션): 새 테스트 5개 중 결함 테스트
 - R의 `0 <= n` 실패는 설계대로 property로 센다.
 
 **누적 (AI 구현 24개, action 72개):** 판정 70개 (97%), 놓침 0, 오경보 0. 판정하지 못한 2개는 Part B 밖의 구문이다.
+
+## 16. 남은 미지원 구문 2개 (2026-10-29, 결과 전 등록)
+
+사용자 결정 (2026-10-29): 남은 일 2번을 진행한다. 셀을 helper에 넘기는 규칙(`DESIGN-v0.md` 2.5 규칙 7)을 승인했다. 서명된 `entry_lease`는 그대로 둔다 (lease를 `Long.MAX_VALUE`로 포화시키는 구현은 명세 위반이다).
+
+설계 (deep-reasoner, scratch 사본에서 시제품을 만들고 잼):
+1. `Long.MAX_VALUE` (T-opus-2 tryLock): `ActionLowering.read()`가 `Int`·`Long`의 `MIN_VALUE`·`MAX_VALUE` 네 상수를 정확한 정수 리터럴로 바꾼다. Long은 수학 정수다 (`DESIGN-v0.md` 2.8). 그래서 새 가정이 필요 없다. 다른 상수(`SIZE_BITS`, 모듈 파일의 `const val`)는 그대로 UNSUPPORTED다.
+2. 셀을 helper에 넘김 (G-opus-2 tryLock, `newHeldEntry(now, acquiredToken)`): 규칙 7. `ActionLowering`의 helper inline이 셀 인자를 매개변수의 다른 이름으로 묶는다. `ModuleContext.cellProblem`은 규칙 7의 네 조건을 검사한다.
+
+예측 (시제품 측정에 근거, 메인 세션 저장소에서 다시 잴 것):
+1. T-opus-2 tryLock: UNSUPPORTED에서 FAILED (property)로 바뀐다. 실패하는 성질은 `entry_lease`와 `ends_only_if P3a`다. 정답(11절)은 결함이므로 판별로 센다.
+2. G-opus-2 tryLock: UNSUPPORTED에서 FAILED (property, `ends_only_if P3a`)로 바뀐다. 정답(14.7)은 결함이다.
+3. 다른 22개 구현의 판정은 바뀌지 않는다. 누적은 action 72개 중 판정 72개, 놓침 0, 오경보 0이 된다.
+4. 서명된 모듈 7개의 생성 Viper, 위치표, `kv lower` 출력은 바이트 단위로 같다. 변이 33/30/42회에서 불일치 0.
+5. 기존 테스트는 바뀌지 않는다. 새 테스트 24개(`LibraryConstantTest`, `CellPassTest`)가 통과한다.
+
+### 16.1 결과 (2026-10-29, round 5, 메인 세션 저장소에서 측정)
+
+구현: deep-reasoner의 시제품 패치를 메인 세션이 검토하고 그대로 가져왔다 (`ActionLowering.kt`, `ModuleContext.kt`, 테스트 24개). 결과는 `aicode/round5/{r2,g}`에 있다. 이것은 round4 결과의 사본에 새 도구로 tool 단계를 다시 돌린 것이다.
+
+1. 예측 1 맞음: T-opus-2 tryLock은 FAILED (property)이고, 실패한 성질은 `ends_only_if P3a`와 `entry_lease`다.
+2. 예측 2 맞음: G-opus-2 tryLock은 FAILED (property)이고, 실패한 성질은 `ends_only_if P3a`다.
+3. 예측 3 맞음: 다른 22개 구현의 pass 1, pass 2, 하위 상태, 미지원 목록은 round4와 같다 (results.jsonl 비교).
+   - **누적 (AI 구현 24개, action 72개):** 판정 72개(100%), 놓침 0, 오경보 0.
+4. 예측 4: 여섯 L1 모듈의 생성 Viper와 위치표는 HEAD와 바이트 단위로 같다. client Viper는 `ClientGateTest`가 확인한다.
+5. 같은 날 바꾼 pass 2 덕분에(`DESIGN-C.md` 10.18) G-opus-1의 pass 2는 4.4 s다 (15.2의 87-127 s).
+6. 예측 4, 5 맞음: 변이 33/30/42회 불일치 0. 기존 테스트는 바꾸지 않았다. 새 테스트 24개를 포함해 전체 794개 통과. 시제품의 고의 고장 5개(상수 값, `mark`/`markAll`, action 안 검사, 별칭, 매개변수 사용 검사)는 deep-reasoner가 각각 잡히는 것을 확인했다.

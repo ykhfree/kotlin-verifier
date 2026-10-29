@@ -1,0 +1,1 @@
+(main-session summary) Compiles (1 of 10). Cap refusal returns fresh token, no entry; expired entry replaced with new LockInfo and token (old semaphore dropped); expired when now >= expiresAt in tryLock and monitor; Semaphore(1) taken at create, released at unLock; monitor daemon thread with removeIfExpired helper; cap reads lockMap.size inside compute.

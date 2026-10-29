@@ -39,6 +39,7 @@ import org.jetbrains.kotlin.fir.declarations.FirValueParameter
 import org.jetbrains.kotlin.fir.declarations.FirVariable
 import org.jetbrains.kotlin.contracts.description.EventOccurrencesRange
 import org.jetbrains.kotlin.fir.expressions.FirAnonymousFunctionExpression
+import org.jetbrains.kotlin.fir.expressions.FirArgumentList
 import org.jetbrains.kotlin.fir.expressions.FirBlock
 import org.jetbrains.kotlin.fir.expressions.FirEqualityOperatorCall
 import org.jetbrains.kotlin.fir.expressions.FirExpression
@@ -75,6 +76,7 @@ import org.jetbrains.kotlin.fir.visitors.FirVisitorVoid
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.descriptors.ClassKind
+import org.jetbrains.kotlin.descriptors.Modality
 import java.util.IdentityHashMap
 import org.jetbrains.kotlin.types.ConstantValueKind
 import org.jetbrains.kotlin.realElement
@@ -547,8 +549,8 @@ internal class ModuleContext(
         model: String,
     ): Boolean = entriesOf(op).any { it.model == model && it.role == Role.OP && !(model == TrustedModels.KOTLINX_SEMAPHORE_MODEL && it.name == "release") }
 
-    /** The reads of property [sym] in the module file. The target of an assignment is not a read; its value is. */
-    private fun reads(sym: FirPropertySymbol): List<FirPropertyAccessExpression> =
+    /** The reads of property or parameter [sym] in the module file. The target of an assignment is not a read; its value is. */
+    private fun reads(sym: FirBasedSymbol<*>): List<FirPropertyAccessExpression> =
         index.nodes.filterIsInstance<FirPropertyAccessExpression>().filter { calleeOf(it) == sym && (index.parent(it) as? FirVariableAssignment)?.lValue !== it }
 
     /** Each constructor call of [field]'s class in the module file, with the argument for [field] (or its default). */
@@ -574,19 +576,53 @@ internal class ModuleContext(
     ): Problem? {
         val decl = declarations[sym] as? FirProperty ?: return Problem("${sym} is not a local of the module file", posOf(found.call))
         val name = decl.name.asString()
-        val init = decl.initializer as? FirFunctionCall
-        if (!decl.isVal || init == null || entriesOf(init).none { it.model == TrustedModels.CELL && it.role == Role.CTOR }) {
-            return Problem("$name is not a val initialized with AtomicReference(...) or AtomicBoolean(...)", posOf(decl))
-        }
+        if (!isCellCandidate(sym)) return Problem("$name is not a val initialized with AtomicReference(...) or AtomicBoolean(...)", posOf(decl))
+        val init = decl.initializer as FirFunctionCall
         if (init.arguments.singleOrNull() !is FirLiteralExpression) return Problem("the initial value of cell $name is not a constant", posOf(init))
         val function = enclosing(decl) { it is FirFunction }
-        for (read in reads(sym as? FirPropertySymbol ?: return null)) {
+        for (read in reads(sym)) {
             val call = index.parent(read) as? FirFunctionCall
-            val op = call?.takeIf { it.dispatchReceiver === read }?.let { c -> entriesOf(c).find { it.model == TrustedModels.CELL && it.role == Role.OP } }
-            if (op == null) return Problem("cell $name escapes: it is used other than as the receiver of set or get", posOf(read))
+            val op = call?.takeIf { it.dispatchReceiver === read }?.let(::cellOperation)
+            // DESIGN-v0.md 2.5 rule 7: else the read must pass the cell to a module helper that the action inlines.
+            if (op == null) passProblem(read, name)?.let { return it }
             val lambda = enclosing(read) { it is FirAnonymousFunction || it === function }
             if (lambda is FirAnonymousFunction && lambda !== found.lambda && lambda !== function) return Problem("cell $name escapes: another lambda captures it", posOf(read))
-            if (op.name == "set" && lambda !== found.lambda) return Problem("cell $name is set outside the action", posOf(call))
+            if (op == null && lambda !== found.lambda) return Problem("cell $name is passed to a helper outside the action", posOf(read))
+            if (op?.name == "set" && lambda !== found.lambda) return Problem("cell $name is set outside the action", posOf(call!!))
+        }
+        return null
+    }
+
+    /** True if [sym] is a `val` initialized with `AtomicReference(...)` or `AtomicBoolean(...)` (DESIGN-v0.md 2.5 rule 1). */
+    fun isCellCandidate(sym: FirBasedSymbol<*>): Boolean {
+        val decl = declarations[sym] as? FirProperty ?: return false
+        val init = decl.initializer as? FirFunctionCall ?: return false
+        return decl.isVal && entriesOf(init).any { it.model == TrustedModels.CELL && it.role == Role.CTOR }
+    }
+
+    /** The cell model's set or get that call [c] is, or null. */
+    private fun cellOperation(c: FirFunctionCall): Entry? = entriesOf(c).find { it.model == TrustedModels.CELL && it.role == Role.OP }
+
+    /**
+     * Why [read] does not pass cell [name] to a helper (DESIGN-v0.md 2.5 rule 7), or null if it does: [read] is a whole
+     * argument of a call of a final helper of the module file, and the helper uses that parameter only as the receiver
+     * of set or get, outside every lambda. The caller checks that the call is inside the action.
+     */
+    private fun passProblem(
+        read: FirPropertyAccessExpression,
+        name: String,
+    ): Problem? {
+        val escapes = Problem("cell $name escapes: it is used other than as the receiver of set or get", posOf(read))
+        val call = (index.parent(read) as? FirArgumentList)?.let { index.parent(it) } as? FirFunctionCall ?: return escapes
+        val fn = (calleeOf(call) as? FirNamedFunctionSymbol)?.let { index.functions[it] } ?: return escapes
+        val param = call.resolvedArgumentMapping?.get(read) ?: return escapes
+        if (fn.status.modality != Modality.FINAL) return escapes
+        for (use in reads(param.symbol)) {
+            val c = index.parent(use) as? FirFunctionCall
+            if (c?.dispatchReceiver !== use || cellOperation(c) == null) {
+                return Problem("cell $name escapes: parameter ${param.name} of ${fn.name} is used other than as the receiver of set or get", posOf(use))
+            }
+            if (enclosing(use) { it is FirFunction } !== fn) return Problem("cell $name escapes: a lambda in ${fn.name} captures parameter ${param.name}", posOf(use))
         }
         return null
     }

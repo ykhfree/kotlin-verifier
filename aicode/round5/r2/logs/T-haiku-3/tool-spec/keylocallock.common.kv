@@ -1,0 +1,201 @@
+// Declarations both req-shield KeyLocalLock variants share (DESIGN-v0.md 4.4 and 4.5). Format: kv-sidecar/0.
+// Expressions are Viper text over the vocabulary in DESIGN-v0.md section 4.6.
+// The variant files keylocallock.coroutine.kv and keylocallock.core.kv add module, source and state seq.
+//
+// U7: an issue rule, an allowance clause and a trusted fun count only with a `reviewed` note. ykhfree reviewed the
+// issue rule, the four allowance clauses and the two trusted funs on 2026-10-23.
+// On 2026-10-28 the user approved the move under `review intent` (DESIGN-C.md 10.14): every intent clause has a source
+// line and a note, the vocabulary and the scope are signed, and the two trusted fingerprints cover the contract too.
+// Quoted sources are blocks of `kv spec snapshot` (specdraft/reqshield-core/snapshot) over README.md and CLAUDE.md,
+// which the three variants share.
+review intent
+
+// ---- Scope (C7, DESIGN-C 10.10): kv spec stale reports a block of this README section that no clause cites ----
+scope "README.md#local-lock-map-size"
+  reviewed "ykhfree 2026-10-28: this sidecar answers for every block of the README section on the local lock map" sha256 "90e014fe5928c726"
+exclude "README.md#local-lock-map-size/3" because "configuration: the cap reaches the model only through the trusted fun rejectsNewEntry" sha256 "c9f558f7102a8834"
+  reviewed "ykhfree 2026-10-28: configuration: the cap reaches the model only through the trusted fun rejectsNewEntry" sha256 "0aa7355f40dfd9df"
+exclude "README.md#local-lock-map-size/5" because "the soft cap: the model takes the refusal as a free value, so it claims no bound on the map size" sha256 "1fc22761fa4d11bb"
+  reviewed "ykhfree 2026-10-28: the soft cap: the model takes the refusal as a free value, so it claims no bound on the map size" sha256 "25f605b3bc130b5d"
+exclude "README.md#local-lock-map-size/6" because "logging, outside the model" sha256 "2ca57206f13cd132"
+  reviewed "ykhfree 2026-10-28: logging, outside the model" sha256 "ce39701691a8f760"
+exclude "README.md#local-lock-map-size/7" because "how LocalLockLimit reads the configured value, outside KeyLocalLock" sha256 "27634d337141de51"
+  reviewed "ykhfree 2026-10-28: how LocalLockLimit reads the configured value, outside KeyLocalLock" sha256 "e8b28e64ffd2125b"
+
+// ---- Abstract types for String values ----
+type Key   = opaque                     // compute keys: lockKeyOf(key, lockType)
+type Token = template "local-${Long}"   // "local-" + n -> n (injective); null -> NULL
+
+// ---- Module state ----
+state m:   Map<Key, LockInfo> = lockMap
+
+// ---- Classes reachable from the state ----
+class LockInfo = LockInfo {
+  permits:   Semaphore     = semaphore
+  isHeld:    AtomicBoolean = isHeld
+  token:     Token?        = token
+  expiresAt: Long          = expiresAt
+}
+
+// ---- Trusted models (built-in, section 4.3) ----
+use jdk.ConcurrentHashMap.compute
+use jdk.ConcurrentHashMap.mappingCount
+use jdk.ConcurrentHashMap.racyRead
+use jdk.Semaphore
+use jdk.AtomicBoolean
+use jdk.AtomicLong
+use jdk.AtomicCell
+use jdk.System.currentTimeMillis
+use slf4j.Logger
+
+// ---- Trusted project functions (bodies read by a human) ----
+trusted fun com.linecorp.cse.reqshield.support.utils.nowToEpochTime() = clock
+  reviewed "ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()" sha256 "a4f8bac168692c9e"
+trusted fun com.linecorp.cse.reqshield.support.config.LocalLockLimit.rejectsNewEntry(kotlin.Long)
+  returns rej: Bool
+  ghost   limit: Int                    // the cap the call read
+  ensures rej ==> limit != 0
+  effects none                          // rejectionCount and logging are outside the model
+  reviewed "ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit" sha256 "d00c8149a8a320cb"
+
+// ---- Ghost state ----
+ghost record tok(Token) {
+  gIssued: Bool set-once                // tryLock returned this token
+  gKey:    Key  frozen                  // key the token was issued for
+  gBacked: Bool frozen                  // a map entry carried the token when it was issued
+  gHeld:   Bool ends                    // the acquisition has not ended
+  gLease:  Int  frozen                  // clock reading at issue + lockTimeoutMillis
+}
+witness LockInfo.token                  // a backed token is held while its key's entry carries it
+
+// The vocabulary note covers every type, class, ghost record and witness declaration of this sidecar (DESIGN-E 12.3).
+review vocabulary
+  reviewed "ykhfree 2026-10-28: the KeyLocalLock vocabulary: types Key and Token, class LockInfo with its four fields, ghost record tok with its field kinds, witness LockInfo.token" sha256 "fc02a90ab69d4fb6"
+
+// ---- Operations: exactly one atomic action each ----
+operation tryLock = fun KeyLocalLock.tryLock {
+  free now        = local now           // nowToEpochTime(), read before compute
+  free timeout    = this.lockTimeoutMillis
+  free rej, limit = call rejectsNewEntry
+  result res
+  issue res { gKey = k; gBacked = carried(S, k, res); gLease = now + timeout }
+    source "README.md#global-lock-guidance/2" quote "Every lock acquisition carries an ownership token." sha256 "ffd91c43c843b5f8"
+  reviewed "ykhfree 2026-10-23: README Global lock guidance: every lock acquisition carries an ownership token" sha256 "96c214a31662eaee"
+  ensures P1a: res != NULL ==> !old(tok(res).gIssued) && tok(res).gIssued &&
+      tok(res).gKey == k && tok(res).gHeld && tok(res).gLease == now + timeout
+    source "CLAUDE.md#key-components/2" quote "`tryLock` returns an ownership token" sha256 "58d3866dfcb69dcf"
+    source "CLAUDE.md#reqshieldconfiguration-parameters/4" quote "`lockTimeoutMillis`: Lock acquisition timeout" sha256 "96bb2ac381ef4f65"
+  reviewed "ykhfree 2026-10-28: a returned token is new and issued for this key, its acquisition is held, and its lease ends lockTimeoutMillis after the call's clock reading" sha256 "c76edf11a3116538"
+  ensures P1a_entry: res != NULL && tok(res).gBacked ==> has(S, k) && S.m[k].token == res
+    source "README.md#local-lock-map-size/1" quote "keeps one entry per `(cache key, lock type)` it is currently locking" sha256 "4b545b75bf0b21e0"
+  reviewed "ykhfree 2026-10-28: a backed token is the token that its key's map entry carries" sha256 "c31c25acde4a0c8e"
+  ends_only_if P3a: now > old(tok(qt).gLease)
+    source "README.md#global-lock-guidance/2" quote "a slow holder whose lock already expired" sha256 "ffd91c43c843b5f8"
+  reviewed "ykhfree 2026-10-23: README: only an expired lock is taken over (a slow holder whose lock already expired)" sha256 "3dd0a68bbaa68ef4"
+  unbacked_only_if P3b: !old(has(S, k)) && rej && limit != 0
+    source "README.md#local-lock-map-size/4" quote "a request for a **new** key is handed a permit that no map entry backs." sha256 "22ecf436faddbfa1"
+  reviewed "ykhfree 2026-10-23: README Local lock map size: at the cap a new key is handed a permit that no map entry backs" sha256 "a185c9abbb1779b1"
+  ensures progress_free: !old(has(S, k)) && !rej ==> res != NULL && tok(res).gBacked
+    source none "core KeyLock.kt:30 (null only when another holder owns the lock); the KeyLock KDoc of the variants differs (core, reactor) or is missing (coroutine), so no shared text states it"
+  reviewed "ykhfree 2026-10-28: a call for a key with no entry that the cap does not refuse gets a token that an entry carries" sha256 "b0a991950143c582"
+  ensures progress_live: old(has(S, k)) && old(S.m[k].isHeld) && now <= old(S.m[k].expiresAt) ==> res == NULL
+    source none "core KeyLock.kt:30 (null only when another holder owns the lock); the KeyLock KDoc of the variants differs (core, reactor) or is missing (coroutine), so no shared text states it"
+  reviewed "ykhfree 2026-10-28: a call for a key whose entry is held and not past its lease gets no token" sha256 "3ec02c509bb76274"
+  ensures cap_unbacked: !old(has(S, k)) && rej ==> res != NULL && !tok(res).gBacked && !has(S, k)
+    source "README.md#local-lock-map-size/4" quote "a request for a **new** key is handed a permit that no map entry backs." sha256 "22ecf436faddbfa1"
+  reviewed "ykhfree 2026-10-28: at the cap a new key gets a token that no entry carries, and no entry is made" sha256 "05566188e07547db"
+  ensures expired_takeover: old(has(S, k)) && now > old(S.m[k].expiresAt) ==> res != NULL && tok(res).gBacked
+    source "README.md#global-lock-guidance/2" quote "a slow holder whose lock already expired can no longer release the lock of the next holder" sha256 "ffd91c43c843b5f8"
+  reviewed "ykhfree 2026-10-28: a call for a key whose entry is past its lease takes the lock over and gets a token that the entry carries" sha256 "d8fa38990be32fdb"
+  // DESIGN-C.md 10 UC3: a refused call leaves the owner and the lease as they were (no renewal).
+  ensures refusal_keeps_entry: res == NULL ==> old(has(S, k)) && has(S, k) &&
+      S.m[k].token == old(S.m[k].token) && S.m[k].expiresAt == old(S.m[k].expiresAt)
+    source none "user decision 2026-10-25 (DESIGN-C UC3): no sentence states it; all three pilot drafts asked"
+  reviewed "ykhfree 2026-10-25: a refused tryLock does not renew the holder's lease" sha256 "94198e9729f7b868"
+}
+
+operation unLock = fun KeyLocalLock.unLock {
+  free t: Token = param token
+  result res
+  ensures P1: res ==> old(has(S, k)) && old(S.m[k].token) == t && old(tok(t).gIssued) &&
+      old(tok(t).gKey) == k && old(tok(t).gBacked) && old(tok(t).gHeld) && !tok(t).gHeld && !has(S, k)
+    source "CLAUDE.md#key-components/2" quote "`unLock` only releases when the token matches" sha256 "58d3866dfcb69dcf"
+    source "README.md#local-lock-map-size/2" quote "An entry is dropped as soon as the lock is released" sha256 "a50a09d95953837f"
+  reviewed "ykhfree 2026-10-28: a successful release presented the token of the key's held entry; it ends that acquisition and drops the entry" sha256 "5f05845a7165e5f1"
+  ends_only_if P3a: qt == t && res
+    source "README.md#global-lock-guidance/2" quote "Only the holder that acquired the lock can release it" sha256 "ffd91c43c843b5f8"
+  reviewed "ykhfree 2026-10-23: README: only the holder that acquired the lock can release it" sha256 "3d4d5f9434a6cee5"
+  ensures progress_owner: old(has(S, k)) && old(S.m[k].token) == t ==> res
+    source none "core KeyLock.kt:40 (false only when the lock is not held or the token does not match); the KeyLock KDoc of the variants differs (core, reactor) or is missing (coroutine), so no shared text states it"
+  reviewed "ykhfree 2026-10-28: a release with the token of the key's entry succeeds" sha256 "b751dc61762dbef0"
+  // DESIGN-C.md 10.4: a release never makes an entry for a key that had none.
+  ensures no_entry_created: !old(has(S, k)) ==> !has(S, k)
+    source none "user decision 2026-10-26 (DESIGN-C 10.4): no sentence states it; cell generation found it only in the hole"
+  reviewed "ykhfree 2026-10-26: a release or a monitor pass never makes an entry for a key that had none" sha256 "509d721ad1aca002"
+}
+
+operation sweep = compute in KeyLocalLock.Companion {
+  free now = local now                  // System.currentTimeMillis(), once per sweep pass
+  ends_only_if P3a: now > old(tok(qt).gLease)
+    source "README.md#local-lock-map-size/2" quote "cleanup monitor once `lockTimeoutMillis` has passed" sha256 "a50a09d95953837f"
+  reviewed "ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed" sha256 "3c68af4c1e630a46"
+  // DESIGN-C.md 10.4: a monitor pass never makes an entry for a key that had none.
+  ensures no_entry_created: !old(has(S, k)) ==> !has(S, k)
+    source none "user decision 2026-10-26 (DESIGN-C 10.4): no sentence states it; cell generation found it only in the hole"
+  reviewed "ykhfree 2026-10-26: a release or a monitor pass never makes an entry for a key that had none" sha256 "509d721ad1aca002"
+}
+
+// ---- State properties ----
+invariant P2: forall qr: Ref :: { qr in S.created } qr in S.created ==> 0 <= qr.permits && qr.permits <= 1
+  source none "a model fact: KeyLocalLock makes each entry's Semaphore with one permit (core KeyLocalLock.kt:206)"
+reviewed "ykhfree 2026-10-28: an entry's semaphore holds 0 or 1 permits" sha256 "e253d83565837981"
+// DESIGN-C.md 10 UC2: an entry expires at the lease of the token it carries (issue: gLease = now + timeout), so
+// progress_live and expired_takeover, which read expiresAt, keep their meaning whatever the hole says.
+invariant entry_lease: forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
+    S.m[qk].expiresAt == tok(S.m[qk].token).gLease
+  source "README.md#local-lock-map-size/2" quote "cleanup monitor once `lockTimeoutMillis` has passed" sha256 "a50a09d95953837f"
+  source "CLAUDE.md#reqshieldconfiguration-parameters/4" quote "`lockTimeoutMillis`: Lock acquisition timeout" sha256 "96bb2ac381ef4f65"
+reviewed "ykhfree 2026-10-25: an unreleased lock expires lockTimeoutMillis after it was acquired" sha256 "c2ae43c5a13c3c35"
+// DESIGN-C.md 10.3: progress_live reads isHeld; this ties it to the ghost state, so its meaning does not live in the hole.
+invariant entry_held: forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
+    S.m[qk].isHeld == tok(S.m[qk].token).gHeld
+  source none "user decision 2026-10-25 (DESIGN-C 10.3): the meaning of the isHeld field that progress_live reads"
+reviewed "ykhfree 2026-10-25: an entry is held exactly while the acquisition of its token has not ended" sha256 "be2c7e636d7ac55a"
+lemma P3c: forall t1: Int, t2: Int :: { tok(t1).gHeld, tok(t2).gHeld }
+    tok(t1).gIssued && tok(t2).gIssued && tok(t1).gBacked && tok(t1).gHeld &&
+    tok(t2).gBacked && tok(t2).gHeld && tok(t1).gKey == tok(t2).gKey ==> t1 == t2
+  source "CLAUDE.md#key-components/2" quote "Locking mechanism (local or global) to prevent concurrent cache operations" sha256 "58d3866dfcb69dcf"
+reviewed "ykhfree 2026-10-28: at most one acquisition per key is held at a time among the tokens that an entry backs" sha256 "d6ff0d0c25088bbe"
+
+// ---- Inductive invariant: written by an LLM (E3 workflow), checked by the tool ----
+hole MI_INV """
+  // INV-E: every entry is held, has no free permit, and carries a token.
+  (forall qk: Key :: { S.m[qk] } has(S, qk) ==>
+     S.m[qk].permits == 0 && S.m[qk].isHeld && S.m[qk].token != NULL) &&
+  // The counter is never negative, and every issued token is between 0 and the counter.
+  0 <= S.seq &&
+  (forall qt: Int :: { tok(qt).gIssued } tok(qt).gIssued ==> 0 <= qt && qt <= S.seq) &&
+  // Each entry's token is a held backed token issued for this key, with the entry's lease.
+  (forall qk: Key :: { S.m[qk] } has(S, qk) ==>
+     tok(S.m[qk].token).gIssued && tok(S.m[qk].token).gKey == qk &&
+     tok(S.m[qk].token).gBacked && tok(S.m[qk].token).gHeld &&
+     tok(S.m[qk].token).gLease == S.m[qk].expiresAt) &&
+  // Each held backed token is the token of its key's entry.
+  (forall qt: Int :: { tok(qt).gHeld }
+     tok(qt).gIssued && tok(qt).gBacked && tok(qt).gHeld ==>
+       has(S, tok(qt).gKey) && S.m[tok(qt).gKey].token == qt)
+"""
+
+// ---- Non-vacuity probe: a scenario from init ----
+probe(k: Key, now: Int, timeout: Int) requires timeout > 0 {
+  t1 := tryLock(k, now = now, timeout = timeout, rej = false, limit = 0)
+  assert t1 != NULL && tok(t1).gBacked
+  t2 := tryLock(k, now = now, timeout = timeout, rej = false, limit = 0)   // live entry
+  assert t2 == NULL
+  ok := unLock(k, t = t1)
+  assert ok
+  ok2 := unLock(k, t = t1)                                                 // stale release
+  assert !ok2
+}
+  source none "a non-vacuity scenario, not a requirement"
+reviewed "ykhfree 2026-10-28: a first call gets a backed token, a second call for the live key gets none, the release succeeds, and a stale release fails" sha256 "6b996ce1ab3885c4"

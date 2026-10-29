@@ -298,6 +298,12 @@ v0는 이 경로를 모델링하지 않는다. 그래서 action 안의 호출은
 4. Java 제네릭 생성자의 call type argument는 `kotlin.String!`이고 파라미터 타입은 `V!`다 (dump 185-186행). 셀 타입은 식 전체의 resolved type(`AtomicReference<kotlin.String?>`)에서 가져온다.
 5. compute 람다는 호출한 스레드에서 같은 호출 안에 실행된다. 그래서 셀은 그 스레드의 지역 변수와 같다.
 6. 람다가 바깥의 지역 `var`에 대입하는 경우는 v0 unsupported다. KeyLocalLock은 셀만 쓴다.
+7. (2026-10-29 추가, 사용자 승인) 2번의 예외: 셀을 helper의 인자로 넘길 수 있다. 조건은 넷이다.
+   - 호출이 action 람다 안에 바로 있다.
+   - helper는 모듈 파일의 final 함수이고, action이 그 본문을 inline한다.
+   - 셀은 인자 하나 전체다.
+   - helper는 그 매개변수를 `set`/`get`의 receiver로만 쓰고, 람다가 그것을 캡처하지 않는다.
+   이유: 매개변수는 val이라 호출 동안 같은 셀을 가리킨다. 위 조건이면 저장, 반환, 다른 호출로 넘김, 캡처가 없다. inline한 본문은 같은 스레드에서 같은 순서로 실행되므로, 매개변수를 통한 쓰기는 그 셀의 쓰기다. 5번(셀은 스레드의 지역 변수)이 그대로 성립한다. 근거와 측정: `AI-CODE.md` 16.
 
 ### 2.6 `if`/`else`와 부수 효과가 있는 `&&`
 

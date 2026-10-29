@@ -1,0 +1,23 @@
+com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion (keylocallock.coroutine.kv)    module: FAILED (Silicon 5.54 s)
+  action tryLock  KeyLocalLock.kt:72:9   FAILED (property)
+      Postcondition of tryLock might not hold: sidecar ends_only_if P3a keylocallock.common.kv:92:3 (incomplete quantifiers)
+  action unLock   KeyLocalLock.kt:101:9   PROVEN
+  action sweep    KeyLocalLock.kt:49:25   FAILED (property)
+      Postcondition of sweep might not hold: sidecar ends_only_if P3a keylocallock.common.kv:139:3 (incomplete quantifiers)
+  init PROVEN · lemma P3c PROVEN · probe PROVEN
+Spec to review: intent clauses (review intent): the issue rule of tryLock, ensures P1a of tryLock, ensures P1a_entry of tryLock, ends_only_if P3a of tryLock, unbacked_only_if P3b of tryLock, ensures progress_free of tryLock, ensures progress_live of tryLock, ensures cap_unbacked of tryLock, ensures expired_takeover of tryLock, ensures refusal_keeps_entry of tryLock, ensures P1 of unLock, ends_only_if P3a of unLock, ensures progress_owner of unLock, ensures no_entry_created of unLock, ends_only_if P3a of sweep, ensures no_entry_created of sweep, invariant P2, invariant entry_lease, invariant entry_held, lemma P3c, the probe
+Assumptions (not checked by Silicon):
+  Long unbounded: KeyLocalLock.kt:78:44, KeyLocalLock.kt:82:38, KeyLocalLock.kt:83:55
+  Free values:
+    tryLock: k <- lockKey 69:9 (action key), now <- now 70:9 (captured), timeout <- this.lockTimeoutMillis 83:61 (instance val lockTimeoutMillis), rej <- LocalLockLimit.rejectsNewEntry(...) 76:44 (trusted call LocalLockLimit.rejectsNewEntry), limit <- LocalLockLimit.rejectsNewEntry(...) 76:44 (trusted call LocalLockLimit.rejectsNewEntry)
+    unLock: k <- lockKey 99:9 (action key), t <- token 97:9 (captured)
+    sweep: k <- key 47:26 (action key), now <- now 48:25 (captured)
+  Trusted models: jdk.ConcurrentHashMap.compute, jdk.ConcurrentHashMap.mappingCount, jdk.ConcurrentHashMap.racyRead, jdk.Semaphore, jdk.AtomicBoolean, jdk.AtomicLong, jdk.AtomicCell, jdk.System.currentTimeMillis, slf4j.Logger, kotlinx.Semaphore
+  Trusted project functions: nowToEpochTime (reviewed: ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()), rejectsNewEntry (reviewed: ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit)
+  Init: the ghost records are allocated by an inhale with no record issued (trusted)
+Racy reads (modeled as arbitrary values): lockMap.keys 47:33
+Not modeled (no module-state access): class KeyLocalLock 34:1, constructor of KeyLocalLock 34:19, constructor of Companion 37:5, property monitorScope 40:9, init 42:9, fun tryLock 65:5, fun unLock 94:5
+Unsupported: none
+Branch reachability (INFO, not part of any verdict; DESIGN-v0.md 5.4): 11 branch(es) probed, 0 unreachable
+Note: init and probe do not check inductiveness; the action methods do (DESIGN-v0.md 5.4).
+Viper program: out/model.vpr
