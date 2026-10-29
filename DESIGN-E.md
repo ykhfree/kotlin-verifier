@@ -142,7 +142,7 @@
 | UE3 | lock 저장소가 실패할 때(`tryLock`·`unLock`이 던짐) 호출자는 무엇을 받는가? 던진 `unLock`은 해제로 치는가? | (a) lock 호출은 던지지 않는다고 가정한다 (설계 때의 기준선). (b) RET_*를 그대로 요구한다. 측정(A2): 원본이 RET_hit, RET_recheck, RET_supplier_error에서 FAILED다. LD_*는 그대로 PROVEN이다 (던진 `unLock`은 의무를 소비한다: `ReqShield.kt:150` "the lock then expires on its own"). (b)를 고르면 req-shield 코드를 고쳐야 한다 (2.2절) (권고였던 것: 사용자가 정한다. (a)이면 global lock을 쓰는 사용자에게 가정이 보이게 한다) | **결정: (b) "호출자는 이미 얻은 결과를 잃지 않는다".** RET_hit, RET_recheck, RET_supplier_error를 그대로 요구한다. 그래서 원본 core는 FAILED다 (측정, 5.2절). 고친 코드는 5.6절. 던진 `unLock`이 의무를 끝낸다는 것은 이름 있는 가정 A4로 서명한다 |
 | UE4 | executor가 받은 과제는 반드시 실행된다고 가정하는가? | (a) 가정한다. (b) 성질에 넣는다. 측정(A3): 받은 과제를 버릴 수 있으면 원본이 LD_noleak에서 FAILED다. `ThreadPoolExecutor.shutdownNow()`는 "halts the processing of waiting tasks" (JDK `ThreadPoolExecutor.java:1405-1406`). 라이브러리는 사용자의 pool을 끄지 않는다 (`ReqShieldConfiguration.kt:51-52`). core-spring adapter는 자기 pool(`Executors.newScheduledThreadPool`, daemon thread)을 `shutdown()`으로 끈다 (`ReqShieldAspect.kt:263`, 271). `shutdown`은 "previously submitted tasks are executed" (JDK `ScheduledThreadPoolExecutor.java:824-825`). JVM이 끝날 때 daemon thread의 남은 과제는 실행되지 않는다. 그때 local lock은 JVM과 함께 사라지고, global lock은 lease가 끝낸다. 남는 경우의 비용은 lease 하나다 (권고였던 것: (a)) | **결정: (a) 가정한다 (A3).** 서명한다 |
 | UE5 | 모드별 쓰기 규칙을 확인한다. 그리고 "polling 뒤 fallback은 캐시를 쓰지 않는다"를 의도 절로 넣는가? | 모드 규칙은 `CLAUDE.md:103-105`가 정한다. fallback의 "쓰지 않음"은 코드(197행)에만 있다. 넣으면 M4 같은 "fallback 결과도 캐시에 쓰자" 변경이 FAILED가 된다 (측정: M4 → LD_write) (권고였던 것: 넣는다 (`source none`, 사용자 서명)) | 미정. 서명 차례에 정한다. 답이 LD_write 절의 모양을 정한다 (2.5절) |
-| UE6 | coroutine 변형: `scope.launch(start = ATOMIC)`의 dispatcher가 던지면? | kotlinx.coroutines 1.8.1에서 ATOMIC은 `startCoroutine`을 쓴다 (`CoroutineStart.kt:89`). `resumeWith`가 `dispatcher.dispatch`를 바로 부른다 (`DispatchedContinuation.kt:193-196`). 그래서 dispatch가 던지면 `launch`가 던지고 과제는 실행되지 않는다. coroutine 코드에는 core의 거부 처리(147-157행)에 해당하는 것이 없다: lock이 lease까지 남고, 갱신 경로의 호출자는 hit을 잃는다. Executor 기반 dispatcher는 던지지 않는다 (`Executors.kt:129-136`: 거부되면 job을 취소하고 `Dispatchers.IO`로 보낸다). (a) dispatch는 던지지 않는다고 가정 (Phase 0 F6), (b) 성질에 넣음 → coroutine FAILED (권고였던 것: E5 전에 정한다) | 미정. E5 전에 정한다 |
+| UE6 | coroutine 변형: `scope.launch(start = ATOMIC)`의 dispatcher가 던지면? | kotlinx.coroutines 1.8.1에서 ATOMIC은 `startCoroutine`을 쓴다 (`CoroutineStart.kt:89`). `resumeWith`가 `dispatcher.dispatch`를 바로 부른다 (`DispatchedContinuation.kt:193-196`). 그래서 dispatch가 던지면 `launch`가 던지고 과제는 실행되지 않는다. coroutine 코드에는 core의 거부 처리(147-157행)에 해당하는 것이 없다: lock이 lease까지 남고, 갱신 경로의 호출자는 hit을 잃는다. Executor 기반 dispatcher는 던지지 않는다 (`Executors.kt:129-136`: 거부되면 job을 취소하고 `Dispatchers.IO`로 보낸다). (a) dispatch는 던지지 않는다고 가정 (Phase 0 F6), (b) 성질에 넣음 → coroutine FAILED (권고였던 것: E5 전에 정한다) | **결정 (2026-10-29): (a) 가정한다.** 이름 있는 가정으로 서명하고 보고서에 싣는다. 이유: 표준 dispatcher와 Executor 기반 dispatcher는 던지지 않는다. UE4 (a)와 같은 방향이다 |
 
 1. 결정된 넷(UE1-UE4)으로 모델의 기준(canonical)을 다시 정했다: A1, A3, A4, A5는 켜고, A2(lock 호출은 던지지 않음)는 끈다 (4절).
 2. 설계 때의 기준 모델(A2 켬)은 토글 `A2_on_lock_calls_return`으로 남는다. 그 모델에서 원본은 PROVEN이다 (측정).
@@ -741,7 +741,7 @@ Assumptions (not checked by Silicon): A1 errors fatal, A2 lock calls return, A3 
 ### 10.1 사용자가 정할 것
 
 1. 정함 (2026-10-26): UE1-UE4 (2.3절).
-2. 남음: UE5 (서명 차례에 정함; LD_write 절의 모양), UE6 (E5 전에 정함).
+2. 남음: UE5 (서명 차례에 정함; LD_write 절의 모양), UE6 (E5 전에 정함). 2026-10-29 현재 둘 다 정했다: UE5는 2.5절 5번, UE6은 (a) 가정 (2.3절).
 3. 서명할 것 16개 (2.5절). 그리고 `fixed-core.patch`를 req-shield에 넣을지 (5.6절).
 
 ### 10.2 메인 세션이 정할 것
@@ -1292,3 +1292,23 @@ review vocabulary
 3. 테스트 도우미 `rereviewed`(`Harness.kt`)가 어휘 메모도 다시 찍는다. 어휘가 주제가 아닌 테스트가 sidecar 사본을 고칠 때 쓴다.
 4. 고의 고장 R6 (하나씩 넣고 되돌림): a, b, c, e, f, g, h는 지정한 테스트가 잡았다. d(어휘 종류에서 `trace`를 뺌)는 `when`에서 가지를 지우면 컴파일 오류가 난다 (12.3.4 3번의 의도). `trace`를 null 쪽 가지로 옮긴 d2는 테스트 7개가 잡았다.
 5. 판단: `#01`은 `#1`로 받는다 (L-B 구현 agent).
+
+## 13. E5 coroutine 변형 설계 (2026-10-29, 도구 변경 없음)
+
+사용자 결정: UE6 (a) (2.3절). 세부 설계는 deep-reasoner가 했다. 전문(영어 초안)은 `spike/protocol2c/DESIGN-E5.md`에 있다.
+
+산출물 (`spike/protocol2c/`):
+- `target-coroutine.vpr`: 손 Viper 기준 모델 (gate 대상).
+- `verdicts.txt`: 측정한 판정. 두 base(원본, 고친 사본)에서 79개 파일을 쟀다.
+- `fixed-coroutine.patch`: req-shield 수정안이다 (+36/-7). core 수정(5.6절)을 옮기고, 취소 예외는 다시 던진다.
+- `reqshield.coroutine.kv.draft`: sidecar 초안이다. 메모는 모두 제안이고, 서명하지 않았다.
+- `tools/`, `probe/`, `fix/`: 측정 스크립트와 탐색 입력이다.
+- 실행 출력(`run0`-`run3`, 약 55 MB)은 저장소에 넣지 않았다. `tools/run_c.sh`로 다시 만든다.
+- 새 스냅숏 `specdraft/reqshield-coroutine/snapshot`(130블록)도 있다. README·CLAUDE.md 블록 120개는 core 스냅숏과 같다.
+
+핵심 결과 (손 모델 측정과 소스 읽기. 도구로는 아직 확인하지 않았다):
+1. 원본 coroutine 코드는 서명된 가정에 A6(UE6)을 더해도 FAILED다. 실패하는 절은 RET_hit, RET_recheck, RET_supplier_error, RET_cancel이다. 원인은 core의 UE3 수정이 coroutine에 옮겨지지 않은 것이다. 메인 세션이 소스를 비교해서 확인했다: 71행 `tryLock`, 112행과 247행 `unLock`이 `fixed-core.patch`가 고친 모양 그대로다.
+2. 고친 사본은 PROVEN이다 (손 모델). req-shield 모듈 테스트 57개가 고친 사본에서 통과한다.
+3. 지금 도구: `kv discover --client`는 후보 0개다. `kv resolve`는 suspend 함수 값을 거부한다. `kv lower`는 `e is CancellationException`(250행)에서 StackOverflowError로 멈춘다. 메인 세션이 재현했다.
+4. 추정: 7-9.5 인일이다. 6.10절의 3-5 인일보다 크다. 측정한 구문 목록이 길기 때문이다.
+5. 새 사용자 결정 3개(UE7, UE8, UE9)와 서명할 메모 26개가 필요하다.
