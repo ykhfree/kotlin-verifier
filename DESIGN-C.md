@@ -1115,3 +1115,22 @@ decl := ...
    - client `param` 출처의 `free`는 lowering이 이름을 주지 않는다. 절이 그 이름을 쓰면 지금도 Silicon "undeclared identifier"다 (C3). 고치거나 금지해야 한다.
    - 맞바꾼 두 묶기(L8, C6)와 L1의 `param`·`local` 오묶기(L4, L6, L7)는 잡지 못한다. 이것을 잡는 길은 묶기의 서명(A안)뿐이고, 그것도 서명 뒤 편집만 잡는다. 사용자 결정 (2026-10-29): 이번에는 하지 않는다.
    - 묶인 Kotlin 지역 변수의 계산식을 바꾸는 편집(K1-K3: `val now = nowToEpochTime() + lockTimeoutMillis`, sweep의 `now + 1000`, `System.nanoTime()`)은 PROVEN 그대로다 (deep-reasoner 측정). `DESIGN-v0.md` 2.12 규칙 1의 설계 결과이고, JG4 밖이다.
+
+### 10.17 client `param` 출처의 `free` 이름 (2026-10-29)
+
+사용자 결정 (2026-10-29): 남은 일 1번을 진행한다. 방법(지원 또는 금지)은 메인 세션이 정했다: 지원한다. L1에서는 `param` 출처가 이미 동작하고, 리졸버도 client의 `param`을 받기 때문이다.
+
+문제 (10.16 결과 9): client lowering은 매개변수를 `P__LINE`으로 선언한다 (`ClientLowering.materialize`). 그래서 `free NAME = param P`의 NAME을 쓰는 절은 Silicon "undeclared identifier"가 된다. `free-unused`는 `this.` 출처만 검사했다.
+
+고친 것:
+1. `materialize`: entry의 매개변수를 `free NAME = param P`가 이름 붙이면, 지역 변수 이름을 NAME으로 한다. 이것은 이름 붙은 `this.` 경로와 같은 방식이다. task는 부모에게서 값을 받는다(spawnValue).
+2. `freeUnused`: `param` 출처도 검사한다. entry의 매개변수 이름도 선언된 이름으로 센다. 메시지: "param P is read by no translated code, or it is the obligation key, which the sidecar reads as k". 이유: obligation의 key 매개변수는 언제나 지역 변수 `k`다 (DESIGN-E 3.1). 그래서 다른 이름은 그것을 선언하지 않는다.
+
+예측: 이번에는 구현 전에 등록하지 않았다 (절차 누락). 메인 세션은 C3(`free maxAttempt = param timeToLiveMillis`)가 이름을 얻어 resolve될 것으로 짐작했다. 이 짐작은 틀렸다.
+
+결과 (측정):
+1. C3는 이제 `free-unused`로 잡힌다. getAndSet은 `timeToLiveMillis`를 모델이 버리는 인자(`setCacheFunction`, `decideToUpdateCache`)로만 읽는다. 그래서 번역된 코드는 그것을 읽지 않는다. 10.16에서 잡지 못한 C3가 이제 resolve 단계에서 그 `free` 줄을 가리킨다.
+2. 매개변수를 읽는 fixture에서는 매개변수가 sidecar 이름(`n`)의 지역 변수가 되고, 오류가 없다. `free` 줄이 없으면 이름은 전처럼 `limit__LINE`이다.
+3. 서명된 core sidecar는 `param`을 쓰지 않는다. 그래서 생성 Viper는 바뀌지 않는다 (`ClientGateTest`).
+4. 새 테스트 3개(`FreeParamTest`). 고의 고장 2개(이름 붙이기를 끔, `param` 검사를 뺌)를 모두 잡았다.
+5. 전체 테스트 794개 통과 (10.18, `AI-CODE.md` 16의 변경과 함께 돌림). 변이 33/30/42회 불일치 0.

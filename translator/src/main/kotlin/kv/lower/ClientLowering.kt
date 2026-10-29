@@ -382,7 +382,7 @@ internal class ClientLowering(
     }
 
     /**
-     * DESIGN-C 10.16 B2c: a `free NAME = this.PATH` item whose NAME no unit of its operation declares, while a guard,
+     * DESIGN-C 10.16 B2c: a `free NAME = this.PATH` or `free NAME = param P` (10.17) item whose NAME no unit of its operation declares, while a guard,
      * an ensures, a derived value or a loop hole uses NAME. A unit names NAME only at a translated read of PATH, so
      * NAME would reach Silicon as an undeclared identifier. An operation with an unsupported unit is skipped: the read
      * may sit in the rejected construct, and the module stays INCOMPLETE.
@@ -393,12 +393,21 @@ internal class ClientLowering(
     ): List<SidecarError> {
         val errors = mutableListOf<SidecarError>()
         for (op in sidecar.operations) {
-            val units = entries.filter { it.name == op.name.text }.map { it.status to it.free } + tasks.filter { it.spawnedBy == op.name.text }.map { it.status to it.free }
+            val opEntries = entries.filter { it.name == op.name.text }
+            val opTasks = tasks.filter { it.spawnedBy == op.name.text }
+            val units = opEntries.map { it.status to it.free } + opTasks.map { it.status to it.free }
             if (units.isEmpty() || units.any { it.first !is Status.Supported }) continue
             val free = units.flatMap { it.second }.distinctBy { it.local.name }
-            val declared = free.mapNotNull { it.sidecarName }.toSet()
+            // A named this-path is a free value; a named parameter is a parameter of the entry (DESIGN-C.md 10.17).
+            val declared = free.mapNotNull { it.sidecarName }.toSet() + opEntries.flatMap { it.params.map { p -> p.name } }
             for ((item, path) in resolver.clientFree[op.name.text].orEmpty()) {
-                val source = item.source as? FreeSource.This ?: continue
+                val source =
+                    when (val s = item.source) {
+                        is FreeSource.This -> "this.${s.name.text} is read by no translated code"
+                        // The key parameter is the local k of HOLDS (DESIGN-E 3.1), so no other name declares it.
+                        is FreeSource.Param -> "param ${s.name.text} is read by no translated code, or it is the obligation key, which the sidecar reads as k"
+                        else -> continue
+                    }
                 val name = item.names.first().text
                 if (name in declared) continue
                 val users = sidecarTexts(op).filter { (_, v) -> name in idsOf(v) }.map { it.first }
@@ -406,7 +415,7 @@ internal class ClientLowering(
                 val type = path.last().resolvedReturnType.lowerBoundIfFlexible().classId
                 val reads = free.filter { it.sidecarName == null && instanceTypes[it.kotlin] == type }.map { "${it.local.pos.file.substringAfterLast('/')}:${it.local.pos.line}:${it.local.pos.col} (${it.kotlin})" }
                 val hint = if (reads.isEmpty()) "" else "; unnamed translated reads of a Kotlin ${type?.shortClassName}: ${reads.joinToString()}"
-                errors += SidecarError(item.pos, "free-unused", "free ${op.name.text}.$name: this.${source.name.text} is read by no translated code, but $name is used by ${users.joinToString()}$hint (DESIGN-C 10.16)")
+                errors += SidecarError(item.pos, "free-unused", "free ${op.name.text}.$name: $source, but $name is used by ${users.joinToString()}$hint (DESIGN-C 10.16)")
             }
         }
         return errors
@@ -1722,7 +1731,10 @@ private class ClientUnit(
         params[sym]?.let { return Var(it, ctx.posOf(at)) }
         val decl = ctx.declarationOf(sym) ?: return null
         val type = ktype(sym.resolvedReturnType, sym, at) ?: return null
-        val l = declare(sym.name.asString(), type, ctx.posOf(decl))
+        // DESIGN-C.md 10.17: a parameter of the entry that `free NAME = param P` names is the local NAME, so the sidecar
+        // text reads it, as a named this-path is (DESIGN-E 3.6). A task gets the value from its parent (spawnValue).
+        val named = if (parent == null) m.resolver.clientFree[op.name.text]?.find { (item, path) -> item.source is FreeSource.Param && path.singleOrNull() == sym }?.first?.names?.first()?.text else null
+        val l = if (named != null) Local(named, type, ctx.posOf(decl)).also { names += named } else declare(sym.name.asString(), type, ctx.posOf(decl))
         params[sym] = l
         return Var(l, ctx.posOf(at))
     }
