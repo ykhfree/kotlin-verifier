@@ -1312,3 +1312,27 @@ review vocabulary
 3. 지금 도구: `kv discover --client`는 후보 0개다. `kv resolve`는 suspend 함수 값을 거부한다. `kv lower`는 `e is CancellationException`(250행)에서 StackOverflowError로 멈춘다. 메인 세션이 재현했다.
 4. 추정: 7-9.5 인일이다. 6.10절의 3-5 인일보다 크다. 측정한 구문 목록이 길기 때문이다.
 5. 새 사용자 결정 3개(UE7, UE8, UE9)와 서명할 메모 26개가 필요하다.
+
+### 13.1 사용자 결정 (2026-10-30)
+
+| ID | 결정 |
+|---|---|
+| UE7 | (a) 호출이 취소(CANCEL)로 끝나면 RET 절을 적용하지 않는다. 모든 RET 절의 전제에 `&& exc != CANCEL`이 붙는다. (b)는 고친 코드에서 거짓 경보 3개를 냈다 (측정) |
+| UE8 | (a) 새 의도 절 `RET_cancel: cancelled ==> exc == CANCEL`을 넣는다. 이 절이 없으면 K7-K10을 놓친다 (측정) |
+| UE9 | `fixed-coroutine.patch`를 req-shield 작업 브랜치(`feature/NOISSUE/upgrade-kotlin2-and-deps`, core 수정과 같은 곳)에 적용한다. 설계 4.7의 테스트 (a)-(d)를 더한다. 검증 도구의 고정 기준은 `2e792d2` 그대로 두고, 패치는 "고친 base"로 쓴다 |
+| 범위 | 7-9.5 인일로 진행한다. 세 묶음(S0-S3, S4-S6, S7-S10)으로 나누고, 묶음마다 core와 L1 회귀를 확인한다. 서명할 메모 26개는 S7에서 한 번에 묻는다 |
+
+메인 세션 결정 (JE9-JE14, 설계안대로; advisor 확인. JE15의 critic은 생략했다. UE7 (b)와 UE8 (b)는 측정으로 탈락했기 때문이다):
+JE9 `trusted param`을 새로 둔다. JE10 CANCEL은 `throws`에 적고 FIR과 맞춘다. JE11 취소는 sticky로 두지 않는다. JE12 `cx` 매개변수를 둔다. JE13 기준 모델은 `spike/protocol2c/`에 두고, gate는 `protocol2_gate.py --suite coroutine`이다. JE14 `RET_cancel`은 서명하는 의도 절이다.
+
+### 13.2 예측 (구현 전 등록, 설계 8절)
+
+1. P1: 고정 기준(`2e792d2`)의 coroutine 코드는 서명된 coroutine sidecar로 module FAILED다. 실패하는 성질은 정확히 RET_hit, RET_recheck, RET_supplier_error, RET_cancel이다. 다른 성질(LD_*, MODE_*, SUP_once, POLL_bound, TERM, HOLE, RET_get_error, RET_poll, RET_supplier)은 PROVEN이다.
+2. P2: `fixed-coroutine.patch`를 적용한 사본은 같은 sidecar로 PROVEN이다.
+3. P3: `mutantsCoroutine`은 `verdicts.txt`의 info 아닌 행을 두 base에서 모두 재현한다 (같은 실패 집합). 다른 행은 많아야 2개이고, 그 이유를 적는다. K5(`catch (e: IOException)`)는 설계대로 UNSUPPORTED다.
+4. P4: gate에서 생성 모델은 정규화 뒤 `target-coroutine.vpr`과 같아지고, 그 사이 구조 편집은 많아야 10개, 이름 바꿈은 많아야 5개다.
+5. P5: 회귀 R1-R6이 성립한다. 여섯 L1 모듈과 core client의 Viper, 위치표, core golden KVIR은 S0와 바이트 단위로 같다. 변이 33/30/42회 불일치 0.
+6. P6: coroutine 모델의 Silicon 시간은 3.5 s 이하이고, 원본의 `kv verify`는 40 s 이하다.
+7. P7: 사용자 질문 1회(UE7-UE9, 끝남)와 서명 메모 26개.
+8. P8: 크기는 코드 +400-600줄, 테스트 +600-900줄이다.
+9. P9: core hole로 시작한 LLM hole 실행은 `cancelled ==> exc == CANCEL`을 더하려고 적어도 한 번 Silicon을 더 부른다.
