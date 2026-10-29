@@ -491,12 +491,9 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 
 ## 남은 일 (2026-10-29 기준, 메인 세션 의견, 사용자 결정 전)
 
-이 목록이 위의 2026-10-28 목록을 대신한다.
+이 목록이 위의 2026-10-28 목록을 대신한다. 2026-10-29 오후에 "바로 할 수 있는 것" 3개를 모두 끝냈다 (아래 세 절).
 
-바로 할 수 있는 것:
-1. client `param` 출처의 `free` 이름 (새로 찾음, `DESIGN-C.md` 10.16 결과 9): client lowering이 매개변수에 sidecar 이름을 주지 않는다. 그래서 절이 그 이름을 쓰면 Silicon "undeclared identifier"다. lowering을 고치거나 `param`을 금지한다. 지금 서명된 client sidecar(`reqshield.core.kv`)는 `param`을 쓰지 않는다.
-2. 미지원 구문 (`Long.MAX_VALUE`, helper에 넘긴 cell): AI 구현 action 72개 중 2개다.
-3. G-opus-1의 느린 pass 2: 87-127 s, 예산 300 s 안이다. 원인은 재지 않았다.
+바로 할 수 있는 것: 없음.
 
 막혀 있는 것:
 1. C6 수락 2 (실제 Confluence 페이지로 확인): Confluence 연결(시험 페이지 id, API 토큰)이 필요하다.
@@ -507,6 +504,28 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 2. K: 묶인 Kotlin 지역 변수의 계산식 편집은 PROVEN 그대로다 (K1-K3, `DESIGN-C.md` 10.16 결과 9). 설계 한계(`DESIGN-v0.md` 2.12 규칙 1)라서, 고치려면 설계를 바꿔야 한다.
 3. 10.14의 한계: aspect에 범위(scope)가 없다. KDoc만 말하는 3개 절은 `source none`이다 (변형마다 sidecar를 나누면 인용할 수 있다).
 
+새로 본 것 (측정만, 고치지 않음):
+1. reserve 단계가 있는 구현 7개는 pass 1도 느리다 (약 10.5 s, 다른 구현은 약 5.6 s). 실패가 없는 pass 1이라 10.18과 다른 원인이다. 재지 않았다.
+
 미뤄 둔 것 (필요해지면 한다):
 1. 인용 안의 `"` escape: 실제 페이지가 필요를 보일 때 (`DESIGN-C.md` 10.8).
 2. Data Center 받기: 사용자 결정 UC6이 Cloud다.
+
+## client `param` 출처의 `free` 이름 (2026-10-29, 끝)
+
+- 진행: 메인 세션이 했다 (orchestration-policy 규칙 4). 방법은 지원으로 정했다: L1과 같은 방식이다.
+- 결과 (`DESIGN-C.md` 10.17): 이름 붙은 매개변수가 sidecar 이름의 지역 변수가 된다. `free-unused`가 `param`도 검사한다. JG4의 C3는 이제 resolve 단계에서 잡힌다 (번역된 코드가 그 매개변수를 읽지 않으므로 `free-unused`).
+- 절차 누락: 예측을 구현 전에 등록하지 않았다. 메인 세션의 짐작(C3가 이름을 얻어 resolve됨)은 틀렸다.
+
+## G-opus-1의 느린 pass 2 (2026-10-29, 끝)
+
+- 진행: 원인을 몰랐다 → deep-reasoner가 조사했다 (규칙 3). 고치기는 메인 세션이 했다 (규칙 1).
+- 원인 (`DESIGN-C.md` 10.18): pass 2가 probe도 검증했다. 그런데 kv는 그 오류를 읽지 않는다. hole이 없어서 probe는 일부러 실패하고, 실패마다 Silicon의 state consolidation 비용이 호출 수의 제곱으로 커진다.
+- 고친 것: pass 2의 Silicon 실행에만 `--excludeMethods <probe 이름들>`을 준다. G-opus-1의 pass 2는 86.55 s에서 4.41 s가 됐고, 판정은 같다.
+
+## 남은 미지원 구문 2개 (2026-10-29, 끝)
+
+- 사용자 결정: 셀을 helper에 넘기는 규칙(`DESIGN-v0.md` 2.5 규칙 7)을 승인했다. 서명된 `entry_lease`는 그대로 둔다.
+- 진행: deep-reasoner가 설계하고 scratch 사본에 시제품을 만들어 쟀다 (규칙 3). 메인 세션이 패치를 검토하고 가져와서 다시 쟀다.
+- 결과 (`AI-CODE.md` 16): T-opus-2 tryLock(`Long.MAX_VALUE`)과 G-opus-2 tryLock(셀을 helper에 넘김)이 UNSUPPORTED에서 FAILED로 바뀌었다. 둘 다 정답(결함)과 맞다. 누적은 action 72개 중 판정 72개, 놓침 0, 오경보 0이다. round 5 결과는 `aicode/round5`에 있다.
+- 세 일을 함께 돌린 결과: 생성 Viper가 같고, 변이 33/30/42회에서 불일치 0이다. 전체 테스트 794개 통과.
