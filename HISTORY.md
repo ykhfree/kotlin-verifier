@@ -516,16 +516,19 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 진행: 메인 세션이 했다 (orchestration-policy 규칙 4). 방법은 지원으로 정했다: L1과 같은 방식이다.
 - 결과 (`DESIGN-C.md` 10.17): 이름 붙은 매개변수가 sidecar 이름의 지역 변수가 된다. `free-unused`가 `param`도 검사한다. JG4의 C3는 이제 resolve 단계에서 잡힌다 (번역된 코드가 그 매개변수를 읽지 않으므로 `free-unused`).
 - 절차 누락: 예측을 구현 전에 등록하지 않았다. 메인 세션의 짐작(C3가 이름을 얻어 resolve됨)은 틀렸다.
+- 커밋 `a19cb6f` (push 안 함).
 
 ## G-opus-1의 느린 pass 2 (2026-10-29, 끝)
 
 - 진행: 원인을 몰랐다 → deep-reasoner가 조사했다 (규칙 3). 고치기는 메인 세션이 했다 (규칙 1).
 - 원인 (`DESIGN-C.md` 10.18): pass 2가 probe도 검증했다. 그런데 kv는 그 오류를 읽지 않는다. hole이 없어서 probe는 일부러 실패하고, 실패마다 Silicon의 state consolidation 비용이 호출 수의 제곱으로 커진다.
 - 고친 것: pass 2의 Silicon 실행에만 `--excludeMethods <probe 이름들>`을 준다. G-opus-1의 pass 2는 86.55 s에서 4.41 s가 됐고, 판정은 같다.
+- 커밋 `686da47` (push 안 함).
 
 ## 남은 미지원 구문 2개 (2026-10-29, 끝)
 
 - 사용자 결정: 셀을 helper에 넘기는 규칙(`DESIGN-v0.md` 2.5 규칙 7)을 승인했다. 서명된 `entry_lease`는 그대로 둔다.
 - 진행: deep-reasoner가 설계하고 scratch 사본에 시제품을 만들어 쟀다 (규칙 3). 메인 세션이 패치를 검토하고 가져와서 다시 쟀다.
 - 결과 (`AI-CODE.md` 16): T-opus-2 tryLock(`Long.MAX_VALUE`)과 G-opus-2 tryLock(셀을 helper에 넘김)이 UNSUPPORTED에서 FAILED로 바뀌었다. 둘 다 정답(결함)과 맞다. 누적은 action 72개 중 판정 72개, 놓침 0, 오경보 0이다. round 5 결과는 `aicode/round5`에 있다.
-- 세 일을 함께 돌린 결과: 생성 Viper가 같고, 변이 33/30/42회에서 불일치 0이다. 전체 테스트 794개 통과.
+- 세 일을 함께 돌린 결과: 생성 Viper가 같고, 변이 33/30/42회에서 불일치 0이다. 전체 테스트 794개 통과. 세 커밋은 따로 시험하지 않고 합친 트리로 시험했다 (바꾼 파일이 서로 겹치지 않는다).
+- 커밋 `9f77428`, 기록 `8f5c5e9` (push 안 함).
