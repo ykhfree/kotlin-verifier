@@ -45,11 +45,13 @@ object Silicon {
     /**
      * Runs Silicon once on [vpr] (DESIGN-v0.md 5.6): `-Xss128m`, `--numberOfErrorsToReport 0`, the [budget], and
      * `--reportReasonUnknown`, which names a prover timeout ("canceled") so that it is not taken for a failure.
+     * [extra] goes before the file, e.g. `--excludeMethods` for the property check.
      */
     fun run(
         vpr: File,
         home: File = defaultHome(),
         budget: SiliconBudget = SiliconBudget(),
+        extra: List<String> = emptyList(),
     ): SiliconRun {
         check(home)
         val java = File(System.getProperty("java.home"), "bin/java").path
@@ -57,8 +59,8 @@ object Silicon {
             listOf(
                 java, "-Xss128m", "-cp", jar(home).path, "viper.silicon.SiliconRunner",
                 "--logLevel", "ERROR", "--reportReasonUnknown", "--z3Exe", z3(home).path, "--numberOfErrorsToReport", "0",
-                "--assertTimeout", "${budget.assertTimeoutMs}", "--checkTimeout", "${budget.checkTimeoutMs}", vpr.path,
-            )
+                "--assertTimeout", "${budget.assertTimeoutMs}", "--checkTimeout", "${budget.checkTimeoutMs}",
+            ) + extra + vpr.path
         val start = System.nanoTime()
         val p = ProcessBuilder(command).redirectErrorStream(true).start()
         val out = StringBuilder()

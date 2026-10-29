@@ -1134,3 +1134,28 @@ decl := ...
 3. 서명된 core sidecar는 `param`을 쓰지 않는다. 그래서 생성 Viper는 바뀌지 않는다 (`ClientGateTest`).
 4. 새 테스트 3개(`FreeParamTest`). 고의 고장 2개(이름 붙이기를 끔, `param` 검사를 뺌)를 모두 잡았다.
 5. 전체 테스트 794개 통과 (10.18, `AI-CODE.md` 16의 변경과 함께 돌림). 변이 33/30/42회 불일치 0.
+
+### 10.18 G-opus-1의 느린 pass 2 (2026-10-29, 결과 전 등록)
+
+원인 (deep-reasoner 측정, `AI-CODE.md` 15.2의 "원인은 재지 않았다"):
+1. pass 2(성질 검사)는 Silicon을 프로그램 전체에 한 번 돌린다 (`verify/Report.kt` pass 2). 그래서 sidecar probe도 검증한다. 그런데 kv는 pass 2의 probe 오류를 하나도 읽지 않는다. kv가 읽는 것은 action 메서드의 오류뿐이다.
+2. pass 2에서는 hole 보장이 빠진다. 그래서 probe에서 tryLock 다음 호출들은 `requires MI(S)`를 세우지 못하고 실패한다. 실패마다 Silicon의 state consolidation이 ghost 필드의 quantified 권한 묶음을 쌍마다 비교한다. 비교 수는 호출 수의 제곱에 비례한다. reserve 단계(gPend 필드, `reserve_tryLock` 호출)가 이것을 키운다.
+3. 측정 (G-opus-1): probe만 62.8 s, tryLock만 4.4 s. probe를 빼면 pass 2는 83.7 s에서 4.5 s로 줄고, action 오류 2개(tryLock P3a, sweep P3a)는 같다. G-haiku-2(reserve 없음)도 pass 2 10.8 s 중 10.1 s가 probe다.
+
+설계: pass 2의 Silicon 실행에만 `--excludeMethods <probe 이름들>`을 준다. 이름은 pass 2 프로그램의 PROBE 메서드 이름을 `|`로 잇는다.
+- `--includeMethods`는 쓰지 않는다. 맞는 메서드가 없으면 아무것도 검증하지 않고도 "finished successfully"라고 출력하기 때문이다 (deep-reasoner 측정).
+- 메인 세션이 확인했다: `|`로 여러 이름을 뺄 수 있다 (`probe|tryLock`은 tryLock 오류를 없앤다). 패턴은 이름 전체와 맞춘다 (`probe|tryLoc`은 tryLock을 빼지 않는다).
+
+예측:
+1. 생성 Viper(`.vpr`, `.pass2.vpr`)는 바이트 단위로 같다. pass 1은 바뀌지 않는다.
+2. 서명된 모듈 7개의 판정은 그대로다. 여섯 L1 원본은 pass 2를 돌리지 않고, client core에는 pass 2가 없다.
+3. 변이 33/30/42회에서 불일치 0. pass 2를 쓰는 변이는 빨라지기만 한다.
+4. G-opus-1 실행 (`aicode.py tool`, round4 사본): pass 2가 100 s 아래(측정 기대 약 5 s)이고, 판정은 전과 같다 (tryLock, sweep FAILED P3a).
+5. 기존 테스트는 바뀌지 않는다.
+
+결과 (2026-10-29, 측정):
+1. 구현: `Silicon.run`에 추가 인자 `extra`를 더했고, pass 2만 `skipProbes(pass2)`를 넘긴다 (`verify/Report.kt`). 메인 세션이 했다 (orchestration-policy 규칙 1: 바꿀 곳과 내용이 정해짐).
+2. 예측 4 맞음: G-opus-1(round4 사본)의 pass 2가 4.41 s다. 기록은 86.55 s였다. 판정은 같다 (tryLock: pass 1 MI_INV_1, pass 2 P3a; sweep: P3a). 도구 단계 전체는 16.4 s다.
+3. 예측 1 맞음: 여섯 L1 모듈의 생성 Viper와 위치표는 HEAD(`7fadc34`)와 바이트 단위로 같다.
+4. 새 테스트 `SkipProbesTest` 1개: 이름 없는 probe와 이름 있는 probe 2개가 패턴에 들어가고, action은 들어가지 않는다. 고의 고장 2개를 잡았다: probe를 빼지 않으면 이 테스트가, 모든 메서드를 빼면 `PropertyCheckTest`가 실패한다.
+5. 예측 2, 3, 5 맞음: 변이 33/30/42회 불일치 0. 기존 테스트는 바꾸지 않았고, 전체 테스트 794개 통과.
