@@ -486,7 +486,7 @@ fun verify(
             } else {
                 val pass2 = emitViper(bound, sidecar, withoutHole = actions.toSet())
                 pass2File.writeText(pass2.text)
-                val run2 = Silicon.run(pass2File, home, pass2Budget)
+                val run2 = Silicon.run(pass2File, home, pass2Budget, skipProbes(pass2))
                 report.withPropertyCheck(pass2, classify(run2, pass2Budget), run2.seconds)
             }
         return checked.copy(reach = reachability(clone, cloneRun.get(), budget))
@@ -494,6 +494,15 @@ fun verify(
         pool.shutdownNow()
     }
 }
+
+/**
+ * The Silicon arguments that skip the probes of the property check (DESIGN-C.md 10.18). The report reads only the
+ * action errors of pass 2, and without the hole a probe fails by construction, which can cost minutes. The pattern
+ * matches whole names, so it never skips an action; `--includeMethods` is not used, since a pattern that matches
+ * nothing verifies nothing and still reports success.
+ */
+internal fun skipProbes(pass2: Emitted): List<String> =
+    pass2.methods.filter { it.kind == MethodKind.PROBE }.map { it.name }.takeIf { it.isNotEmpty() }?.let { listOf("--excludeMethods", it.joinToString("|")) }.orEmpty()
 
 /** The row of [label]. */
 fun Report.row(label: String): Row = rows.single { it.label == label }
