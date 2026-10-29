@@ -1114,7 +1114,7 @@ decl := ...
 9. 남은 한계:
    - client `param` 출처의 `free`는 lowering이 이름을 주지 않는다. 절이 그 이름을 쓰면 지금도 Silicon "undeclared identifier"다 (C3). 고치거나 금지해야 한다.
    - 맞바꾼 두 묶기(L8, C6)와 L1의 `param`·`local` 오묶기(L4, L6, L7)는 잡지 못한다. 이것을 잡는 길은 묶기의 서명(A안)뿐이고, 그것도 서명 뒤 편집만 잡는다. 사용자 결정 (2026-10-29): 이번에는 하지 않는다.
-   - 묶인 Kotlin 지역 변수의 계산식을 바꾸는 편집(K1-K3: `val now = nowToEpochTime() + lockTimeoutMillis`, sweep의 `now + 1000`, `System.nanoTime()`)은 PROVEN 그대로다 (deep-reasoner 측정). `DESIGN-v0.md` 2.12 규칙 1의 설계 결과이고, JG4 밖이다.
+   - 묶인 Kotlin 지역 변수의 계산식을 바꾸는 편집(K1-K3: `val now = nowToEpochTime() + lockTimeoutMillis`, sweep의 `now + 1000`, `System.nanoTime()`)은 PROVEN 그대로다 (deep-reasoner 측정). `DESIGN-v0.md` 2.12 규칙 1의 설계 결과이고, JG4 밖이다. 사용자 결정 (2026-10-29): 알려진 한계로 문서에만 남긴다.
 
 ### 10.17 client `param` 출처의 `free` 이름 (2026-10-29)
 
