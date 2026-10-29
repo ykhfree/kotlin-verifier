@@ -191,6 +191,9 @@ internal class ActionLowering(
     private val free = LinkedHashMap<Any, FreeValue>()
     private val freeSources = mutableSetOf<FirBasedSymbol<*>>()
     private val cells = LinkedHashMap<FirBasedSymbol<*>, Cell>()
+
+    /** The cell each helper parameter names while the helper is inlined (DESIGN-v0.md 2.5 rule 7), by parameter. */
+    private val cellParams = IdentityHashMap<FirBasedSymbol<*>, FirPropertySymbol>()
     private val helpers = mutableSetOf<FirNamedFunction>()
     private val inlining = ArrayDeque<FirNamedFunctionSymbol>()
     private val reportedSlots = mutableSetOf<Any>()
@@ -1084,6 +1087,11 @@ internal class ActionLowering(
             entries.firstOrNull { it.role == Role.NONDET }?.let { return nondet(e, it) }
             if (entries.any { it.role == Role.OP }) return operation(e, entries)
         }
+        // A bound of Int or Long: its exact value (Long is a mathematical integer, DESIGN-v0.md 2.8).
+        LIBRARY_CONSTANTS[sym?.callableId?.toString()]?.let { v ->
+            markAll(e)
+            return IntLit(v, pos)
+        }
         val field = ctx.fieldOf(sym)
         return when {
             sym is FirValueParameterSymbol || sym is FirPropertySymbol && sym.isLocal -> captured(sym, e)
@@ -1512,7 +1520,7 @@ internal class ActionLowering(
         val pos = ctx.posOf(c)
         val receiver = c.dispatchReceiver?.let { stripSmartCasts(it) } ?: return null
         val read = receiver as? FirPropertyAccessExpression ?: return unsupported("${entries.first().name} on ${sourceText(receiver)}", "the receiver is not a flattened field, the module counter or a cell", c)
-        val sym = ctx.calleeOf(read)
+        val sym = ctx.calleeOf(read)?.let { cellParams[it] ?: it }
         if (sym != null && sym in madeCounts) {
             // AI-CODE.md 14.1 A1: the operation runs on the new entry's field right after the construction (newObject).
             markAll(c)
@@ -1783,6 +1791,16 @@ internal class ActionLowering(
             mark(param)
             val arg = mapping.entries.find { it.value === param }?.key ?: param.defaultValue
             if (arg == null) unsupported("argument ${param.name}", "no argument and no default", c)
+            // A cell argument: the parameter is a second name for the cell, so the helper's set and get are the cell's
+            // (DESIGN-v0.md 2.5 rule 7); cellProblem checks that the helper uses it for nothing else.
+            val read = arg?.let(::unwrap) as? FirPropertyAccessExpression
+            val cellSym = (read?.let(ctx::calleeOf) as? FirPropertySymbol)?.takeIf { it.isLocal && ctx.isCellCandidate(it) }
+            if (cellSym != null) {
+                mark(read)
+                cellParams[param.symbol] = cellSym
+                if (cell(cellSym, read!!) == null) failed = true
+                continue
+            }
             val type = ktype(ctx.typeOf(param), param.symbol, param)
             val v = if (arg != null && type != null) expr(arg, type) else null
             if (type == null || v == null) {
@@ -2596,6 +2614,15 @@ internal class ActionLowering(
 
         /** Why a local alias of a module object is unsupported (AI-CODE.md 14.1 A3). */
         const val ALIAS_REASON = "a second name for a module object is modeled only as a val whose every value is the entry or an object this action created (AI-CODE.md 14.1 A3)"
+
+        /** The stdlib bounds of Int and Long, by callable id: exact values, so they need no ASSUMPTION. */
+        val LIBRARY_CONSTANTS =
+            mapOf(
+                "kotlin/Int.Companion.MIN_VALUE" to Int.MIN_VALUE.toLong(),
+                "kotlin/Int.Companion.MAX_VALUE" to Int.MAX_VALUE.toLong(),
+                "kotlin/Long.Companion.MIN_VALUE" to Long.MIN_VALUE,
+                "kotlin/Long.Companion.MAX_VALUE" to Long.MAX_VALUE,
+            )
 
         /** The stdlib calls that keep or drop their receiver by a predicate lambda (AI-CODE.md 14.1 A4). */
         val TAKE_IF = setOf("takeIf", "takeUnless")
