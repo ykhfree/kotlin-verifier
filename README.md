@@ -5,7 +5,7 @@ AI가 생성한 Kotlin/JVM 코드가 우리의 명세대로 작성되었는지 *
 Microsoft Research의 PDD Kit("의도 → 형식 명세 → 코드가 명세를 만족함을 증명")와 같은 일을 Kotlin/JVM에서 한다.
 대상은 AI가 쓴 코드와 기존 코드(req-shield) 모두다. 동시성이 있는 코드를 다룬다.
 
-상태 (2026-10-27): **잠시 멈춤.**
+상태 (2026-10-29): 바로 할 수 있는 일은 모두 끝났다. 남은 일 2개는 외부 조건(Confluence 시험 페이지, 결정 UE6)을 기다린다 (아래 "열린 과제").
 
 ## 동작 방식
 
@@ -34,9 +34,9 @@ sidecar 명세 (.kv) ───────┘                                   
 모든 수치는 측정값이다. 상세는 괄호 안의 문서에 있다.
 
 - 변이 검사: KeyLocalLock 33회, aspect 30회, client 42회. 기대 판정과의 불일치는 0이다 (`MUTATION.md`, `PROTOCOL2.md`).
-- AI가 쓴 구현 24개 (action 72개): 70개를 판정했다. 블라인드 판정자와 비교한 결과, 놓친 결함 0, 잘못된 경보 0이다 (`AI-CODE.md`).
+- AI가 쓴 구현 24개 (action 72개): 72개 모두 판정했다. 블라인드 판정자와 비교한 결과, 놓친 결함 0, 잘못된 경보 0이다 (`AI-CODE.md` 16).
 - req-shield core `ReqShield`: 도구가 결함 3개(RET_hit, RET_recheck, RET_supplier_error)를 보고했다. 고친 코드는 PROVEN이다. 이 수정은 req-shield에 커밋했다 (`PROTOCOL2.md` 6-7절).
-- 테스트 687개가 통과한다.
+- 테스트 794개가 통과한다 (2026-10-29).
 
 ## 필요한 것
 
