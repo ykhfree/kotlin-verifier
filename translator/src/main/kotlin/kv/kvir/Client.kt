@@ -115,7 +115,7 @@ data class ObligationOp(
  * A call of a trusted declaration or a built-in client model (DESIGN-E 3.3): it returns with its results in [outs]
  * (each declares a new local or assigns a mutable one in scope, W4), or throws one of [throws]; an Error is A1's.
  * [cx] is set for a cancellation point (a call that may throw CANCEL, DESIGN-E5 2.2): true where a cancellation may end
- * it, false where none can (inside withContext(NonCancellable), which the lowering translates from DESIGN-E5 S4 on).
+ * it, false where none can (inside withContext(NonCancellable)).
  */
 data class Call(
     val outs: List<Local>,
@@ -167,6 +167,8 @@ data class Throw(
 /**
  * Hands task [task] to an executor with [model] (DESIGN-E 3.4): the call may throw [throws] (then the task never
  * runs); otherwise the task runs later with [args] as its parameters, and the caller gives up its precondition.
+ * [atomic] is set for a coroutine launch (DESIGN-E5 2.4): true for `start = ATOMIC`, whose block starts even in a
+ * cancelled scope; false for the default start, whose block a cancelled scope may drop.
  */
 data class Spawn(
     val task: String,
@@ -174,6 +176,7 @@ data class Spawn(
     val model: String,
     val throws: List<ExcKind>,
     override val pos: Pos,
+    val atomic: Boolean? = null,
 ) : Stmt
 
 /**

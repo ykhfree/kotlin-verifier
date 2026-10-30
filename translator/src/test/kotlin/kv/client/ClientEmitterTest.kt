@@ -9,10 +9,13 @@ import kv.kvir.incomplete
 import kv.kvir.printModule
 import kv.sidecar.Sidecar
 import kv.sidecar.SidecarException
+import kv.verify.ModuleVerdict
 import kv.verify.Silicon
 import kv.verify.SiliconOutcome
 import kv.verify.classify
 import kv.verify.SiliconBudget
+import kv.verify.render
+import kv.verify.verifyClient
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.Test
@@ -34,16 +37,25 @@ class ClientEmitterTest {
     @TempDir
     lateinit var dir: File
 
-    /** The module and sidecar of a fixture; with [suspend], the suspend client and sidecar of DESIGN-E5. */
+    /**
+     * The module and sidecar of a fixture; with [suspend], the suspend client and sidecar of DESIGN-E5; with [coroutine],
+     * also the kotlinx models (DESIGN-E5 2 rows 6-9).
+     */
     private fun build(
         body: String,
         helpers: String = "",
         items: String = "free mode = this.config.mode\nresult res",
         extra: String = "",
         suspend: Boolean = false,
+        coroutine: Boolean = false,
     ): Pair<Module, Sidecar> {
-        val head = if (suspend) ClientFixture.SUSPEND_SIDECAR_HEAD else ClientFixture.SIDECAR_HEAD
-        val outcome = ClientFixture.resolve(dir, ClientFixture.client(body, helpers, suspend = suspend), ClientFixture.sidecar(items, extra, head))
+        val head =
+            when {
+                coroutine -> ClientFixture.COROUTINE_SIDECAR_HEAD
+                suspend -> ClientFixture.SUSPEND_SIDECAR_HEAD
+                else -> ClientFixture.SIDECAR_HEAD
+            }
+        val outcome = ClientFixture.resolve(dir, ClientFixture.client(body, helpers, suspend = suspend || coroutine), ClientFixture.sidecar(items, extra, head))
         assertNull(outcome.compileMessages, outcome.compileMessages)
         assertEquals(emptyList(), outcome.errors)
         val m = outcome.module ?: fail("no module")
@@ -58,7 +70,8 @@ class ClientEmitterTest {
         items: String = "free mode = this.config.mode\nresult res",
         extra: String = "",
         suspend: Boolean = false,
-    ): Emitted = build(body, helpers, items, extra, suspend).let { (m, s) -> emitClient(m, s) }
+        coroutine: Boolean = false,
+    ): Emitted = build(body, helpers, items, extra, suspend, coroutine).let { (m, s) -> emitClient(m, s) }
 
     /** The emitted lines, trimmed, without `//` comments. */
     private fun Emitted.lines(): List<String> = text.lines().map { it.substringBefore("//").trim() }.filter { it.isNotEmpty() }
@@ -261,6 +274,37 @@ class ClientEmitterTest {
         val other = emit(body.replace("unLock(key, Kind.UPDATE, token)\n                    }", "unLock(key, Kind.CREATE, token)\n                    }"), spawnHelper, extra = assumes)
         assertTrue(other.lines().any { it.endsWith("(token__18 != NULL ==> Lease(k, UPDATE, token__18)))") }, other.text)
         assertTrue(failures(other).any { it.startsWith("The precondition of method Lock_unLock might not hold") }, other.text)
+    }
+
+    @Test
+    fun `a task's guard holds by the early return before its spawn (DESIGN-E5 S5, G1)`() {
+        // The coroutine updateReqShieldData (71-75): without a lock outside ONLY_CREATE the function returns, so the
+        // task holds the lock whenever the guard needs it. The fact is the negated condition of the early return.
+        val items =
+            """
+            free mode = this.config.mode
+            result res
+            guard W: Config.set requires mode != ONLY_CREATE ==> holds(Lease(k, UPDATE, _))
+              source none "fixture"
+            """
+        val body =
+            """
+            val data = Data(value = callable.call(), ttl = 0L)
+            val only = config.mode == Mode.ONLY_CREATE
+            val token = if (only) null else config.lock.tryLock(key, Kind.UPDATE)
+            if (!only && token == null) return data
+            background(key, Kind.UPDATE, token) {
+                try {
+                    config.set.invoke(key, data, 0L)
+                } finally {
+                    if (token != null) config.lock.unLock(key, Kind.UPDATE, token)
+                }
+            }
+            return data
+            """
+        val e = emit(body, spawnHelper, items, assumes)
+        assertTrue(e.lines().any { it.startsWith("!(!(mode == ONLY_CREATE) && token__19 == NULL)") || " && !(!(mode == ONLY_CREATE) && token__19 == NULL)" in it }, e.text)
+        assertEquals(emptyList(), failures(e))
     }
 
     @Test
@@ -498,6 +542,192 @@ class ClientEmitterTest {
         assertTrue(cancelled.singleOrNull()?.let { it.startsWith("Postcondition of run might not hold") && "NO_LEASES" in it } == true, "LD_noleak must fail alone: $cancelled")
         // The same release that no cancellation ends: A4 ends the obligation on a throw.
         assertEquals(emptyList(), failures(emit(body.replace("LOCK", "lock"), extra = assumes)))
+    }
+
+    /** [assumes] with A6 (UE6): launch does not throw. */
+    private val coroutineAssumes = assumes + "\nassume A6: dispatch-does-not-throw\n  source none \"fixture\""
+
+    /** The CREATE lock handed to a launched block ([start]: launch's arguments) that releases it in a finally ([release]). */
+    private fun launched(
+        start: String,
+        release: String = "withContext(NonCancellable) { config.slock.unLock(key, Kind.CREATE, token) }",
+    ) =
+        """
+        val token = config.slock.tryLock(key, Kind.CREATE)
+        if (token != null) {
+            config.scope.launch$start {
+                try {
+                    delay(Limits.INTERVAL)
+                } finally {
+                    $release
+                }
+            }
+        }
+        return Data(value = supplier(), ttl = 0L)
+        """
+
+    @Test
+    fun `the launch model takes atomic and A6 rules out its throws, and A6's define comes only with launch (DESIGN-E5 2_4)`() {
+        val ls = emit(launched("(start = CoroutineStart.ATOMIC)"), coroutine = true).lines()
+        val text = ls.joinToString("\n")
+        listOf(
+            "define DISPATCH_NEVER_THROWS false",
+            "method kotlinx_launch(atomic: Bool) returns (exc: Int, dropped: Bool)",
+            "ensures exc == NONE || (!DISPATCH_NEVER_THROWS && (exc == REE || exc == RTE)) || (MAY_ERR && exc == ERR)",
+            "ensures dropped ==> exc == NONE && (!atomic || !ACCEPTED_TASKS_RUN)",
+            "method kotlinx_ensureActive(cx: Bool) returns (exc: Int)",
+            "method kotlinx_delay(cx: Bool) returns (exc: Int)",
+            "ensures exc == NONE || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)",
+        ).forEach { assertTrue(it in ls, "lacks '$it':\n$text") }
+        assertTrue(ls.any { Regex("""^e_20_\d+, dropped_20_\d+ := kotlinx_launch\(true\)$""").matches(it) }, text)
+        assertTrue(ls.any { Regex("""^e_\d+_\d+ := kotlinx_delay\(true\)$""").matches(it) }, text)
+        // A suspend module without launch has no A6 define; runAsync keeps the A3 line of DESIGN-E 6.6.
+        val plain = emit("return Data(value = supplier(), ttl = 0L)", suspend = true).lines()
+        assertFalse(plain.any { "DISPATCH_NEVER_THROWS" in it }, plain.joinToString("\n"))
+        assertTrue("ensures dropped ==> exc == NONE && !ACCEPTED_TASKS_RUN" in plain, plain.joinToString("\n"))
+    }
+
+    @Test
+    fun `an ATOMIC launch hands its block the lock, a default launch may drop it (K4), and a cancellable release may keep it (K3)`() {
+        assertEquals(emptyList(), failures(emit(launched("(start = CoroutineStart.ATOMIC)"), extra = coroutineAssumes, coroutine = true)))
+        // A cancelled scope may drop a block of the default start before it starts: the caller still holds the lock.
+        val dropped = failures(emit(launched(""), extra = coroutineAssumes, coroutine = true))
+        assertTrue(dropped.singleOrNull()?.let { it.startsWith("Postcondition of run might not hold") && "NO_LEASES" in it } == true, "LD_noleak of run must fail alone: $dropped")
+        // A release outside withContext(NonCancellable) may be cancelled before it took effect (cancelKeeps).
+        val cancellable = failures(emit(launched("(start = CoroutineStart.ATOMIC)", "config.slock.unLock(key, Kind.CREATE, token)"), extra = coroutineAssumes, coroutine = true))
+        assertTrue(cancellable.singleOrNull()?.let { it.startsWith("Postcondition of task_20 might not hold") && "NO_LEASES" in it } == true, "LD_noleak of the task must fail alone: $cancellable")
+    }
+
+    @Test
+    fun `a call no cancellation can end has no CANCEL branch in its dispatch (DESIGN-E5 2_2)`() {
+        val ls =
+            emit(
+                """
+                val token = config.slock.tryLock(key, Kind.CREATE)
+                if (token != null) {
+                    try {
+                        withContext(NonCancellable) { config.slock.unLock(key, Kind.CREATE, token) }
+                    } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        log.warn("release failed for key '{}'", key, e)
+                    }
+                }
+                return Data(value = supplier(), ttl = 0L)
+                """,
+                coroutine = true,
+            ).lines()
+        val text = ls.joinToString("\n")
+        val flag = ls.single { Regex("""^e_\d+_\d+, released_\d+_\d+ := SuspendLock_unLock\(k, CREATE, token__18, false\)$""").matches(it) }.substringBefore(",")
+        // The cancellation catch takes nothing of it; the Exception catch swallows the RTE; an Error propagates.
+        assertFalse(ls.any { "$flag == CANCEL" in it }, text)
+        assertTrue("if ($flag != NONE && !IS_EXCEPTION($flag)) {" in ls, text)
+    }
+
+    /** `cancelled = raised CANCEL` and UE8's clause over it (DESIGN-E5 2.5, 3). */
+    private val raisedTrace = "trace {\n  cancelled = raised CANCEL\n}\n"
+    private val raisedItems =
+        """
+        free mode = this.config.mode
+        free maxAttempt = this.config.maxAttempt
+        result res
+        ensures RET_cancel: cancelled ==> exc == CANCEL
+          source none "fixture"
+        """
+
+    @Test
+    fun `a raised event is a Bool field each entry call whose flag can raise the kind sets, and no task call (DESIGN-E5 2_5)`() {
+        val e =
+            emit(
+                """
+                val token = config.slock.tryLock(key, Kind.CREATE)
+                if (token != null) {
+                    config.scope.launch(start = CoroutineStart.ATOMIC) {
+                        try {
+                            delay(Limits.INTERVAL)
+                        } finally {
+                            withContext(NonCancellable) { config.slock.unLock(key, Kind.CREATE, token) }
+                        }
+                    }
+                }
+                var attempts = 0
+                while (attempts < config.maxAttempt) {
+                    attempts++
+                    delay(Limits.INTERVAL)
+                }
+                withContext(NonCancellable) { delay(Limits.INTERVAL) }
+                return Data(value = supplier(), ttl = 0L)
+                """,
+                items = raisedItems,
+                extra = raisedTrace,
+                coroutine = true,
+            )
+        val ls = e.lines()
+        val text = e.text
+        listOf(
+            "field cancelled: Bool",
+            "define TR(tr) (acc(tr.cancelled))",
+            "tr.cancelled := false",
+            "define EV_raised_CANCEL(tr, e) {",
+            "if ((e) == CANCEL) {",
+            "tr.cancelled := true",
+            "ensures tr.cancelled ==> exc == CANCEL",
+            // The loop's delay may raise CANCEL: the loop writes the field.
+            "invariant acc(tr.cancelled)",
+        ).forEach { assertTrue(it in ls, "lacks '$it':\n$text") }
+        // The entry's tryLock, the loop's delay and the supplier record it; the task's calls and the delay inside
+        // withContext(NonCancellable) do not, and neither does launch, which raises no CANCEL.
+        val tryLock = ls.indexOfFirst { Regex("""^e_18_\d+, token__18 := SuspendLock_tryLock\(k, CREATE, true\)$""").matches(it) }
+        assertTrue(tryLock > 0, text)
+        assertEquals("EV_raised_CANCEL(tr, ${ls[tryLock].substringBefore(",")})", ls[tryLock + 1], text)
+        assertEquals(3, ls.count { it.startsWith("EV_raised_CANCEL(tr, ") }, text)
+        // The task has no trace record: it records no raised kind.
+        assertTrue(ls.single { it.startsWith("method task_20(") }.endsWith(" returns (exc: Int)"), text)
+    }
+
+    @Test
+    fun `a cancellation that only ensureActive raises and the code swallows fails RET_cancel (DESIGN-E5 2_5)`() {
+        val body =
+            """
+            try {
+                currentCoroutineContext().ensureActive()
+            } catch (e: Exception) {
+                log.warn("ignored for key '{}'", key, e)
+            }
+            return Data(value = callable.call(), ttl = 0L)
+            """
+        val swallowed = failures(emit(body, items = raisedItems, extra = raisedTrace + coroutineAssumes, coroutine = true))
+        assertTrue(swallowed.singleOrNull()?.let { it.startsWith("Postcondition of run might not hold") && "tr.cancelled ==> exc == CANCEL" in it } == true, "RET_cancel must fail alone: $swallowed")
+        val rethrown = body.replace("log.warn(", "if (e is kotlin.coroutines.cancellation.CancellationException) throw e\n    log.warn(")
+        assertEquals(emptyList(), failures(emit(rethrown, items = raisedItems, extra = raisedTrace + coroutineAssumes, coroutine = true)))
+    }
+
+    @Test
+    fun `the full failing set of a release that throws while a cancellation is pending is RET_cancel (DESIGN-E5 4_2)`() {
+        // The original's 112: the release in the finally throws RTE and replaces the pending CANCEL of the read.
+        val body =
+            """
+            val token = config.slock.tryLock(key, Kind.CREATE)
+            if (token != null) {
+                try {
+                    val cur = config.sget(key)
+                    if (cur != null) return cur
+                } finally {
+                    RELEASE
+                }
+            }
+            return Data(value = supplier(), ttl = 0L)
+            """
+        val release = "withContext(NonCancellable) { config.slock.unLock(key, Kind.CREATE, token) }"
+        val (m, s) = build(body.replace("RELEASE", release), items = raisedItems, extra = raisedTrace + coroutineAssumes, coroutine = true)
+        val report = verifyClient(m, s, File(dir, "original.vpr"))
+        assertEquals(ModuleVerdict.FAILED, report.verdict, report.render())
+        assertEquals(listOf("RET_cancel"), report.properties!!.filter { it.failed }.map { it.id }, report.render())
+        // The fix's releaseQuietly: a failed release is logged, and the pending cancellation stays the call's exception.
+        val quiet = "try {\n            $release\n        } catch (e: Exception) {\n            log.error(\"release failed\", e)\n        }"
+        val (fm, fs) = build(body.replace("RELEASE", quiet), items = raisedItems, extra = raisedTrace + coroutineAssumes, coroutine = true)
+        val fixed = verifyClient(fm, fs, File(dir, "fixed.vpr"))
+        assertEquals(ModuleVerdict.PROVEN, fixed.verdict, fixed.render())
     }
 
     @Test

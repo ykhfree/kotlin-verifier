@@ -18,10 +18,10 @@ import kotlin.test.assertNull
  * signed coroutine sidecar. It is also the check of DESIGN-E5 6.2 S3 deliberate break (1): a release inside
  * withContext(NonCancellable) emitted with cx = true may keep its obligation (cancelKeeps), so LD_noleak fails.
  *
- * TODO(DESIGN-E5 S4, S7, S8): disabled until the lowering translates withContext(NonCancellable) and launch (S4), the
- * signed sidecar specs/reqshield/reqshield.coroutine.kv exists (S7), and the patch is in spike/protocol2c (S8).
+ * TODO(DESIGN-E5 S7): disabled until the signed sidecar specs/reqshield/reqshield.coroutine.kv exists. The lowering of
+ * withContext(NonCancellable) and launch (S4) and the patch in spike/protocol2c are in place.
  */
-@Disabled("TODO DESIGN-E5 S4, S7, S8: needs withContext(NonCancellable), launch, the coroutine sidecar and the patch")
+@Disabled("TODO DESIGN-E5 S7: needs the signed coroutine sidecar")
 class CoroutineVerifyTest {
     @TempDir
     lateinit var dir: File

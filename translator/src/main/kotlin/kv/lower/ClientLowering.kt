@@ -6,6 +6,7 @@ import kv.emit.walk
 import kv.frontend.RUN_ASYNC
 import kv.frontend.SidecarResolver
 import kv.frontend.isFunctionClass
+import kv.frontend.taskArgument
 import kv.frontend.unwrapTask
 import kv.kvir.And
 import kv.kvir.Arith
@@ -148,6 +149,10 @@ private val INTERRUPTED = setOf("java/lang/InterruptedException", "kotlin/Interr
 
 /** kotlinx.coroutines.CancellationException and kotlin.coroutines.cancellation.CancellationException are aliases of it. */
 private const val CANCELLATION = "java/util/concurrent/CancellationException"
+
+/** The context of `withContext(NonCancellable)` (DESIGN-E5 2 row 8) and the start options of launch (2.4). */
+private const val NON_CANCELLABLE = "kotlinx/coroutines/NonCancellable"
+private const val COROUTINE_START = "kotlinx/coroutines/CoroutineStart"
 private val NUMBER = setOf("kotlin/Int", "kotlin/Long")
 
 /** Classes whose operators a pure argument may use (an argument the model drops, DESIGN-v0.md 2.3). */
@@ -523,9 +528,9 @@ private class ClientUnit(
     private var out = mutableListOf<Stmt>()
     private val frames = ArrayDeque<Frame>()
     /**
-     * The conditions that hold where a statement is lowered (DESIGN-E 3.4 part 3). A task keeps only those over the
-     * values it captures, which are Kotlin vals (a captured var is unsupported): no assignment between the test and the
-     * spawn can change them.
+     * The conditions that hold where a statement is lowered (DESIGN-E 3.4 part 3): those of the enclosing ifs, and `!c`
+     * after an `if (c) <jump>` earlier in the block ([earlyExit]). A task keeps only those over the values it captures,
+     * which are Kotlin vals (a captured var is unsupported): no assignment between the test and the spawn can change them.
      */
     private val conds = ArrayDeque<Expr>()
 
@@ -543,6 +548,15 @@ private class ClientUnit(
 
     /** The parameters of the catches being lowered, innermost last (null: a getOrElse lambda without one). */
     private val catchParams = ArrayDeque<FirBasedSymbol<*>?>()
+
+    /**
+     * False while the block of `withContext(NonCancellable)` is lowered (DESIGN-E5 2.2): a cancellation point there has
+     * cx = false. A unit starts cancellable; a task is a coroutine of its own, so it does too.
+     */
+    private var cancellable = true
+
+    /** The cx of a call that may throw [throws]: the context for a cancellation point, else null. */
+    private fun cx(throws: List<ExcKind>): Boolean? = if (LibExc.CANCEL in throws) cancellable else null
 
     /** Task parameters: the captured symbol, its local, and the caller's value at the spawn. */
     private val captured = linkedMapOf<FirBasedSymbol<*>, Pair<Local, Expr>>()
@@ -734,8 +748,23 @@ private class ClientUnit(
     ): List<Stmt> =
         collect {
             val inner = Scope(scope)
-            stmts.forEach { statement(it, inner) }
+            val depth = conds.size
+            stmts.forEach { s ->
+                val before = out.size
+                statement(s, inner)
+                earlyExit(before)
+            }
+            while (conds.size > depth) conds.removeLast()
         }
+
+    /**
+     * DESIGN-E 3.4 part 3: after `if (c) <jump>` without else, `!c` holds for the rest of the block, so it goes onto
+     * [conds] until the block ends. [before] is the size of [out] before the statement.
+     */
+    private fun earlyExit(before: Int) {
+        val st = out.takeIf { it.size > before }?.last() as? If ?: return
+        if (st.els.isEmpty() && st.then.lastOrNull().let { it is Return || it is Break || it is Throw }) conds.addLast(Not(st.cond, st.cond.pos))
+    }
 
     private fun statement(
         s: FirStatement,
@@ -1034,18 +1063,26 @@ private class ClientUnit(
         scope: Scope,
         sink: Sink?,
     ) {
+        val depth = conds.size
         stmts.forEachIndexed { i, s ->
-            if (i < stmts.lastIndex || sink == null) return@forEachIndexed statement(s, scope)
-            val last = (s as? FirReturnExpression)?.takeIf { it.target.labeledElement is FirAnonymousFunction && it.source?.kind is KtFakeSourceElementKind }
-            if (last != null) {
-                mark(last)
-                valueInto(last.result, scope, sink)
-            } else if (s is FirExpression) {
-                valueInto(s, scope, sink)
-            } else {
-                statement(s, scope)
+            val before = out.size
+            when {
+                i < stmts.lastIndex || sink == null -> statement(s, scope)
+                else -> {
+                    val last = (s as? FirReturnExpression)?.takeIf { it.target.labeledElement is FirAnonymousFunction && it.source?.kind is KtFakeSourceElementKind }
+                    if (last != null) {
+                        mark(last)
+                        valueInto(last.result, scope, sink)
+                    } else if (s is FirExpression) {
+                        valueInto(s, scope, sink)
+                    } else {
+                        statement(s, scope)
+                    }
+                }
             }
+            earlyExit(before)
         }
+        while (conds.size > depth) conds.removeLast()
     }
 
     private fun throwStmt(
@@ -1057,6 +1094,11 @@ private class ClientUnit(
         val x = unwrap(t.exception)
         // Rethrow of the caught exception (DESIGN-E 6.3: Throw with no kind).
         if (x is FirPropertyAccessExpression && ctx.calleeOf(x)?.let { scope.local(it) } == Bound.Exception) {
+            // The emitter rethrows the kind its innermost catch caught, so a rethrow of an outer catch's exception would
+            // rethrow the wrong kind.
+            if (catchParams.lastOrNull() != ctx.calleeOf(x)) {
+                return run { unsupported("throw ${sourceText(t.exception)}", "a rethrow of the exception of an outer catch is not translated; the model rethrows the innermost catch's exception", t) }
+            }
             // After `if (e is C)` the rethrown e is a smart cast.
             markCasts(t.exception)
             markAll(x)
@@ -1221,7 +1263,7 @@ private class ClientUnit(
 
     private val subjects = IdentityHashMap<FirCheckedSafeCallSubject, Expr>()
 
-    private fun scopeName(c: FirFunctionCall): String? = ctx.calleeOf(c)?.callableId?.takeIf { it.classId == null && it.packageName.asString() == "kotlin" }?.callableName?.asString()?.takeIf { it in setOf("let", "run") }
+    private fun scopeName(c: FirFunctionCall): String? = ctx.calleeOf(c)?.callableId?.takeIf { it.classId == null && it.packageName.asString() == "kotlin" }?.callableName?.asString()?.takeIf { it in setOf("let", "run", "also") }
 
     /** A call: a scope function, a helper, a trusted call, a client model, a logger, a constructor. */
     private fun call(
@@ -1287,7 +1329,10 @@ private class ClientUnit(
         }
     }
 
-    /** `x.let { ... }` and `run { ... }` (EXACTLY_ONCE lambdas): the lambda in place; `it` is x. */
+    /**
+     * `x.let { ... }`, `run { ... }` and `x.also { ... }` (EXACTLY_ONCE lambdas): the lambda in place; `it` is x. The
+     * value of `also` is x (DESIGN-E5 2 row 11), the others' the lambda's.
+     */
     private fun scopeCall(
         c: FirFunctionCall,
         scope: Scope,
@@ -1302,15 +1347,19 @@ private class ClientUnit(
         mark(lam.body)
         lam.valueParameters.forEach(::mark)
         val inner = Scope(scope)
+        var subject: Expr? = null
         when (name) {
-            "let" -> {
+            "let", "also" -> {
                 val receiver = c.extensionReceiver ?: return
-                val subject = (unwrap(receiver) as? FirCheckedSafeCallSubject)?.let { mark(receiver); subjects[it] } ?: expr(receiver, scope, null) ?: return
-                lam.valueParameters.firstOrNull()?.let { inner.vars[it.symbol] = Bound.Value(subject) }
+                val x = (unwrap(receiver) as? FirCheckedSafeCallSubject)?.let { mark(receiver); subjects[it] } ?: expr(receiver, scope, null) ?: return
+                lam.valueParameters.firstOrNull()?.let { inner.vars[it.symbol] = Bound.Value(x) }
+                subject = x
             }
             "run" -> if (c.extensionReceiver != null && unwrap(c.extensionReceiver) !is FirThisReceiverExpression) return run { unsupported("run with a receiver", "the client lowering translates `run { }` on this", c) } else markAll(c.extensionReceiver)
         }
-        lambdaLike(lam.body?.statements.orEmpty(), inner, sink.takeIf { it != Sink.Discard })
+        if (name != "also") return lambdaLike(lam.body?.statements.orEmpty(), inner, sink.takeIf { it != Sink.Discard })
+        lambdaLike(lam.body?.statements.orEmpty(), inner, null)
+        emit(sink, subject!!, ctx.posOf(c))
     }
 
     /** The module-class function [c] calls, if it is one the lowering inlines (DESIGN-E JE2). */
@@ -1438,9 +1487,8 @@ private class ClientUnit(
                 )
             }
         val throws = t.throwKinds.map { LibExc.valueOf(it.text) }
-        // DESIGN-E5 2.2: a call that may throw CANCEL is a cancellation point; every context of a unit is cancellable.
-        val cx = if (LibExc.CANCEL in throws) true else null
-        out += Call(listOfNotNull(outV), name, args, throws, obligation, pos, cx)
+        // DESIGN-E5 2.2: a call that may throw CANCEL is a cancellation point.
+        out += Call(listOfNotNull(outV), name, args, throws, obligation, pos, cx(throws))
         outV?.let { v ->
             if (sink !is Sink.Declare && sink !is Sink.Into) emit(sink, Var(v, pos), pos)
         }
@@ -1486,7 +1534,10 @@ private class ClientUnit(
         if (model.model !in m.uses) return run { unsupported("trusted model ${model.model}", "the call needs model ${model.model}, which the sidecar does not `use`", c) }
         when (model.role) {
             ClientRole.SPAWN -> {
-                if (sink != Sink.Discard) unsupported("value of runAsync", "the future runAsync returns is used only as the receiver of whenComplete (DESIGN-E 3.3 point 2)", c)
+                if (sink != Sink.Discard) {
+                    val why = if (model.model == ClientModels.LAUNCH) "the Job launch returns is not used (DESIGN-E5 2.4 item 5)" else "the future runAsync returns is used only as the receiver of whenComplete (DESIGN-E 3.3 point 2)"
+                    unsupported("value of ${model.name}", why, c)
+                }
                 spawn(c, model, scope)
             }
             ClientRole.CALLBACK -> {
@@ -1506,8 +1557,11 @@ private class ClientUnit(
             ClientRole.CALL -> {
                 c.arguments.forEach { dropped(it, scope) }
                 markAll(c.dispatchReceiver)
+                // `currentCoroutineContext().ensureActive()`: the receiver of an extension is read without effect.
+                c.extensionReceiver?.let { dropped(it, scope, "${model.name} receiver") }
                 if (sink != Sink.Discard) unsupported("value of ${model.name}", "a ${model.model} call has no modeled value", c)
-                out += Call(emptyList(), model.model, emptyList(), model.throws.map { LibExc.valueOf(it) }, null, pos)
+                val throws = model.throws.map { LibExc.valueOf(it) }
+                out += Call(emptyList(), model.model, emptyList(), throws, null, pos, cx(throws))
             }
             ClientRole.NO_EFFECT -> {
                 val receiver = unwrap(c.dispatchReceiver)
@@ -1519,7 +1573,35 @@ private class ClientUnit(
             }
             ClientRole.RUN_CATCHING -> unsupported("runCatching without getOrElse", "runCatching is translated with getOrElse { } on its result (DESIGN-E 6.4 row 4)", c)
             ClientRole.GET_OR_ELSE -> getOrElse(c, scope, sink)
+            ClientRole.NON_CANCELLABLE -> nonCancellable(c, scope, sink)
         }
+    }
+
+    /**
+     * `withContext(NonCancellable) { block }` (DESIGN-E5 2 row 8): the block in place, its value to [sink]. No
+     * cancellation point inside it raises CANCEL (cx = false), and the call adds none on entry or exit. Any other context
+     * may change the dispatcher or the cancellation, so it is unsupported.
+     */
+    private fun nonCancellable(
+        c: FirFunctionCall,
+        scope: Scope,
+        sink: Sink,
+    ) {
+        val byName = argsByName(c)
+        val context = byName["context"]
+        if ((unwrap(context) as? FirResolvedQualifier)?.qualifierSymbol?.classId?.asString() != NON_CANCELLABLE) {
+            return run { unsupported("withContext(${context?.let { sourceText(it) }})", "the model translates withContext(NonCancellable) only (DESIGN-E5 2 row 8)", c) }
+        }
+        markAll(context)
+        val arg = byName["block"] as? FirAnonymousFunctionExpression ?: return run { unsupported("withContext block", "withContext is translated with a lambda literal", c) }
+        val lam = arg.anonymousFunction
+        mark(arg)
+        mark(lam)
+        mark(lam.body)
+        val outer = cancellable
+        cancellable = false
+        lambdaLike(lam.body?.statements.orEmpty(), Scope(scope), sink.takeIf { it != Sink.Discard })
+        cancellable = outer
     }
 
     /** `runCatching { a }.getOrElse { b }` (DESIGN-E 3.3): `try { a } catch (e: Throwable) { b }`, each value to [sink]. */
@@ -1596,7 +1678,10 @@ private class ClientUnit(
         )
     }
 
-    /** `runAsync(task, executor)`: the task's lambda literal, lowered as a task the first time, then a Spawn. */
+    /**
+     * `runAsync(task, executor)` or `scope.launch(start = ...) { task }` (DESIGN-E5 2.4): the task's lambda literal,
+     * lowered as a task the first time, then a Spawn.
+     */
     private fun spawn(
         c: FirFunctionCall,
         model: ClientModel,
@@ -1604,8 +1689,10 @@ private class ClientUnit(
     ) {
         val pos = ctx.posOf(c)
         markAll(c.dispatchReceiver)
-        val taskArg = c.arguments.firstOrNull() ?: return run { unsupported(RUN_ASYNC, "runAsync without a task", c) }
-        c.arguments.drop(1).forEach { dropped(it, scope) }
+        val launch = model.model == ClientModels.LAUNCH
+        val atomic = if (launch) launchStart(c, scope) ?: return else null
+        val taskArg = taskArgument(c) ?: return run { unsupported(if (launch) "launch" else RUN_ASYNC, "${if (launch) "launch" else RUN_ASYNC} without a task", c) }
+        if (!launch) c.arguments.drop(1).forEach { dropped(it, scope) }
         val (lambda, via) = lambdaOf(taskArg, scope, emptyList()) ?: return run { unsupported("task argument", "the task is a lambda literal, passed directly or through function-typed parameters of private helpers (DESIGN-E 6.3 rule 3)", taskArg) }
         markAll(taskArg)
         if (m.tasks.containsKey(lambda.first)) return run { unsupported("second spawn of a task", "a lambda is handed to an executor at one site", c) }
@@ -1614,7 +1701,32 @@ private class ClientUnit(
         val unit = ClientUnit(m, owner, op, this)
         val task = unit.task(lambda.first, lambda.second, via, conds.toList(), lets, free, pos)
         m.tasks[lambda.first] = task.first
-        out += Spawn(task.first.id, task.second, model.model, model.throws.map { LibExc.valueOf(it) }, pos)
+        out += Spawn(task.first.id, task.second, model.model, model.throws.map { LibExc.valueOf(it) }, pos, atomic)
+    }
+
+    /**
+     * The arguments of launch [c] besides its block (DESIGN-E5 2.4 item 5): its scope is a stable path; no context
+     * argument (the model covers the scope's own context); `start` is absent or DEFAULT (false: a cancelled scope may
+     * drop the block before it starts) or ATOMIC (true). Null after an UNSUPPORTED.
+     */
+    private fun launchStart(
+        c: FirFunctionCall,
+        scope: Scope,
+    ): Boolean? {
+        c.extensionReceiver?.let { r ->
+            if (stablePath(r, scope) == null) return unsupported("receiver of launch", "the scope of launch is a parameter or a path of vals from this (DESIGN-E5 2.4 item 5)", r)
+            markAll(r)
+        }
+        val byName = argsByName(c)
+        byName["context"]?.let { return unsupported("launch(${sourceText(it)})", "a context argument is not translated; the model covers launch in the scope's own context", it) }
+        val start = byName["start"] ?: return false
+        markAll(start)
+        val entry = (unwrap(start) as? FirPropertyAccessExpression)?.let { ctx.calleeOf(it) as? FirEnumEntrySymbol }?.takeIf { it.callableId.classId?.asString() == COROUTINE_START }
+        return when (entry?.name?.asString()) {
+            "ATOMIC" -> true
+            "DEFAULT" -> false
+            else -> unsupported("launch(start = ${sourceText(start)})", "the model translates start = ATOMIC and the default start; LAZY and UNDISPATCHED are out of scope (DESIGN-E5 2.4 item 5)", start)
+        }
     }
 
     /** The lambda literal [e] stands for, with its scope and the helpers it passed through; null if it is no lambda literal. */
@@ -2149,7 +2261,7 @@ private class ClientUnit(
     ): Boolean {
         mark(c)
         val pos = ctx.posOf(c)
-        val byName = c.resolvedArgumentMapping.orEmpty().entries.associate { (a, p) -> p.name.asString() to a }
+        val byName = argsByName(c)
         val init = linkedMapOf<String, Expr>()
         for (f in cls.fields) {
             val a = byName[f.kotlin]
@@ -2163,4 +2275,7 @@ private class ClientUnit(
         out += New(v, cls, init, pos)
         return true
     }
+
+    /** The arguments of [c] by the name of their parameter. */
+    private fun argsByName(c: FirFunctionCall): Map<String, FirExpression> = c.resolvedArgumentMapping.orEmpty().entries.associate { (a, p) -> p.name.asString() to a }
 }

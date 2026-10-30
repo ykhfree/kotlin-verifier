@@ -110,6 +110,142 @@ class ClientLoweringTest {
         }
     }
 
+    /** The coroutine module of [body] and [helpers] (DESIGN-E5 2: the suspend client with the kotlinx models), well formed. */
+    private fun coroutine(
+        body: String,
+        helpers: String = "",
+        name: String,
+    ): Module {
+        val o = ClientFixture.resolve(File(dir, name).apply { mkdirs() }, ClientFixture.client(body, helpers, suspend = true), ClientFixture.sidecar(head = ClientFixture.COROUTINE_SIDECAR_HEAD))
+        assertNull(o.compileMessages, o.compileMessages)
+        assertEquals(emptyList(), o.errors, name)
+        val m = o.module ?: fail("no module for $name")
+        assertEquals(emptyList(), checkWellFormed(m), name)
+        return m
+    }
+
+    private fun lines(m: Module) = printModule(m).lines().map { it.replace(POSITION, "").trim() }
+
+    private fun unsupported(m: Module) = (m.entries.map { it.status } + m.tasks.map { it.status }).filterIsInstance<Status.Unsupported>().flatMap { it.diagnostics }.map { it.message }
+
+    /** A release of the CREATE lock in a launched block; [start] is the launch's argument list before the block. */
+    private fun launched(start: String) =
+        """
+        val token = config.slock.tryLock(key, Kind.CREATE)
+        if (token != null) {
+            config.scope.launch$start {
+                config.slock.unLock(key, Kind.CREATE, token)
+            }
+        }
+        return Data(value = supplier(), ttl = 0L)
+        """
+
+    @Test
+    fun `launch is a spawn of its block, atomic only with start = ATOMIC (DESIGN-E5 2 rows 9 and 10)`() {
+        for ((start, atomic) in listOf("(start = CoroutineStart.ATOMIC)" to true, "" to false, "(start = CoroutineStart.DEFAULT)" to false)) {
+            val m = coroutine(launched(start), name = "launch$atomic${start.length}")
+            assertFalse(m.incomplete, printModule(m))
+            val spawn = lines(m).single { it.startsWith("spawn ") }
+            assertEquals("spawn task_20(k, token__18) by kotlinx.launch throws REE, RTE atomic=$atomic", spawn, start)
+            // The block is a task: a coroutine of its own, so its suspend call is cancellable.
+            assertEquals("task_20", m.tasks.single().id)
+            assertTrue("call SuspendLock.unLock(k, Kind.CREATE, token__18) throws RTE, CANCEL cx=true; consumes Lease(k, Kind.CREATE, token__18)" in lines(m), printModule(m))
+        }
+    }
+
+    @Test
+    fun `launch with a lazy or undispatched start, a context or a used Job is unsupported (DESIGN-E5 2_4 item 5)`() {
+        val cases =
+            listOf(
+                launched("(start = CoroutineStart.LAZY)") to "LAZY and UNDISPATCHED are out of scope",
+                launched("(start = CoroutineStart.UNDISPATCHED)") to "LAZY and UNDISPATCHED are out of scope",
+                launched("(Dispatchers.IO)") to "a context argument is not translated",
+                // The Job is no value of the model, so its type rejects it first.
+                launched("").replace("config.scope.launch", "val job = config.scope.launch") to "value of type kotlinx.coroutines.Job",
+            )
+        cases.forEachIndexed { i, (body, reason) ->
+            val m = coroutine(body, name = "nolaunch$i")
+            assertTrue(m.incomplete, printModule(m))
+            assertTrue(unsupported(m).any { reason in it }, "case $i: no '$reason' in ${unsupported(m)}")
+        }
+    }
+
+    @Test
+    fun `withContext(NonCancellable) runs its block in place with cx = false, and another context is unsupported (DESIGN-E5 2 row 8)`() {
+        val body =
+            """
+            val token = config.slock.tryLock(key, Kind.CREATE)
+            if (token != null) {
+                val released = withContext(NonCancellable) {
+                    delay(Limits.INTERVAL)
+                    config.slock.unLock(key, Kind.CREATE, token)
+                }
+                if (released) log.info("released")
+            }
+            currentCoroutineContext().ensureActive()
+            delay(Limits.INTERVAL)
+            return Data(value = supplier(), ttl = 0L)
+            """
+        val m = coroutine(body, name = "nc")
+        assertFalse(m.incomplete, printModule(m))
+        val ls = lines(m)
+        // Inside the block: no cancellation point raises CANCEL; the block's value is the release's.
+        assertTrue("call kotlinx.delay() throws CANCEL cx=false" in ls, printModule(m))
+        assertTrue("call released__20: Bool := SuspendLock.unLock(k, Kind.CREATE, token__18) throws RTE, CANCEL cx=false; consumes Lease(k, Kind.CREATE, token__18)" in ls, printModule(m))
+        // After it, the context is cancellable again: ensureActive and delay are cancellation points (rows 6, 7).
+        assertEquals(listOf("call kotlinx.ensureActive() throws CANCEL cx=true", "call kotlinx.delay() throws CANCEL cx=true"), ls.filter { it.startsWith("call kotlinx.") && "cx=true" in it })
+        val io = coroutine(body.replace("NonCancellable", "Dispatchers.IO"), name = "io")
+        assertTrue(io.incomplete)
+        assertTrue(unsupported(io).single().let { "withContext(Dispatchers.IO)" in it && "withContext(NonCancellable) only" in it }, unsupported(io).toString())
+    }
+
+    @Test
+    fun `x also { } runs its lambda after x, and its value is x (DESIGN-E5 2 row 11)`() {
+        val m =
+            coroutine(
+                """
+                var failures = 1
+                val cur = config.sget(key).also { failures = 0 }
+                if (cur != null && failures == 0) return cur
+                return Data(value = supplier(), ttl = 0L)
+                """,
+                name = "also",
+            )
+        assertFalse(m.incomplete, printModule(m))
+        val ls = lines(m)
+        val call = ls.indexOf("call r_19_19: Data? := Config.sget(k) throws RTE, CHK, CANCEL cx=true")
+        assertTrue(call >= 0, printModule(m))
+        assertEquals(listOf("failures__18 := 0", "let cur__19: Data? := r_19_19"), ls.subList(call + 1, call + 3))
+    }
+
+    @Test
+    fun `a trusted param captured into a launched block is a cancellation point of the task (DESIGN-E5 JE9)`() {
+        val m =
+            coroutine(
+                """
+                val token = config.slock.tryLock(key, Kind.CREATE)
+                if (token != null) {
+                    config.scope.launch(start = CoroutineStart.ATOMIC) {
+                        try {
+                            config.set.invoke(key, Data(value = supplier(), ttl = 0L), 0L)
+                        } finally {
+                            withContext(NonCancellable) { config.slock.unLock(key, Kind.CREATE, token) }
+                        }
+                    }
+                }
+                return Data(value = supplier(), ttl = 0L)
+                """,
+                name = "captured",
+            )
+        assertFalse(m.incomplete, printModule(m))
+        val task = m.tasks.single()
+        // The supplier is no value the task captures: only the token and the key are its parameters.
+        assertEquals(listOf("k", "token__18"), task.params.map { it.name })
+        val body = printModule(m).substringAfter("task ${task.id} ").lines().map { it.replace(POSITION, "").trim() }
+        assertTrue(body.any { Regex("""^call r_\d+_\d+: Int := supplier\(\) throws RTE, CHK, INTR, CANCEL cx=true$""").matches(it) }, printModule(m))
+        assertTrue("call SuspendLock.unLock(k, Kind.CREATE, token__18) throws RTE, CANCEL cx=false; consumes Lease(k, Kind.CREATE, token__18)" in body, printModule(m))
+    }
+
     @Test
     fun `every rejected construct is unsupported with its reason`() {
         for (c in ClientConstructs.all) {

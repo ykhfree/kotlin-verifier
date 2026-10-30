@@ -52,8 +52,8 @@ private const val USAGE = """usage:
       Compiles the files (a directory means every .kt file under it) and lists every ConcurrentHashMap call that
       can be an action: compute, computeIfAbsent, putIfAbsent, put, remove, m[k] = v and getOrPut. With --client
       (DESIGN-E 6.10 E0), it lists the client module candidates instead: each class with a CompletableFuture.runAsync
-      call, its public functions (entries) with the private helpers they reach, and its tasks (the lambda literals
-      that reach runAsync, with the helpers they pass through).
+      or kotlinx.coroutines launch call (a spawn), its public functions (entries) with the private helpers they
+      reach, and its tasks (the lambda literals that reach a spawn, with the helpers they pass through).
   kv resolve --root DIR [--classpath CP] [--kotlinc "ARGS"] [--draft] SIDECAR.kv
       Checks the sidecar, compiles its source files (relative to DIR) and binds its Kotlin names to FIR symbols.
       With --draft (DESIGN-C.md 7.1), an intent clause without a 'reviewed' note is no error; in a client sidecar

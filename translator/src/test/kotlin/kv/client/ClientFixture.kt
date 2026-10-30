@@ -7,7 +7,8 @@ import java.io.File
 
 /**
  * A small client module in the shape of req-shield's core ReqShield (DESIGN-E 1.2), for the construct fixtures of
- * DESIGN-E 6.4: a lock interface, enums, a data class, a configuration with function-typed values, and an error class.
+ * DESIGN-E 6.4: a lock interface, enums, a data class, a configuration with function-typed values and a coroutine
+ * scope, and an error class.
  * [client] writes a class `fx.Client` with entry `run` and the given helpers; [sidecar] is a client sidecar for it.
  */
 object ClientFixture {
@@ -52,6 +53,7 @@ object ClientFixture {
             val mode: Mode,
             val maxAttempt: Int,
             var spare: Int,
+            val scope: kotlinx.coroutines.CoroutineScope,
         )
 
         object Limits {
@@ -64,9 +66,16 @@ object ClientFixture {
         fun stamp(): Long = System.currentTimeMillis()
         """.trimIndent() + "\n"
 
+    /** The kotlinx.coroutines names a coroutine fixture uses (DESIGN-E5 2), imported on one line to keep line numbers. */
+    private const val COROUTINE_IMPORTS =
+        "; import kotlinx.coroutines.CoroutineStart; import kotlinx.coroutines.Dispatchers; import kotlinx.coroutines.NonCancellable" +
+            "; import kotlinx.coroutines.currentCoroutineContext; import kotlinx.coroutines.delay; import kotlinx.coroutines.ensureActive" +
+            "; import kotlinx.coroutines.launch; import kotlinx.coroutines.withContext"
+
     /**
      * The client class: entry `run(key, callable)` with [body], then [helpers] (members of the class). With [suspend],
-     * a coroutine client (DESIGN-E5): `suspend fun run(key, callable, supplier)`, `supplier` a suspend function value.
+     * a coroutine client (DESIGN-E5): `suspend fun run(key, callable, supplier)`, `supplier` a suspend function value,
+     * with the kotlinx.coroutines imports on the line of the first import.
      */
     fun client(
         body: String,
@@ -77,7 +86,7 @@ object ClientFixture {
         """
         |package fx
         |
-        |import org.slf4j.LoggerFactory
+        |import org.slf4j.LoggerFactory${if (suspend) COROUTINE_IMPORTS else ""}
         |import java.util.concurrent.Callable
         |import java.util.concurrent.CompletableFuture
         |import java.util.concurrent.RejectedExecutionException
@@ -138,6 +147,16 @@ object ClientFixture {
             trusted param Client.run.supplier() returns v: Int throws RTE, CHK, INTR, CANCEL
             """.trimIndent() + "\n"
 
+    /** [SUSPEND_SIDECAR_HEAD] with the coroutine models of DESIGN-E5 2 (rows 6-9): launch, withContext, ensureActive, delay. */
+    val COROUTINE_SIDECAR_HEAD: String =
+        SUSPEND_SIDECAR_HEAD +
+            """
+            use kotlinx.launch
+            use kotlinx.withContext
+            use kotlinx.ensureActive
+            use kotlinx.delay
+            """.trimIndent() + "\n"
+
     /** A whole fixture sidecar: [head], the operation of `run` with [items], and [extra] declarations. */
     fun sidecar(
         items: String = "result res",
@@ -145,8 +164,8 @@ object ClientFixture {
         head: String = SIDECAR_HEAD,
     ): String = head + "\noperation run = fun Client.run {\n${items.trimIndent().prependIndent("  ")}\n}\n" + extra
 
-    /** The test classpath: the stdlib and slf4j (from the req-shield classpath). */
-    val classpath: List<File> by lazy { listOf(Harness.stdlib) + kv.ReqShield.classpath.filter { "slf4j" in it.name } }
+    /** The test classpath: the stdlib, slf4j and kotlinx-coroutines (from the req-shield classpath). */
+    val classpath: List<File> by lazy { listOf(Harness.stdlib) + kv.ReqShield.classpath.filter { "slf4j" in it.name || "kotlinx-coroutines-core" in it.name } }
 
     /** Writes the fixture under [dir] (`src/fx/Base.kt`, `src/fx/Client.kt`, `client.kv`) and resolves it as a draft. */
     fun resolve(

@@ -309,7 +309,7 @@ private class KvirPrinter(
                 }
             }
             is Throw -> line(indent, s.kind?.let { "throw ${it.label}" } ?: "rethrow", s.pos)
-            is Spawn -> line(indent, "spawn ${s.task}(${s.args.joinToString { expr(it) }}) by ${s.model}${if (s.throws.isEmpty()) "" else " throws ${kinds(s.throws)}"}", s.pos)
+            is Spawn -> line(indent, "spawn ${s.task}(${s.args.joinToString { expr(it) }}) by ${s.model}${if (s.throws.isEmpty()) "" else " throws ${kinds(s.throws)}"}${s.atomic?.let { " atomic=$it" } ?: ""}", s.pos)
             is While -> {
                 line(indent, "while ${expr(s.cond)}${s.hole?.let { " [hole $it]" } ?: ""}${s.measure?.let { " [measure ${expr(it)}]" } ?: ""}$suffix", s.pos)
                 s.body.forEach { stmt(indent + 1, it) }

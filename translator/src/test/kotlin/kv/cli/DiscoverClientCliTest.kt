@@ -53,6 +53,29 @@ class DiscoverClientCliTest {
     }
 
     @Test
+    fun `finds the coroutine ReqShield with one entry and the two launch blocks at lines 75 and 138 (DESIGN-E5 S4)`() {
+        val run =
+            kv(
+                "discover", "--client",
+                "--classpath", ReqShield.classpath.joinToString(File.pathSeparator),
+                "--kotlinc", ReqShield.kotlincArgs.joinToString(" "),
+                File(ReqShield.dir, "core-kotlin-coroutine/src/main/kotlin").path,
+            )
+        assertEquals(0, run.exit, run.err)
+        // KeyLocalLock's companion launches its expiry monitor: a candidate of its own, with no entry.
+        assertEquals(
+            listOf(
+                "40:1 client com.linecorp.cse.reqshield.kotlin.coroutine.ReqShield entries=1 tasks=2",
+                "43:5 entry getAndSetReqShieldData helpers=executeGetCacheFunction,shouldUpdateCache,updateReqShieldData," +
+                    "handleLockForCacheCreation,buildReqShieldData,executeCallable,executeSetCacheFunction,createReqShieldData,handleLockFailure",
+                "75:69 task fun=updateReqShieldData via=- spawn=75:9",
+                "138:69 task fun=createReqShieldData via=- spawn=138:9",
+            ),
+            lines(run.out.lines().filter { "/ReqShield.kt:" in it }.joinToString("\n")),
+        )
+    }
+
+    @Test
     fun `without --client the same sources list the map action calls only`() {
         val run =
             kv(

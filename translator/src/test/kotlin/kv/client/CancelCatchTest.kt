@@ -188,6 +188,33 @@ class CancelCatchTest {
     }
 
     @Test
+    fun `a rethrow of an outer catch's exception inside an inner catch is unsupported, and the inner one's rethrow is not`() {
+        // The emitter rethrows the kind of the innermost catch, so `throw e` there would rethrow f's kind.
+        fun body(rethrown: String) =
+            """
+            val cur =
+                try {
+                    config.get.invoke(key)
+                } catch (e: Exception) {
+                    try {
+                        config.set.invoke(key, Data(value = callable.call(), ttl = 0L), 0L)
+                    } catch (f: RuntimeException) {
+                        throw $rethrown
+                    }
+                    throw ClientError(Code.GET, e)
+                }
+            if (cur != null) return cur
+            return Data(value = callable.call(), ttl = 0L)
+            """
+        val outer = lower(body("e"), cancel = false)
+        assertTrue(outer.incomplete)
+        assertTrue(unsupported(outer).single().let { "UNSUPPORTED throw e" in it && "a rethrow of the exception of an outer catch" in it }, unsupported(outer).toString())
+        val inner = lower(body("f"), cancel = false)
+        assertFalse(inner.incomplete, unsupported(inner).joinToString("\n"))
+        assertTrue("rethrow" in lines(inner), printModule(inner))
+    }
+
+    @Test
     fun `the emitted kinds have CANCEL before ERR, and IS_EXCEPTION ends at it, only in a module that uses CANCEL`() {
         val body = "return Data(value = callable.call(), ttl = 0L)"
         fun kinds(cancel: Boolean): List<String> {

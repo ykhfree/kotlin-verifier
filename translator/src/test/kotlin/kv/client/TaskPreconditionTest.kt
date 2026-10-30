@@ -125,6 +125,52 @@ class TaskPreconditionTest {
     }
 
     @Test
+    fun `a spawn after an early return gets the negated condition of the return (DESIGN-E5 S5)`() {
+        // The shape of the coroutine updateReqShieldData (73): the spawn runs only if the if did not return.
+        val m =
+            lower(
+                """
+                val data = Data(value = callable.call(), ttl = 0L)
+                val only = config.mode == Mode.ONLY_CREATE
+                val token = if (only) null else config.lock.tryLock(key, Kind.UPDATE)
+                if (!only && token == null) return data
+                release(key) {
+                    if (token != null) config.lock.unLock(key, Kind.UPDATE, token)
+                }
+                return data
+                """,
+                release,
+            )
+        assertEquals(
+            listOf(
+                // `only` is a val with a known value over the instance value mode; token is captured.
+                "requires !((!(mode == Mode.ONLY_CREATE)) && (token__19 == null))",
+                "holds (token__19 != null) ==> Lease(k, Kind.UPDATE, token__19)",
+            ),
+            pre(m, m.tasks.single()),
+            printModule(m),
+        )
+        // The fact holds only for the rest of the block: a spawn in a later block of the same function lacks it.
+        val later =
+            lower(
+                """
+                val data = Data(value = callable.call(), ttl = 0L)
+                val token = config.lock.tryLock(key, Kind.UPDATE)
+                if (config.maxAttempt > 0) {
+                    if (token == null) return data
+                    log.info("locked")
+                }
+                release(key) {
+                    if (token != null) config.lock.unLock(key, Kind.UPDATE, token)
+                }
+                return data
+                """,
+                release,
+            )
+        assertEquals(listOf("holds (token__18 != null) ==> Lease(k, Kind.UPDATE, token__18)"), pre(later, later.tasks.single()), printModule(later))
+    }
+
+    @Test
     fun `the obligation handed over is the one created, whatever the task's releases name`() {
         val m =
             lower(

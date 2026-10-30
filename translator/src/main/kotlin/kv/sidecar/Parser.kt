@@ -667,6 +667,10 @@ private class SidecarParser(
                         keyword("of")
                         TraceEvent(n, EventForm.TRAILING_FAILURES, null, of = name("a count field"))
                     }
+                    "raised" -> {
+                        name()
+                        TraceEvent(n, EventForm.RAISED, null, kind = name("an exception kind"))
+                    }
                     else -> {
                         val call = dotted("a trusted call")
                         keyword("while")

@@ -19,6 +19,7 @@ import kv.sidecar.EnsuresItem
 import kv.sidecar.GuardItem
 import kv.sidecar.Sidecar
 import kv.sidecar.SidecarException
+import kv.sidecar.usesLaunch
 import java.io.File
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
@@ -75,6 +76,7 @@ private val ASSUMPTION_TEXT =
         "A3" to ("a task the executor accepted runs" to "an accepted task may be dropped (shutdownNow)"),
         "A4" to ("a throwing release ends the obligation; the lease ends the lock" to "a throwing release keeps the obligation"),
         "A5" to ("a throwing acquire leaves the caller no obligation; the lease ends a lock the store took" to "a throwing acquire may have taken the lock"),
+        "A6" to ("the dispatcher's dispatch does not throw, so launch does not (UE6)" to "launch may throw, and its block never runs"),
     )
 
 private val TOOL_FACT_TEXT =
@@ -291,6 +293,8 @@ fun ClientReport.render(): String {
     line("Assumptions (not checked by Silicon):")
     val assumed = sidecar.assumes.map { it.id.text }.toSet()
     CLIENT_ASSUMPTIONS.forEach { (id, name) ->
+        // A6 is a switch of the launch model only (DESIGN-E5 7: no new text for a module without it).
+        if (id == "A6" && !sidecar.usesLaunch) return@forEach
         val (on, off) = ASSUMPTION_TEXT.getValue(id)
         line("  $id $name: ${if (id in assumed) "on (assume $id): $on" else "off: $off"}")
     }

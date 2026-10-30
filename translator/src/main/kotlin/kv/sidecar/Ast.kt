@@ -456,11 +456,12 @@ data class HoleDecl(
 
 /**
  * The form of a trace event (DESIGN-E 3.2, 6.2). [HIT] (DESIGN-E E3) records whether some matching call returned a
- * non-null result, and the last such result: the hand model's `pollHit` and `pollObj`.
+ * non-null result, and the last such result: the hand model's `pollHit` and `pollObj`. [RAISED] (DESIGN-E5 2.5) records
+ * whether some call of the entry raised an exception kind: the hand model's `cancelled`.
  */
 enum class EventForm(
     val keyword: String,
-) { FIRST("first"), WHILE_HOLDS("while holds"), COUNT("count"), LAST("last"), TRAILING_FAILURES("trailing failures of"), HIT("hit") }
+) { FIRST("first"), WHILE_HOLDS("while holds"), COUNT("count"), LAST("last"), TRAILING_FAILURES("trailing failures of"), HIT("hit"), RAISED("raised") }
 
 /** `holds(NAME(PATTERN))`: an obligation with argument patterns; `_` matches any value. */
 data class HoldsPattern(
@@ -470,7 +471,8 @@ data class HoldsPattern(
 
 /**
  * One field of the trace record (DESIGN-E 3.2): `NAME = first CALL`, `CALL while holds(...)`, `count CALL`, `last
- * CALL`, `hit CALL` (each but `while holds` with an optional `where VEXPR`), or `trailing failures of NAME`.
+ * CALL`, `hit CALL` (each but `while holds` with an optional `where VEXPR`), `trailing failures of NAME`, or `raised
+ * KIND` (DESIGN-E5 2.5: [kind] is an exception kind).
  */
 data class TraceEvent(
     val name: Name,
@@ -479,6 +481,7 @@ data class TraceEvent(
     val where: Vexpr? = null,
     val holds: HoldsPattern? = null,
     val of: Name? = null,
+    val kind: Name? = null,
 )
 
 /**

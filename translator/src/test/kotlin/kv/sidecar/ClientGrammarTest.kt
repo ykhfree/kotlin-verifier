@@ -47,6 +47,7 @@ class ClientGrammarTest {
                       last   = last Callable.call where true
                       fails  = trailing failures of reads
                       found  = hit Config.get where !holds(Lease(k, CREATE, _))
+                      stop   = raised CANCEL
                       derived PATH = first == HIT ? UPDATE : CREATE
                     }
                     assume A1: errors-are-fatal
@@ -78,7 +79,9 @@ class ClientGrammarTest {
         assertEquals(emptyList(), s.trusted.single { it.shortName == "decide" }.named)
         val events = s.traces.single().events
         assertEquals(EventForm.entries.toList(), events.map { it.form })
-        assertEquals(listOf("Config.get", "Config.get", "Config.get", "Callable.call", null, "Config.get"), events.map { it.call?.text })
+        assertEquals(listOf("Config.get", "Config.get", "Config.get", "Callable.call", null, "Config.get", null), events.map { it.call?.text })
+        // DESIGN-E5 2.5: `raised KIND` names no call, only an exception kind.
+        assertEquals(listOf(null, null, null, null, null, null, "CANCEL"), events.map { it.kind?.text })
         // DESIGN-E E3: a derived value of the trace, by name.
         assertEquals(listOf("PATH" to "first == HIT ? UPDATE : CREATE"), s.traces.single().derived.map { it.name.text to it.expr.text })
         assertEquals(listOf("Lease", "k", "CREATE", "_"), events[1].holds!!.let { listOf(it.obligation.text) + it.args.map { a -> a.text } })
@@ -185,6 +188,18 @@ class ClientGrammarTest {
         assertEquals(listOf("unknown-call", "unknown-name", "unknown-call"), codes(errors), errors.joinToString("\n"))
         assertTrue("'nowhere'" in errors[0].message && "'s2', which is not an earlier count field" in errors[1].message, errors.joinToString("\n"))
         assertTrue("guard G names 'Config.put'" in errors[2].message, errors[2].message)
+    }
+
+    @Test
+    fun `a raised event records an exception kind a call may raise (DESIGN-E5 2_5)`() {
+        val ok = check(ClientFixture.sidecar(head = ClientFixture.SUSPEND_SIDECAR_HEAD, extra = "trace {\n  cancelled = raised CANCEL\n  failed = raised RTE\n}\n"))
+        assertEquals(emptyList(), codes(ok), ok.joinToString("\n"))
+        val errors = check(ClientFixture.sidecar(extra = "trace {\n  e = raised ERR\n  x = raised IOException\n}\n"))
+        assertEquals(listOf("unknown-exception-kind", "unknown-exception-kind"), codes(errors), errors.joinToString("\n"))
+        assertTrue("trace field x records 'IOException'" in errors[1].message && "REE, RTE, CHK, INTR, CANCEL" in errors[1].message, errors[1].message)
+        // The kind is a name: a missing one is a syntax error at its position.
+        val syntax = assertFailsWith<SidecarException> { parse("trace {\n  x = raised\n}") }.errors.single()
+        assertTrue("an exception kind" in syntax.message, syntax.message)
     }
 
     @Test

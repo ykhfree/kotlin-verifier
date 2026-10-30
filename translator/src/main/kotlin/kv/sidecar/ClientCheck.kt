@@ -13,18 +13,26 @@ val CLIENT_ASSUMPTIONS: Map<String, String> =
         "A3" to "accepted-tasks-run",
         "A4" to "throwing-release-ends-obligation",
         "A5" to "throwing-acquire-takes-nothing",
+        // DESIGN-E5 2.4, UE6: the coroutine dispatcher's dispatch does not throw, so launch does not.
+        "A6" to "dispatch-does-not-throw",
     )
 
 /** The exception kinds a trusted call may throw besides an Error, which A1 decides (DESIGN-E 3.5, DESIGN-E5 2.1). */
 val TRUSTED_THROW_KINDS = listOf("REE", "RTE", "CHK", "INTR", "CANCEL")
 
 /**
- * DESIGN-E5 2.1, 7: the module uses CANCEL if a trusted declaration may throw it (DESIGN-E5 S4 adds the coroutine
- * models). Only then do the catch mapping and the emitted kinds have CANCEL, so a module without it keeps the kinds of
+ * DESIGN-E5 2.1, 7: the module uses CANCEL if a trusted declaration or a used coroutine model (ensureActive, delay) may
+ * throw it. Only then do the catch mapping and the emitted kinds have CANCEL, so a module without it keeps the kinds of
  * DESIGN-E 3.5.
  */
 val Sidecar.usesCancel: Boolean
-    get() = trusted.any { t -> t.throwKinds.any { it.text == "CANCEL" } }
+    get() =
+        trusted.any { t -> t.throwKinds.any { it.text == "CANCEL" } } ||
+            uses.any { u -> ClientModels.entries.any { it.model == u.model.text && "CANCEL" in it.throws } }
+
+/** DESIGN-E5 2.4, 7: the module uses launch, the one model A6 rules on; only then do the model and the report name A6. */
+val Sidecar.usesLaunch: Boolean
+    get() = uses.any { it.model.text == ClientModels.LAUNCH }
 
 /** `holds(NAME(` inside a Viper expression: the obligation a HOLDS test names (DESIGN-E 3.1, 6.2). */
 private val HOLDS = Regex("""\bholds\s*\(\s*([A-Za-z_]\w*)\s*\(""")
@@ -140,6 +148,9 @@ internal class ClientChecks(
             e.holds?.let { obligation(it.obligation, it.args.size, what) }
             e.of?.let {
                 if (earlier[it.text] != EventForm.COUNT) err(it.pos, "unknown-name", "$what counts the trailing failures of '${it.text}', which is not an earlier count field")
+            }
+            e.kind?.takeIf { it.text !in TRUSTED_THROW_KINDS }?.let {
+                err(it.pos, "unknown-exception-kind", "$what records '${it.text}', which is not an exception kind a call may raise; kinds: ${TRUSTED_THROW_KINDS.joinToString()} (DESIGN-E5 2.5)")
             }
             earlier[e.name.text] = e.form
         }

@@ -19,11 +19,15 @@ enum class ClientRole {
 
     /** `Result.getOrElse { }` on a runCatching result: the catch block. */
     GET_OR_ELSE,
+
+    /** `withContext(NonCancellable) { }`: the block in place, with no cancellation point inside it (DESIGN-E5 2 row 8). */
+    NON_CANCELLABLE,
 }
 
 /**
  * One library callable of a built-in client model (DESIGN-E 6.5). [owner] is the class id, or the package with `/`
- * for a top-level function; [throws] are the exception kinds of DESIGN-E 3.5 the call may throw besides an Error.
+ * for a top-level function; [throws] are the exception kinds of DESIGN-E 3.5 the call may throw besides an Error;
+ * [params] are the parameters of its Viper method (name and Viper type).
  */
 data class ClientModel(
     val model: String,
@@ -31,6 +35,7 @@ data class ClientModel(
     val name: String,
     val role: ClientRole,
     val throws: List<String> = emptyList(),
+    val params: List<Pair<String, String>> = emptyList(),
 )
 
 /**
@@ -38,6 +43,9 @@ data class ClientModel(
  * object and instance module lowering never matches them. A client sidecar may `use` these and the L1 models.
  */
 object ClientModels {
+    /** The coroutine spawn (DESIGN-E5 2.4): its block is a task, and A6 rules out its throws. */
+    const val LAUNCH = "kotlinx.launch"
+
     val entries: List<ClientModel> =
         listOf(
             // CompletableFuture.runAsync(task, executor) (JDK 21 CompletableFuture.java:2031-2034, 1815-1820;
@@ -55,6 +63,20 @@ object ClientModels {
             // catches every Throwable, and its catch block.
             ClientModel("kotlin.runCatching", "kotlin", "runCatching", ClientRole.RUN_CATCHING),
             ClientModel("kotlin.runCatching", "kotlin", "getOrElse", ClientRole.GET_OR_ELSE),
+            // scope.launch(start = ...) { block } (kotlinx-coroutines 1.8.1 Builders.common.kt:43-54, CoroutineStart.kt:
+            // 47-55, 86-92): the block is a task. With start = ATOMIC it starts even in a cancelled scope; with DEFAULT a
+            // cancelled scope may drop it before it starts. launch throws only if the dispatcher's dispatch throws
+            // (DispatchedContinuation.kt:190-196 has no catch); A6 rules that out. A3: an accepted block runs.
+            ClientModel(LAUNCH, "kotlinx/coroutines", "launch", ClientRole.SPAWN, listOf("REE", "RTE"), listOf("atomic" to "Bool")),
+            // withContext(NonCancellable) { block } (Builders.common.kt:134-136): no cancellation on entry, inside or on
+            // exit, and no dispatcher change. The lowering rejects any other context.
+            ClientModel("kotlinx.withContext", "kotlinx/coroutines", "withContext", ClientRole.NON_CANCELLABLE),
+            // currentCoroutineContext().ensureActive() (Job.kt:575-577, 593-595): throws the job's CancellationException
+            // if the job is cancelled. currentCoroutineContext() reads the context: no effect.
+            ClientModel("kotlinx.ensureActive", "kotlinx/coroutines", "ensureActive", ClientRole.CALL, listOf("CANCEL")),
+            ClientModel("kotlinx.ensureActive", "kotlinx/coroutines", "currentCoroutineContext", ClientRole.NO_EFFECT),
+            // delay(ms) (Delay.kt:105-129): a cancellable suspension with a prompt cancellation guarantee.
+            ClientModel("kotlinx.delay", "kotlinx/coroutines", "delay", ClientRole.CALL, listOf("CANCEL")),
         )
 
     /** Names a client sidecar may `use` besides the L1 models. */

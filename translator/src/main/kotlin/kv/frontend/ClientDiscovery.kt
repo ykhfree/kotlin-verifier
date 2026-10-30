@@ -26,6 +26,10 @@ import org.jetbrains.kotlin.fir.visitors.FirVisitorVoid
 internal const val RUN_ASYNC_CLASS = "java/util/concurrent/CompletableFuture"
 internal const val RUN_ASYNC = "runAsync"
 
+/** The package and name of the coroutine builder whose block is a task (DESIGN-E5 2.4): `CoroutineScope.launch`. */
+private const val LAUNCH_PACKAGE = "kotlinx.coroutines"
+private const val LAUNCH = "launch"
+
 /** A public function of a client module candidate and the private helpers it reaches (DESIGN-E 6.1). */
 data class EntrySite(
     val pos: Pos,
@@ -35,19 +39,19 @@ data class EntrySite(
 )
 
 /**
- * A task (DESIGN-E 3.4): a lambda literal that reaches a `CompletableFuture.runAsync` call, directly or through
- * function-typed parameters of private helpers ([via], innermost last).
+ * A task (DESIGN-E 3.4): a lambda literal that reaches a spawn ([isSpawn]), directly or through function-typed parameters
+ * of private helpers ([via], innermost last).
  */
 data class TaskSite(
     val lambda: Pos,
     /** The named function whose body holds the lambda literal. */
     val inFunction: String,
     val via: List<String>,
-    /** The runAsync call. */
+    /** The spawn call. */
     val spawn: Pos,
 )
 
-/** A runAsync call whose task argument discovery cannot follow to a lambda literal. */
+/** A spawn call whose task argument discovery cannot follow to a lambda literal. */
 data class OpaqueSpawn(
     val spawn: Pos,
     val reason: String,
@@ -65,11 +69,25 @@ data class ClientSite(
     val opaque: List<OpaqueSpawn>,
 )
 
-/** True if [call] is `CompletableFuture.runAsync(Runnable, ...)`, the spawn the client lowering models. */
-internal fun isRunAsync(call: FirFunctionCall): Boolean {
+/**
+ * True if [call] is a spawn the client lowering models: `CompletableFuture.runAsync(Runnable, ...)` (DESIGN-E 3.3) or
+ * `CoroutineScope.launch(...) { }` (DESIGN-E5 2.4).
+ */
+internal fun isSpawn(call: FirFunctionCall): Boolean = isRunAsync(call) || isLaunch(call)
+
+private fun isRunAsync(call: FirFunctionCall): Boolean {
     val sym = call.calleeReference.toResolvedCallableSymbol()?.unwrapSubstitutionOverrides() as? FirNamedFunctionSymbol ?: return false
     return sym.callableId.classId?.asString() == RUN_ASYNC_CLASS && sym.callableId.callableName.asString() == RUN_ASYNC
 }
+
+private fun isLaunch(call: FirFunctionCall): Boolean {
+    val id = (call.calleeReference.toResolvedCallableSymbol()?.unwrapSubstitutionOverrides() as? FirNamedFunctionSymbol)?.callableId ?: return false
+    return id.classId == null && id.packageName.asString() == LAUNCH_PACKAGE && id.callableName.asString() == LAUNCH
+}
+
+/** The task argument of spawn [call]: the block of launch, the first argument of runAsync. */
+internal fun taskArgument(call: FirFunctionCall): FirExpression? =
+    if (isLaunch(call)) call.resolvedArgumentMapping?.entries?.find { it.value.name.asString() == "block" }?.key else call.argumentList.arguments.firstOrNull()
 
 /** [e] without SAM conversions and smart casts. */
 internal fun unwrapTask(e: FirExpression?): FirExpression? {
@@ -84,7 +102,7 @@ internal fun unwrapTask(e: FirExpression?): FirExpression? {
     }
 }
 
-/** The client module candidates of [file]: each class with a runAsync call, in source order (DESIGN-E 6.10 E0). */
+/** The client module candidates of [file]: each class with a spawn call, in source order (DESIGN-E 6.10 E0). */
 @OptIn(DirectDeclarationsAccess::class)
 fun findClients(file: FirFile): List<ClientSite> {
     val positions = Positions(file)
@@ -119,7 +137,7 @@ private fun clientOf(
             },
         )
     }
-    val spawns = calls.filter { isRunAsync(it.second) }
+    val spawns = calls.filter { isSpawn(it.second) }
     if (spawns.isEmpty()) return null
 
     val tasks = mutableListOf<TaskSite>()
@@ -157,7 +175,7 @@ private fun clientOf(
                 else -> opaque += OpaqueSpawn(spawnPos, "the task argument is neither a lambda literal nor a function-typed parameter")
             }
         }
-        follow(spawn.argumentList.arguments.firstOrNull(), holder, emptyList())
+        follow(taskArgument(spawn), holder, emptyList())
     }
 
     // Helpers: the private member functions an entry reaches through calls (DESIGN-E 6.4: they are inlined).

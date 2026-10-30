@@ -58,6 +58,7 @@ import kv.sidecar.TrustedKind
 import kv.sidecar.Vexpr
 import kv.sidecar.callTarget
 import kv.sidecar.usesCancel
+import kv.sidecar.usesLaunch
 
 /**
  * The property IDs of a client module that no sidecar clause states (DESIGN-E 6.2 item 1): the tool facts, the loop
@@ -107,6 +108,8 @@ private val SWITCHES =
         Triple("A3", "ACCEPTED_TASKS_RUN", true),
         Triple("A4", "THROWING_UNLOCK_RELEASES", true),
         Triple("A5", "THROWING_TRYLOCK_TAKES_NOTHING", true),
+        // DESIGN-E5 2.4: emitted only for a module that uses the launch model.
+        Triple("A6", "DISPATCH_NEVER_THROWS", true),
     )
 
 private const val ERR = "ERR"
@@ -145,13 +148,17 @@ private class Model(
     val cancel get() = LibExc.CANCEL.name in kinds
 }
 
-/** The fields an event writes: the outcome or count, and the recorded result ("Obj" or "Val") or hit flag. */
+/**
+ * The fields an event writes: the outcome, count or raised flag ([outcomeType]: Int, or Bool for `raised`), and the
+ * recorded result ("Obj" or "Val") or hit flag.
+ */
 private class EventFields(
     val event: TraceEvent,
     val outcome: String?,
     val hit: String?,
     val value: String?,
     val valueType: String?,
+    val outcomeType: String = "Int",
 )
 
 /**
@@ -330,7 +337,7 @@ private class ClientEmitter(
     private fun builtIn(c: kv.model.ClientModel): Model {
         val name = c.model.removePrefix("jdk.").replace('.', '_')
         val results = if (c.role == ClientRole.SPAWN) listOf(Triple("dropped", "Bool", false)) else emptyList()
-        return Model(name, null, c.model, emptyList(), emptyList(), results, c.throws, c.role)
+        return Model(name, null, c.model, c.params, emptyList(), results, c.throws, c.role)
     }
 
     /** The model of call target [ref] (a KVIR Call.fn or Spawn.model). */
@@ -373,11 +380,15 @@ private class ClientEmitter(
                 EventForm.FIRST, EventForm.WHILE_HOLDS, EventForm.LAST -> EventFields(e, n, null, result?.let { n + suffix }, result?.second)
                 EventForm.HIT -> EventFields(e, null, n + "Hit", result?.let { n + suffix }, result?.second)
                 EventForm.COUNT, EventForm.TRAILING_FAILURES -> EventFields(e, n, null, null, null)
+                EventForm.RAISED -> EventFields(e, n, null, null, null, "Bool")
             }
         }
 
     private val fieldDecls: List<Pair<String, String>> =
-        fields.flatMap { f -> listOfNotNull(f.outcome?.let { it to "Int" }, f.hit?.let { it to "Bool" }, f.value?.let { it to f.valueType!! }) }
+        fields.flatMap { f -> listOfNotNull(f.outcome?.let { it to f.outcomeType }, f.hit?.let { it to "Bool" }, f.value?.let { it to f.valueType!! }) }
+
+    /** DESIGN-E5 2.5: the `raised KIND` fields by their kind, in trace order. */
+    private val raisedByKind: Map<String, List<String>> = events.filter { it.form == EventForm.RAISED }.groupBy({ it.kind!!.text }, { it.name.text })
 
     /** The events of [model], with trailing-failures events next to their count. */
     private fun eventsOf(model: Model): List<TraceEvent> =
@@ -510,7 +521,7 @@ private class ClientEmitter(
             w.put("\n")
         }
         w.comment("---- Assumptions of the trusted models (DESIGN-E 4); 'assume' lines of the sidecar ----")
-        SWITCHES.forEach { (id, define, whenAssumed) ->
+        SWITCHES.filter { it.first != "A6" || s.usesLaunch }.forEach { (id, define, whenAssumed) ->
             val value = if (id in assumed) whenAssumed else !whenAssumed
             line("define $define $value", 0, Source.Generated("assumption $id"), "$id ${if (id in assumed) "assumed" else "not assumed"}")
         }
@@ -704,7 +715,23 @@ private class ClientEmitter(
         if (trace.derived.isNotEmpty()) w.put("\n")
         w.comment("Event rules (DESIGN-E 3.2): after each call of a trusted model, the first group whose condition holds")
         eventModels.forEach(::eventMacro)
+        raisedMacros()
         w.put("\n")
+    }
+
+    /**
+     * DESIGN-E5 2.5: `NAME = raised K` sets NAME after an entry call that raised K. A kind the module does not have
+     * (CANCEL in a module that does not use it) is raised by no call, so it gets no macro and its field stays false.
+     */
+    private fun raisedMacros() {
+        raisedByKind.filterKeys { it in kinds }.forEach { (k, names) ->
+            w.comment("${names.joinToString { "`$it = raised $k`" }} (DESIGN-E5 2.5): after each call of the entry that may raise $k")
+            line("define EV_raised_$k(tr, e) {", 0, Source.Generated("event rules"))
+            line("if ((e) == $k) {", 2)
+            names.forEach { line("tr.$it := true", 4) }
+            line("}", 2)
+            line("}", 0)
+        }
     }
 
     /** The parameters of [model]'s event macro: tr, the call parameters, `e` and the results its events read. */
@@ -889,7 +916,10 @@ private class ClientEmitter(
                             else -> "exc == $k"
                         }
                     }
-                line("ensures ${(listOf("exc == NONE") + ks + "(MAY_ERR && exc == ERR)").joinToString(" || ")}", 2, src)
+                // DESIGN-E5 2.4 item 2: launch throws only if the dispatch throws, which A6 rules out.
+                val launch = model.builtIn == ClientModels.LAUNCH
+                val throwing = if (launch) listOf("(!DISPATCH_NEVER_THROWS && (${ks.joinToString(" || ")}))") else ks
+                line("ensures ${(listOf("exc == NONE") + throwing + "(MAY_ERR && exc == ERR)").joinToString(" || ")}", 2, src, if (launch) "A6" else null)
                 model.results.filter { it.third }.forEach { (n, t, _) -> line("ensures exc != NONE ==> $n == ${nullOf(t)}", 2, src) }
             }
             d?.creates?.let { c ->
@@ -909,7 +939,11 @@ private class ClientEmitter(
                 if (model.throws) line("ensures exc != NONE && $notCancelled!THROWING_UNLOCK_RELEASES ==> $held", 2, src, "A4")
                 if (model.cancel) line("ensures exc == ${LibExc.CANCEL.name} && cancelKeeps(${c.args.joinToString { it.text }}) ==> $held", 2, src, "a cancelled release may not have run")
             }
-            if (model.role == ClientRole.SPAWN) line("ensures dropped ==> exc == NONE && !ACCEPTED_TASKS_RUN", 2, src, "A3")
+            if (model.role == ClientRole.SPAWN) {
+                // DESIGN-E5 2.4: an ATOMIC block starts even in a cancelled scope; another may be dropped before it starts.
+                val runs = if (model.params.any { it.first == "atomic" }) "(!atomic || !ACCEPTED_TASKS_RUN)" else "!ACCEPTED_TASKS_RUN"
+                line("ensures dropped ==> exc == NONE && $runs", 2, src, "A3")
+            }
         }
         w.put("\n")
     }
@@ -1331,11 +1365,19 @@ private class ClientEmitter(
 
         val raisesMemo = java.util.IdentityHashMap<Any, Set<String>>()
 
-        /** The exception kinds that can leave [st] (A1 Errors included: MAY_ERR is a switch, not a code fact). */
+        /**
+         * The exception kinds that can leave [st] (A1 Errors included: MAY_ERR is a switch, not a code fact). A call with
+         * cx = false raises no CANCEL (DESIGN-E5 2.2), so its dispatch has no branch for one.
+         */
         fun raises(st: Stmt): Set<String> =
             raisesMemo.getOrPut(st) {
                 when (st) {
-                    is Call -> if (!modeled(st)) emptySet() else modelOf(st.fn, st.pos).let { md -> if (md.throws) (md.kinds + ERR).toSet() else emptySet() }
+                    is Call ->
+                        if (!modeled(st)) {
+                            emptySet()
+                        } else {
+                            modelOf(st.fn, st.pos).let { md -> if (md.throws) (md.kinds + ERR).filter { it != LibExc.CANCEL.name || st.cx != false }.toSet() else emptySet() }
+                        }
                     is Spawn -> (st.throws.map(::kindName) + ERR).toSet()
                     is Throw -> st.kind?.let { setOf(kindName(it)) } ?: caughtKinds(st)
                     is If -> raises(st.then) + raises(st.els)
@@ -1638,7 +1680,20 @@ private class ClientEmitter(
                 line("${evMacro(md)}(${ps.joinToString { if (it == "tr") "tr" else byName.getValue(it) }})", f.indent)
                 recordFirst(md, flag, outs.firstOrNull(), f)
             }
-            if (flag != null) dispatch(flag, raises(c), f, success, c)
+            if (flag != null) {
+                recordRaised(flag, raises(c), f)
+                dispatch(flag, raises(c), f, success, c)
+            }
+        }
+
+        /** DESIGN-E5 2.5: after an entry call whose flag [e] can be K, `EV_raised_K`; a task records no raised kind. */
+        fun recordRaised(
+            e: String,
+            possible: Set<String>,
+            f: Frame,
+        ) {
+            if (!hasTr || task != null) return
+            raisedByKind.keys.filter { it in possible }.forEach { k -> line("EV_raised_$k(tr, $e)", f.indent) }
         }
 
         /** A first-event call: the field is set by this call if it was unset, else it stays as it was. */
@@ -1823,7 +1878,8 @@ private class ClientEmitter(
             declared += listOf(e, dropped)
             line("var $e: Int", f.indent)
             line("var $dropped: Bool", f.indent)
-            line("$e, $dropped := ${md.name}()", f.indent, Source.Kotlin(sp.pos), "${sp.model} @${sp.pos.line}")
+            line("$e, $dropped := ${md.name}(${sp.atomic?.toString().orEmpty()})", f.indent, Source.Kotlin(sp.pos), "${sp.model} @${sp.pos.line}")
+            recordRaised(e, raises(sp), f)
             // The path values the spawn site fixes go into the task precondition (first pass, DESIGN-E 3.4).
             val known = knownValues(f.env)
             val paths = derived.keys.filter(::pathValue).mapNotNull { n -> choose(derived.getValue(n).second, known)?.let { lowerCamel(n) to it.print() } }.toMap()
@@ -2030,6 +2086,11 @@ private class ClientEmitter(
                             else -> written += fieldsOf(g)
                         }
                     }
+                }
+                // DESIGN-E5 2.5: the raised fields of the kinds the loop's calls may raise (an entry's loop only).
+                if (task == null) {
+                    val possible = l.body.walk().filter { it is Call || it is Spawn }.flatMap { raises(it) }.toSet()
+                    raisedByKind.filterKeys { it in possible }.values.flatten().forEach { written += it }
                 }
                 val known = knownValues(f.env)
                 readOnly.distinct().forEach { n ->
