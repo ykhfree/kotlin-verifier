@@ -8,7 +8,8 @@ package kv.kvir
  * - W20: a While body has no obligation call and no Spawn (rule 4);
  * - W21: an obligation call names an obligation of the module with its arity (rule 5);
  * - W22: a Break is inside a While of its function, a Return inside an entry or an Inline, with a value only where
- *   one is expected.
+ *   one is expected;
+ * - W23: a test of the caught exception (CaughtIs) is inside a catch body of its function (DESIGN-E5 6.2 S1).
  * Rule 2 (no cycle in the inlined helpers) is the lowering's: it reports a recursive call as unsupported.
  */
 internal class ClientWellFormed(
@@ -48,9 +49,11 @@ internal class ClientWellFormed(
 
     // ---- per unit ----
 
+    /** [inCatch]: inside a catch body of the function; an Inline starts a function, whose code cannot see the catch. */
     private class Frame(
         val out: Local?,
         val inLoop: Boolean,
+        val inCatch: Boolean = false,
     )
 
     private fun unit(
@@ -109,6 +112,7 @@ internal class ClientWellFormed(
 
         fun uses(e: Expr) {
             types(e)
+            e.walk().filterIsInstance<CaughtIs>().forEach { if (!frame.inCatch) report("W23", it.pos, "a test of the caught exception outside a catch body of its function") }
             e.walk().filterIsInstance<Var>().forEach { x ->
                 val b = scope[x.local.name]
                 when {
@@ -169,7 +173,7 @@ internal class ClientWellFormed(
                     block(s.body, scope, frame, names, unit)
                     s.catches.forEach { c ->
                         if (c.kinds.isEmpty()) report("W18", c.pos, "catch ${c.type} catches no kind")
-                        block(c.body, scope, frame, names, unit)
+                        block(c.body, scope, Frame(frame.out, frame.inLoop, inCatch = true), names, unit)
                     }
                     s.fin?.let { block(it, scope, frame, names, unit) }
                 }
@@ -182,7 +186,7 @@ internal class ClientWellFormed(
                     uses(s.cond)
                     s.measure?.let(::uses)
                     if (s.cond.type != KType.BoolT) report("W5", s.cond.pos, "loop condition has type ${s.cond.type}")
-                    block(s.body, scope, Frame(frame.out, true), names, unit)
+                    block(s.body, scope, Frame(frame.out, true, frame.inCatch), names, unit)
                 }
                 is Break -> if (!frame.inLoop) report("W22", s.pos, "break outside a loop of its function")
                 is Inline -> {

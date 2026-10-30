@@ -3,9 +3,11 @@ package kv.client
 import kv.kvir.Break
 import kv.kvir.Call
 import kv.kvir.Catch
+import kv.kvir.CaughtIs
 import kv.kvir.EntryFun
 import kv.kvir.If
 import kv.kvir.Inline
+import kv.kvir.LibExc
 import kv.kvir.Module
 import kv.kvir.Return
 import kv.kvir.Spawn
@@ -18,7 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The client well-formedness rules (DESIGN-E 6.3, W18-W22, with W4, W5 and W14 for client nodes), each shown by one
+ * The client well-formedness rules (DESIGN-E 6.3, W18-W22, DESIGN-E5 W23, with W4, W5 and W14 for client nodes), each shown by one
  * edit of the well-formed core ReqShield KVIR that breaks it.
  */
 class ClientWellFormedTest {
@@ -91,6 +93,23 @@ class ClientWellFormedTest {
         assertTrue(checkWellFormed(brk).any { it.rule == "W22" && "break outside a loop" in it.message }, checkWellFormed(brk).toString())
         val ret = entry { b -> b.map { if (it is Return && it.e != null) it.copy(e = null) else it } }
         assertTrue(checkWellFormed(ret).any { it.rule == "W22" && "return without a value" in it.message }, checkWellFormed(ret).toString())
+    }
+
+    @Test
+    fun `W23 a test of the caught exception outside a catch body, or in a helper inlined in one`() {
+        val e = core.entries.single()
+        val at = e.body.first().pos
+        val test = If(CaughtIs(listOf(LibExc.RTE), false, at), emptyList(), emptyList(), at)
+        val outside = core.copy(entries = listOf(e.copy(body = listOf(test) + e.body)))
+        assertEquals(listOf("W23"), rules(outside), checkWellFormed(outside).toString())
+        // In every catch body of the entry it is well formed.
+        val inCatch = entry { b -> b.map { if (it is Try) it.copy(catches = it.catches.map { c -> c.copy(body = listOf(test) + c.body) }) else it } }
+        assertTrue(all(inCatch.entries.single().body).any { it is Try && it.catches.any { c -> c.body.first() === test } })
+        assertEquals(emptyList(), checkWellFormed(inCatch))
+        // A helper inlined in a catch body is a function of its own: it cannot read the catch's exception.
+        val helper = Inline("h", null, listOf(test), at)
+        val inHelper = entry { b -> b.map { if (it is Try) it.copy(catches = it.catches.map { c -> c.copy(body = listOf(helper) + c.body) }) else it } }
+        assertTrue("W23" in rules(inHelper), checkWellFormed(inHelper).toString())
     }
 
     @Test

@@ -15,8 +15,16 @@ val CLIENT_ASSUMPTIONS: Map<String, String> =
         "A5" to "throwing-acquire-takes-nothing",
     )
 
-/** The exception kinds a trusted call may throw besides an Error, which A1 decides (DESIGN-E 3.5). */
-val TRUSTED_THROW_KINDS = listOf("REE", "RTE", "CHK", "INTR")
+/** The exception kinds a trusted call may throw besides an Error, which A1 decides (DESIGN-E 3.5, DESIGN-E5 2.1). */
+val TRUSTED_THROW_KINDS = listOf("REE", "RTE", "CHK", "INTR", "CANCEL")
+
+/**
+ * DESIGN-E5 2.1, 7: the module uses CANCEL if a trusted declaration may throw it (DESIGN-E5 S4 adds the coroutine
+ * models). Only then do the catch mapping and the emitted kinds have CANCEL, so a module without it keeps the kinds of
+ * DESIGN-E 3.5.
+ */
+val Sidecar.usesCancel: Boolean
+    get() = trusted.any { t -> t.throwKinds.any { it.text == "CANCEL" } }
 
 /** `holds(NAME(` inside a Viper expression: the obligation a HOLDS test names (DESIGN-E 3.1, 6.2). */
 private val HOLDS = Regex("""\bholds\s*\(\s*([A-Za-z_]\w*)\s*\(""")
@@ -72,7 +80,7 @@ internal class ClientChecks(
     }
 
     private fun trusted(t: TrustedDecl) {
-        val what = "trusted ${if (t.value) "value" else "fun"} ${t.fn.text}"
+        val what = "trusted ${t.kind.keyword} ${t.fn.text}"
         val params = t.named.filterNotNull().map { it.name.text }
         val results = t.returns.map { it.name.text }
         for ((kind, use) in listOfNotNull(t.creates?.let { "creates" to it }, t.consumes?.let { "consumes" to it })) {

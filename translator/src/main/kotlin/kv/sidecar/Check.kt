@@ -79,7 +79,7 @@ private class SidecarChecker(
         // DESIGN-E 2.5: the trusted declarations of a client module are signed with its intent clauses, so a client
         // draft may leave them without a note.
         s.trusted.filter { it.reviewed == null && !(draft && s.client) }.forEach {
-            err(it.pos, "unreviewed", "trusted ${if (it.value) "value" else "fun"} ${it.fn.text} needs a 'reviewed' note: its contract counts only after a person reads the body")
+            err(it.pos, "unreviewed", "trusted ${it.kind.keyword} ${it.fn.text} needs a 'reviewed' note: its contract counts only after a person reads the body")
         }
         s.operations.forEach(::operation)
         s.probes.forEach(::probe)
@@ -248,7 +248,7 @@ private class SidecarChecker(
         val clientOnly =
             s.enums.map { it.pos to "enum" } + s.obligations.map { it.pos to "obligation" } + s.traces.map { it.pos to "trace" } +
                 s.assumes.map { it.pos to "assume" } + s.holes.filter { it.loop != null }.map { it.pos to "hole loop" } +
-                s.trusted.filter { it.value || it.named.isNotEmpty() || it.creates != null || it.consumes != null || it.throwKinds.isNotEmpty() }.map { it.pos to "trusted ${if (it.value) "value" else "fun with named parameters, an obligation or exception kinds"}" } +
+                s.trusted.filter { it.kind != TrustedKind.FUN || it.named.isNotEmpty() || it.creates != null || it.consumes != null || it.throwKinds.isNotEmpty() }.map { it.pos to "trusted ${if (it.kind != TrustedKind.FUN) it.kind.keyword else "fun with named parameters, an obligation or exception kinds"}" } +
                 s.operations.flatMap { op -> op.items.filterIsInstance<GuardItem>().map { it.pos to "guard" } }
         clientOnly.forEach { (pos, what) -> err(pos, "client-only", "$what is a declaration of a client module (DESIGN-E 6.2); add 'client' to the module line") }
     }

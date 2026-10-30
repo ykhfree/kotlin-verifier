@@ -16,11 +16,17 @@ import kotlin.test.assertNull
  * sidecar edit (DESIGN-E 12.5).
  */
 object Protocol2 {
-    /** A copy of req-shield's core and support main sources under [dir] with the fix applied. */
-    fun fixedCopy(dir: File): File {
+    /**
+     * A copy of the main sources of req-shield's [module] (core by default) and support under [dir] with [patch]
+     * (DESIGN-E 5.6 by default) applied.
+     */
+    fun fixedCopy(
+        dir: File,
+        module: String = "core",
+        patch: File = File(spikeDir, "protocol2/fixed-core.patch"),
+    ): File {
         val root = File(dir, "fixed")
-        for (d in listOf("core/src/main/kotlin", "support/src/main/kotlin")) File(ReqShield.dir, d).copyRecursively(File(root, d))
-        val patch = File(spikeDir, "protocol2/fixed-core.patch")
+        for (d in listOf("$module/src/main/kotlin", "support/src/main/kotlin")) File(ReqShield.dir, d).copyRecursively(File(root, d))
         val p = ProcessBuilder("patch", "-p1", "-s", "-d", root.path, "-i", patch.path).redirectErrorStream(true).start()
         val out = p.inputStream.bufferedReader().readText()
         check(p.waitFor(60, TimeUnit.SECONDS) && p.exitValue() == 0) { "the patch does not apply: $out" }

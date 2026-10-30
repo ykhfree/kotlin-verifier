@@ -2,6 +2,7 @@ package kv.frontend
 
 import kv.ReqShield
 import kv.cli.runCli
+import kv.client.ClientFixture
 import kv.sidecar.sha16
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
@@ -88,6 +89,32 @@ class ClientTrustedReviewTest {
         assertEquals(1, exit)
         val e = errors.single()
         assertTrue("error[missing-fingerprint]: the reviewed note of trusted value getCacheFunction" in e && "sha256 \"26acb803f63d7e83\" (the contract and the declaration at ReqShieldConfiguration.kt:34)" in e, e)
+    }
+
+    /**
+     * The errors of the suspend client fixture (DESIGN-E5) whose trusted param `Client.run.supplier` has a `reviewed`
+     * note with fingerprint [sha] (none if null), and whose parameter is written [param].
+     */
+    private fun paramReview(
+        sha: String?,
+        param: String = "supplier: suspend () -> T?,",
+    ): List<String> {
+        val decl = "trusted param Client.run.supplier() returns v: Int throws RTE, CHK, INTR, CANCEL\n"
+        val head = ClientFixture.SUSPEND_SIDECAR_HEAD.replace(decl, decl + "  reviewed \"fixture: a supplier the caller gives\"${sha?.let { " sha256 \"$it\"" } ?: ""}\n")
+        val client = ClientFixture.client("return Data(value = supplier(), ttl = 0L)", suspend = true).replace("supplier: suspend () -> T?,", param)
+        return ClientFixture.resolve(dir, client, ClientFixture.sidecar(head = head)).errors.map { "error[${it.code}]: ${it.message}" }
+    }
+
+    @Test
+    fun `a trusted param is bound to the text of its parameter (DESIGN-E5 JE9)`() {
+        val now = sha16("supplier: suspend () -> T?")
+        val missing = paramReview(null).single()
+        assertTrue("error[missing-fingerprint]: the reviewed note of trusted param supplier" in missing && "sha256 \"$now\" (the parameter at Client.kt:" in missing, missing)
+        assertEquals(emptyList(), paramReview(now))
+        // An annotation before the parameter is outside its reviewed text.
+        assertEquals(emptyList(), paramReview(now, "@Suppress(\"UNUSED_PARAMETER\") supplier: suspend () -> T?,"))
+        val changed = paramReview(now, "supplier: suspend () -> T? = { null },").single()
+        assertTrue("error[stale-review]: trusted param supplier changed after its review" in changed && "now has sha256 \"${sha16("supplier: suspend () -> T? = { null }")}\"" in changed, changed)
     }
 
     @Test

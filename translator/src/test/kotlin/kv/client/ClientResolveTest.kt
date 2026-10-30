@@ -255,6 +255,55 @@ class ClientResolveTest {
         assertTrue("not a Kotlin function type" in notFunction.errors.single().message)
     }
 
+    /** The suspend client (DESIGN-E5) resolved with the suspend sidecar head, in which [old] (once) is replaced by [new]. */
+    private fun resolveSuspend(
+        old: String = "",
+        new: String = "",
+    ): ResolveOutcome {
+        val sidecar = ClientFixture.sidecar(head = ClientFixture.SUSPEND_SIDECAR_HEAD)
+        check(old.isEmpty() || sidecar.split(old).size == 2) { "'$old' occurs ${sidecar.split(old).size - 1} times" }
+        return resolve(if (old.isEmpty()) sidecar else sidecar.replace(old, new), ClientFixture.client("return Data(value = supplier(), ttl = 0L)", suspend = true))
+    }
+
+    @Test
+    fun `a suspend function value and a trusted param bind, each a cancellation point (DESIGN-E5 2 row 12)`() {
+        val o = resolveSuspend()
+        assertEquals(emptyList(), o.errors)
+        val bindings = o.resolution!!.bindings.map { "${it.sidecar} -> ${it.kotlin}" }
+        assertTrue("trusted value sget -> property fx.Config.sget" in bindings, bindings.joinToString("\n"))
+        assertTrue("trusted param supplier -> param supplier" in bindings, bindings.joinToString("\n"))
+        assertTrue("trusted tryLock -> fun fx.SuspendLock.tryLock(kotlin.String, fx.Kind)" in bindings, bindings.joinToString("\n"))
+    }
+
+    @Test
+    fun `a trusted param must name a function-typed parameter whose types stand for the declared ones`() {
+        val notFunction = resolveSuspend("trusted param Client.run.supplier()", "trusted param Client.run.key()")
+        assertEquals(listOf("kotlin-type"), codes(notFunction), notFunction.errors.joinToString("\n"))
+        assertTrue("trusted param Client.run.key: 'Client.run.key' is a kotlin.String, not a Kotlin function type" in notFunction.errors.single().message, notFunction.errors.single().message)
+        val arity = resolveSuspend("trusted param Client.run.supplier()", "trusted param Client.run.supplier(k: Key)")
+        assertEquals(listOf("kotlin-type"), codes(arity), arity.errors.joinToString("\n"))
+        assertTrue("is declared (Key) -> Int, but 'Client.run.supplier' is a kotlin.coroutines.SuspendFunction0" in arity.errors.single().message, arity.errors.single().message)
+        val missing = resolveSuspend("trusted param Client.run.supplier()", "trusted param Client.run.producer()")
+        assertEquals(listOf("unresolved"), codes(missing), missing.errors.joinToString("\n"))
+    }
+
+    @Test
+    fun `a suspend function, value or param without CANCEL, and a plain one with it, is cancel-kind (DESIGN-E5 JE10)`() {
+        val cases =
+            listOf(
+                Triple("if t != null throws RTE, CANCEL", "if t != null throws RTE", "trusted fun SuspendLock.tryLock suspends"),
+                Triple("Data? throws RTE, CHK, CANCEL", "Data? throws RTE, CHK", "trusted value Config.sget suspends"),
+                Triple("v: Int throws RTE, CHK, INTR, CANCEL", "v: Int throws RTE, CHK, INTR", "trusted param Client.run.supplier suspends"),
+                Triple("trusted value Config.get(key: Key) returns d: Data? throws RTE, CHK\n", "trusted value Config.get(key: Key) returns d: Data? throws RTE, CHK, CANCEL\n", "trusted value Config.get does not suspend"),
+                Triple("Callable.call() returns v: Int throws RTE, CHK, INTR\n", "Callable.call() returns v: Int throws RTE, CHK, INTR, CANCEL\n", "trusted fun java.util.concurrent.Callable.call does not suspend"),
+            )
+        for ((old, new, message) in cases) {
+            val o = resolveSuspend(old, new)
+            assertEquals(listOf("cancel-kind"), codes(o), o.errors.joinToString("\n"))
+            assertTrue(message in o.errors.single().message, o.errors.single().message)
+        }
+    }
+
     @Test
     fun `a named trusted parameter or result must stand for its Kotlin type`() {
         val kind = resolve(ClientFixture.sidecar().replace("Lock.tryLock(key: Key, kind: Kind)", "Lock.tryLock(key: Key, kind: Mode)"))

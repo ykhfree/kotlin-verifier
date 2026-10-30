@@ -491,11 +491,19 @@ private class SidecarParser(
         start: Int,
         pos: SPos,
     ): TrustedDecl {
-        // DESIGN-E 6.2: `trusted value KNAME` is a function-typed property; its parameter list is optional.
-        val kw = name("'fun' or 'value'")
-        if (kw.text != "fun" && kw.text != "value") fail(i - kw.text.length, "expected 'fun', found '${kw.text}'")
-        val value = kw.text == "value"
-        val fn = dotted(if (value) "a Kotlin property name" else "a Kotlin function name")
+        // DESIGN-E 6.2: `trusted value KNAME` is a function-typed property, DESIGN-E5 (JE9) `trusted param FUN.PARAM` a
+        // function-typed parameter; the parameter list of either is optional.
+        val kw = name("'fun', 'value' or 'param'")
+        val kind = TrustedKind.entries.find { it.keyword == kw.text } ?: fail(i - kw.text.length, "expected 'fun', found '${kw.text}'")
+        val value = kind != TrustedKind.FUN
+        val fn =
+            dotted(
+                when (kind) {
+                    TrustedKind.FUN -> "a Kotlin function name"
+                    TrustedKind.VALUE -> "a Kotlin property name"
+                    TrustedKind.PARAM -> "a Kotlin function name and parameter name"
+                },
+            )
         val params = mutableListOf<Name>()
         val named = mutableListOf<Typed?>()
         if (!value || accept("(")) {
@@ -606,7 +614,7 @@ private class SidecarParser(
         }
         return TrustedDecl(
             fn, params, clock, returns, ghosts, ensures, effectsNone, reviewed, pos, fresh, throws, sha, reviewPos,
-            named.takeIf { it.any { p -> p != null } } ?: emptyList(), value, creates, consumes, throwKinds,
+            named.takeIf { it.any { p -> p != null } } ?: emptyList(), kind, creates, consumes, throwKinds,
             contract = text.substring(start, i).let { if (reviewSpan.isEmpty()) it else it.removeRange(reviewSpan.first - start, reviewSpan.last + 1 - start) },
         )
     }

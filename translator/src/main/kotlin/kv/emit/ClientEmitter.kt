@@ -7,6 +7,7 @@ import kv.kvir.BoolLit
 import kv.kvir.Break
 import kv.kvir.Call
 import kv.kvir.Catch
+import kv.kvir.CaughtIs
 import kv.kvir.Cmp
 import kv.kvir.CmpOp
 import kv.kvir.EntryFun
@@ -38,6 +39,8 @@ import kv.kvir.Thrown
 import kv.kvir.Try
 import kv.kvir.Var
 import kv.kvir.While
+import kv.kvir.exceptionKinds
+import kv.kvir.exprs
 import kv.kvir.walk
 import kv.model.ClientModels
 import kv.model.ClientRole
@@ -51,8 +54,10 @@ import kv.sidecar.SidecarError
 import kv.sidecar.SidecarException
 import kv.sidecar.TraceEvent
 import kv.sidecar.TrustedDecl
+import kv.sidecar.TrustedKind
 import kv.sidecar.Vexpr
 import kv.sidecar.callTarget
+import kv.sidecar.usesCancel
 
 /**
  * The property IDs of a client module that no sidecar clause states (DESIGN-E 6.2 item 1): the tool facts, the loop
@@ -104,8 +109,6 @@ private val SWITCHES =
         Triple("A5", "THROWING_TRYLOCK_TAKES_NOTHING", true),
     )
 
-/** The library exception kinds after the module's own (DESIGN-E 3.5); IS_EXCEPTION is every kind before ERR. */
-private val LIB_KINDS = listOf(LibExc.REE, LibExc.RTE, LibExc.CHK, LibExc.INTR, LibExc.ERR).map { it.name }
 private const val ERR = "ERR"
 
 /** Event outcomes (DESIGN-E 3.2): of a call with a nullable result, and of any other call. */
@@ -137,6 +140,9 @@ private class Model(
 ) {
     val throws get() = kinds.isNotEmpty()
     val obligationCall get() = decl?.creates != null || decl?.consumes != null
+
+    /** A cancellation point (DESIGN-E5 2.2): its method takes the last parameter `cx`, the cancellable context. */
+    val cancel get() = LibExc.CANCEL.name in kinds
 }
 
 /** The fields an event writes: the outcome or count, and the recorded result ("Obj" or "Val") or hit flag. */
@@ -253,7 +259,11 @@ private class ClientEmitter(
                 .map { "${it.name}_${(it.args[0] as VE.Id).name}" }
         (m.thrown.map(::kindName) + named).distinct()
     }
-    private val kinds by lazy { thrownNames + LIB_KINDS }
+    /**
+     * The module's kinds, then the library kinds (DESIGN-E 3.5): CANCEL before ERR only in a module that uses it
+     * (DESIGN-E5 2.1). IS_EXCEPTION is every kind before ERR.
+     */
+    private val kinds by lazy { thrownNames + (exceptionKinds(s.usesCancel) + LibExc.ERR).map { it.name } }
 
     private fun kindName(k: ExcKind): String =
         when (k) {
@@ -308,8 +318,9 @@ private class ClientEmitter(
 
     private fun model(t: TrustedDecl): Model {
         val parts = t.fn.text.split('.')
-        // A trusted value is named by its property; a member fun by its class and name; a top-level fun by its name.
-        val name = if (t.value || parts.size < 2 || !parts[parts.size - 2][0].isUpperCase()) parts.last() else "${parts[parts.size - 2]}_${parts.last()}"
+        // A trusted value or param is named by its property or parameter; a member fun by its class and name; a
+        // top-level fun by its name.
+        val name = if (t.kind != TrustedKind.FUN || parts.size < 2 || !parts[parts.size - 2][0].isUpperCase()) parts.last() else "${parts[parts.size - 2]}_${parts.last()}"
         val params = t.named.filterNotNull().map { it.name.text to vt(it.type.text) }
         val nonNull = t.named.filterNotNull().filter { !it.type.text.endsWith("?") && vt(it.type.text) == "Int" && it.type.text in intTypes }.map { it.name.text }
         val results = t.returns.map { Triple(it.name.text, vt(it.type.text), it.type.text.endsWith("?")) }
@@ -470,6 +481,14 @@ private class ClientEmitter(
             line("function lost$type(${args.joinToString()}): ${vt(created.type.text)}", 2)
             line("}", 0)
         }
+        if (models.any { it.decl?.consumes != null && it.cancel }) {
+            // DESIGN-E5 2.3 item 2: a cancelled release may not have run; A4 does not cover a cancellation.
+            w.put("\n")
+            w.comment("A cancelled release: the ${obligation.name} stays when the cancellation came before the release took effect (unknown).")
+            line("domain CancelledRelease {", 0, Source.Generated("cancelled release"))
+            line("function cancelKeeps(${predParams.zip(predTypes).joinToString { (p, t) -> "$p: $t" }}): Bool", 2)
+            line("}", 0)
+        }
         w.put("\n")
         if (intTypes.isNotEmpty()) {
             line("define NULL (-1)", 0, Source.Generated("NULL"), "null of ${intTypes.sorted().joinToString { "$it?" }}")
@@ -483,7 +502,7 @@ private class ClientEmitter(
         w.comment("Exception kinds (DESIGN-E 3.5); NONE = no exception")
         line("define NONE 0", 0)
         kinds.forEachIndexed { i, k -> line("define $k ${i + 1}", 0, Source.Generated("exception kinds")) }
-        line("define IS_EXCEPTION(e) (${kinds.first()} <= e && e <= ${LibExc.INTR.name})", 0, Source.Generated("exception kinds"), "catch (e: Exception)")
+        line("define IS_EXCEPTION(e) (${kinds.first()} <= e && e <= ${kinds[kinds.lastIndex - 1]})", 0, Source.Generated("exception kinds"), "catch (e: Exception)")
         w.put("\n")
         if (trace != null) {
             w.comment("Event outcomes in the trace record")
@@ -851,7 +870,8 @@ private class ClientEmitter(
         method(model.name, MethodKind.MODEL, label, null) {
             val src = if (model.decl != null) Source.Sidecar(pos, "trusted ${model.decl.fn.text}") else Source.Generated("model ${model.builtIn}")
             val results = (if (model.throws) listOf("exc: Int") else emptyList()) + model.results.map { (n, t, _) -> "$n: $t" }
-            line("method ${model.name}(${model.params.joinToString { (n, t) -> "$n: $t" }}) returns (${results.joinToString()})", 0, src)
+            val params = model.params.map { (n, t) -> "$n: $t" } + listOfNotNull("cx: Bool".takeIf { model.cancel })
+            line("method ${model.name}(${params.joinToString()}) returns (${results.joinToString()})", 0, src)
             val d = model.decl
             val consumes = d?.consumes
             if (consumes != null || model.nonNull.isNotEmpty()) {
@@ -860,7 +880,15 @@ private class ClientEmitter(
             }
             if (model.throws) {
                 val lock = model.obligationCall
-                val ks = order(model.kinds).map { k -> if (lock) "(LOCK_CALLS_THROW && exc == $k)" else "exc == $k" }
+                // DESIGN-E5 2.2: a cancellation needs a cancellable context, and it is no lock store failure (A2).
+                val ks =
+                    order(model.kinds).map { k ->
+                        when {
+                            k == LibExc.CANCEL.name -> "(cx && exc == $k)"
+                            lock -> "(LOCK_CALLS_THROW && exc == $k)"
+                            else -> "exc == $k"
+                        }
+                    }
                 line("ensures ${(listOf("exc == NONE") + ks + "(MAY_ERR && exc == ERR)").joinToString(" || ")}", 2, src)
                 model.results.filter { it.third }.forEach { (n, t, _) -> line("ensures exc != NONE ==> $n == ${nullOf(t)}", 2, src) }
             }
@@ -875,7 +903,11 @@ private class ClientEmitter(
                 }
             }
             consumes?.let { c ->
-                if (model.throws) line("ensures exc != NONE && !THROWING_UNLOCK_RELEASES ==> ${c.obligation.text}(${c.args.joinToString { it.text }})", 2, src, "A4")
+                val held = "${c.obligation.text}(${c.args.joinToString { it.text }})"
+                // DESIGN-E5 2.3 item 2: A4 does not cover a cancellation; a cancelled release may not have run.
+                val notCancelled = if (model.cancel) "exc != ${LibExc.CANCEL.name} && " else ""
+                if (model.throws) line("ensures exc != NONE && $notCancelled!THROWING_UNLOCK_RELEASES ==> $held", 2, src, "A4")
+                if (model.cancel) line("ensures exc == ${LibExc.CANCEL.name} && cancelKeeps(${c.args.joinToString { it.text }}) ==> $held", 2, src, "a cancelled release may not have run")
             }
             if (model.role == ClientRole.SPAWN) line("ensures dropped ==> exc == NONE && !ACCEPTED_TASKS_RUN", 2, src, "A3")
         }
@@ -1026,6 +1058,9 @@ private class ClientEmitter(
 
     private fun root(name: String): String = alias[name]?.let(::root) ?: name
 
+    /** The flag that holds the kind of the exception the catch being emitted caught (for [CaughtIs]); null outside one. */
+    private var caughtFlag: String? = null
+
     private fun prec(e: Expr): Int =
         when (e) {
             is Elvis -> 0
@@ -1034,6 +1069,12 @@ private class ClientEmitter(
             is Cmp -> if (e.op == CmpOp.EQ || e.op == CmpOp.NE) 5 else 6
             is Arith -> 7
             is Not -> 9
+            is CaughtIs ->
+                when {
+                    e.kinds.size == 1 -> 5
+                    e.negated -> 9
+                    else -> 3
+                }
             else -> 10
         }
 
@@ -1051,6 +1092,16 @@ private class ClientEmitter(
             is Or -> "${operand(e.a, 3)} || ${operand(e.b, 3)}"
             // `a ?: b` (a pure): Viper's conditional, the weakest operator.
             is Elvis -> "${operand(e.a, 6)} != ${if (e.a.type is KType.RefT) "null" else "NULL"} ? ${operand(e.a, 1)} : ${operand(e.b, 0)}"
+            // `e is C` on the caught exception: its flag holds one of the kinds C takes (DESIGN-E5 2 row 4).
+            is CaughtIs -> {
+                val flag = caughtFlag ?: fail(anchor, "a test of the caught exception outside a catch at ${e.pos.line}:${e.pos.col}")
+                val ks = order(e.kinds.map(::kindName))
+                when {
+                    ks.isEmpty() -> "${e.negated}"
+                    e.kinds.size == 1 -> "$flag ${if (e.negated) "!=" else "=="} ${ks.single()}"
+                    else -> ks.joinToString(" || ") { "$flag == $it" }.let { if (e.negated) "!($it)" else it }
+                }
+            }
             else -> fail(anchor, "expression ${e::class.simpleName} at ${e.pos.line}:${e.pos.col} is not emitted in a client module")
         }
 
@@ -1578,7 +1629,9 @@ private class ClientEmitter(
             }
             val lhs = listOfNotNull(flag) + outs
             val source = if (md.decl?.consumes != null) Source.Kotlin(c.pos, ClientIds.LD_OWN) else Source.Kotlin(c.pos)
-            line("${if (lhs.isEmpty()) "" else lhs.joinToString() + " := "}${md.name}(${c.args.joinToString { expr(it) }})", f.indent, source, "${c.fn} @${c.pos.line}")
+            // A cancellation point gets its context last (DESIGN-E5 2.2).
+            val cx = if (md.cancel) listOf("${c.cx ?: fail(anchor, "the call of ${c.fn} at ${c.pos.line}:${c.pos.col} may be cancelled but has no context")}") else emptyList()
+            line("${if (lhs.isEmpty()) "" else lhs.joinToString() + " := "}${md.name}(${(c.args.map { expr(it) } + cx).joinToString()})", f.indent, source, "${c.fn} @${c.pos.line}")
             if (hasTr && md in eventModels) {
                 val ps = eventParams(md)
                 val byName = md.params.map { it.first }.zip(c.args.map { expr(it) }).toMap() + listOfNotNull(flag?.let { "e" to it }) + md.results.map { it.first }.zip(outs).toMap()
@@ -1736,7 +1789,12 @@ private class ClientEmitter(
         fun catchBody(
             c: Catch,
             f: Frame,
-        ) = block(c.body, f.copy(tryCtx = null), Any())
+        ) {
+            val outer = caughtFlag
+            caughtFlag = f.caught
+            block(c.body, f.copy(tryCtx = null), Any())
+            caughtFlag = outer
+        }
 
         fun throwStmt(
             t: Throw,
@@ -1914,7 +1972,8 @@ private class ClientEmitter(
             branches.forEachIndexed { i, (cond, c) ->
                 val head = (if (i == 0) "if (" else "} elseif (") + "exc != NONE" + (cond?.let { " && $it" } ?: "") + ") {"
                 line(head, f.indent, Source.Kotlin(c.pos))
-                val rethrows = c.body.walk().any { it is Throw && it.kind == null }
+                // A rethrow and a test of the caught exception read the kind after `exc := NONE`.
+                val rethrows = c.body.walk().any { st -> st is Throw && st.kind == null || st.exprs().any { e -> e.walk().any { it is CaughtIs } } }
                 val saved = if (rethrows) fresh("caught_${posName(c.pos)}").also { line("var $it: Int := exc", f.indent + 2) } else null
                 line("exc := NONE", f.indent + 2)
                 val g = f.copy(indent = f.indent + 2, caught = saved)

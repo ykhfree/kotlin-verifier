@@ -11,8 +11,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * DESIGN-E 6.10 E0: the FIR shapes of the 16 constructs of DESIGN-E 6.4, as K2 2.4.21 resolves the supported construct
- * fixtures ([ClientConstructs]). The client lowering reads these shapes, so a compiler change that alters one shows
+ * DESIGN-E 6.10 E0: the FIR shapes of the 16 constructs of DESIGN-E 6.4 and those of DESIGN-E5 2 (row 17 on), as K2
+ * 2.4.21 resolves the supported construct fixtures ([ClientConstructs]). The client lowering reads these shapes, so a compiler change that alters one shows
  * here first. The rendering is [FirShape]; golden file: `client/fir-shapes.txt`.
  */
 class FirShapeTest {

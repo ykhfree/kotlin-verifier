@@ -34,13 +34,16 @@ class ClientEmitterTest {
     @TempDir
     lateinit var dir: File
 
+    /** The module and sidecar of a fixture; with [suspend], the suspend client and sidecar of DESIGN-E5. */
     private fun build(
         body: String,
         helpers: String = "",
         items: String = "free mode = this.config.mode\nresult res",
         extra: String = "",
+        suspend: Boolean = false,
     ): Pair<Module, Sidecar> {
-        val outcome = ClientFixture.resolve(dir, ClientFixture.client(body, helpers), ClientFixture.sidecar(items, extra))
+        val head = if (suspend) ClientFixture.SUSPEND_SIDECAR_HEAD else ClientFixture.SIDECAR_HEAD
+        val outcome = ClientFixture.resolve(dir, ClientFixture.client(body, helpers, suspend = suspend), ClientFixture.sidecar(items, extra, head))
         assertNull(outcome.compileMessages, outcome.compileMessages)
         assertEquals(emptyList(), outcome.errors)
         val m = outcome.module ?: fail("no module")
@@ -54,7 +57,8 @@ class ClientEmitterTest {
         helpers: String = "",
         items: String = "free mode = this.config.mode\nresult res",
         extra: String = "",
-    ): Emitted = build(body, helpers, items, extra).let { (m, s) -> emitClient(m, s) }
+        suspend: Boolean = false,
+    ): Emitted = build(body, helpers, items, extra, suspend).let { (m, s) -> emitClient(m, s) }
 
     /** The emitted lines, trimmed, without `//` comments. */
     private fun Emitted.lines(): List<String> = text.lines().map { it.substringBefore("//").trim() }.filter { it.isNotEmpty() }
@@ -339,6 +343,161 @@ class ClientEmitterTest {
         // SUP's ensures reads only nsup, which the task writes: the task states it too.
         assertEquals(2, ls.count { it == "ensures tr.nsup <= 1" }, e.text)
         assertEquals(emptyList(), failures(e))
+    }
+
+    /** `exc != CHK` holds (a CHK becomes ClientError(GET)) and `exc != RTE` does not (an RTE is rethrown). */
+    private val rethrowItems =
+        """
+        free mode = this.config.mode
+        result res
+        ensures NO_CHK: exc != CHK
+          source none "fixture"
+        ensures NO_RTE: exc != RTE
+          source none "fixture"
+        """
+
+    @Test
+    fun `a test of the caught exception reads its catch's flag in flag mode (DESIGN-E5 2 row 4)`() {
+        val (m, s) =
+            build(
+                """
+                val cur =
+                    try {
+                        config.get.invoke(key)
+                    } catch (e: Exception) {
+                        if (e is RuntimeException) throw e
+                        throw ClientError(Code.GET, e)
+                    }
+                if (cur != null) return cur
+                throw ClientError(Code.SUP)
+                """,
+                items = rethrowItems,
+            )
+        val ls = emitClient(m, s).lines()
+        val flag = ls.single { Regex("""^e_\d+_\d+, cur__\d+ := get\(k\)$""").matches(it) }.substringBefore(",")
+        assertTrue("if ($flag == ClientError_GET || $flag == ClientError_SUP || $flag == REE || $flag == RTE) {" in ls, ls.joinToString("\n"))
+        assertEquals(emptyList(), failures(emitClient(m, s, "NO_CHK")))
+        assertTrue(failures(emitClient(m, s, "NO_RTE")).single().startsWith("Postcondition of run might not hold"))
+    }
+
+    @Test
+    fun `a negated test of the caught exception reads the saved kind in exc mode (DESIGN-E5 2 row 4)`() {
+        val (m, s) =
+            build(
+                """
+                var cur: Data<T>? = null
+                try {
+                    if (config.mode != Mode.ONLY_UPDATE) cur = config.get.invoke(key)
+                } catch (e: Exception) {
+                    if (e !is RuntimeException) throw ClientError(Code.GET, e)
+                    throw e
+                }
+                if (cur != null) return cur
+                throw ClientError(Code.SUP)
+                """,
+                items = rethrowItems,
+            )
+        val ls = emitClient(m, s).lines()
+        val saved = ls.single { Regex("""^var caught_\d+_\d+: Int := exc$""").matches(it) }.removePrefix("var ").substringBefore(":")
+        assertTrue("if (!($saved == ClientError_GET || $saved == ClientError_SUP || $saved == REE || $saved == RTE)) {" in ls, ls.joinToString("\n"))
+        assertEquals(emptyList(), failures(emitClient(m, s, "NO_CHK")))
+        assertTrue(failures(emitClient(m, s, "NO_RTE")).single().startsWith("Postcondition of run might not hold"))
+    }
+
+    @Test
+    fun `a catch of a class the module throws tests the kinds of that class (DESIGN-E5 2 item 1)`() {
+        val (m, s) =
+            build(
+                """
+                val cur =
+                    try {
+                        read(key)
+                    } catch (e: ClientError) {
+                        throw ClientError(Code.SUP, e)
+                    }
+                if (cur != null) return cur
+                throw ClientError(Code.SET)
+                """,
+                """
+                private fun read(key: String): Data<T>? =
+                    try {
+                        config.get.invoke(key)
+                    } catch (e: Exception) {
+                        throw ClientError(Code.GET, e)
+                    }
+                """,
+                items =
+                    """
+                    free mode = this.config.mode
+                    result res
+                    ensures NO_GET: exc != ClientError(GET)
+                      source none "fixture"
+                    ensures NO_SUP: exc != ClientError(SUP)
+                      source none "fixture"
+                    """,
+            )
+        val ls = emitClient(m, s).lines()
+        // The helper's GET reaches the catch (an Error does not): one equality test, in exc mode.
+        assertTrue("if (exc != NONE && exc == ClientError_GET) {" in ls, ls.joinToString("\n"))
+        assertEquals(emptyList(), failures(emitClient(m, s, "NO_GET")))
+        assertTrue(failures(emitClient(m, s, "NO_SUP")).single().startsWith("Postcondition of run might not hold"))
+    }
+
+    @Test
+    fun `a cancellation point's model takes cx and may raise CANCEL only with it, a plain model is unchanged (DESIGN-E5 2 item 2)`() {
+        val ls =
+            emit(
+                """
+                val token = config.slock.tryLock(key, Kind.CREATE)
+                if (token != null) config.slock.unLock(key, Kind.CREATE, token)
+                val cur = config.sget(key)
+                if (cur != null) return cur
+                return Data(value = produce(supplier), ttl = 0L)
+                """,
+                "private suspend fun produce(f: suspend () -> T?): T? = f()",
+                suspend = true,
+            ).lines()
+        val text = ls.joinToString("\n")
+        val lockEnsures = "ensures exc == NONE || (LOCK_CALLS_THROW && exc == RTE) || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)"
+        val expected =
+            listOf(
+                "domain CancelledRelease {",
+                "function cancelKeeps(key: Key, kind: Int, t: Int): Bool",
+                "define IS_EXCEPTION(e) (REE <= e && e <= CANCEL)",
+                "method SuspendLock_tryLock(key: Key, kind: Int, cx: Bool) returns (exc: Int, t: Int)",
+                "method SuspendLock_unLock(key: Key, kind: Int, token: Int, cx: Bool) returns (exc: Int, released: Bool)",
+                // A4 does not cover a cancellation; a cancelled release may or may not keep the obligation (2.3).
+                "ensures exc != NONE && exc != CANCEL && !THROWING_UNLOCK_RELEASES ==> Lease(key, kind, token)",
+                "ensures exc == CANCEL && cancelKeeps(key, kind, token) ==> Lease(key, kind, token)",
+                "method sget(key: Key, cx: Bool) returns (exc: Int, d: Ref)",
+                "ensures exc == NONE || exc == RTE || exc == CHK || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)",
+                "method supplier(cx: Bool) returns (exc: Int, v: Int)",
+                "ensures exc == NONE || exc == RTE || exc == CHK || exc == INTR || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)",
+                // A model without CANCEL keeps the text of DESIGN-E 6.6.
+                "method get(key: Key) returns (exc: Int, d: Ref)",
+                "ensures exc == NONE || exc == RTE || exc == CHK || (MAY_ERR && exc == ERR)",
+            )
+        expected.forEach { assertTrue(it in ls, "lacks '$it':\n$text") }
+        assertEquals(2, ls.count { it == lockEnsures }, text)
+        // Every call of a cancellation point passes its context: outside withContext(NonCancellable), true.
+        for (call in listOf("""token__\d+ := SuspendLock_tryLock\(k, CREATE, true\)""", """released_\d+_\d+ := SuspendLock_unLock\(k, CREATE, token__\d+, true\)""", """cur__\d+ := sget\(k, true\)""", """r_\d+_\d+ := supplier\(true\)""")) {
+            assertTrue(ls.any { Regex("^e_\\d+_\\d+, $call$").matches(it) }, "no call $call:\n$text")
+        }
+    }
+
+    @Test
+    fun `a release a cancellation may end keeps the obligation by cancelKeeps, so LD_noleak fails (DESIGN-E5 2 item 3)`() {
+        val body =
+            """
+            val token = config.LOCK.tryLock(key, Kind.CREATE)
+            if (token != null) config.LOCK.unLock(key, Kind.CREATE, token)
+            return Data(value = callable.call(), ttl = 0L)
+            """
+        // A cancellable release (cx is true): the cancellation may come before the release took effect.
+        val cancelled = failures(emit(body.replace("LOCK", "slock"), extra = assumes, suspend = true))
+        assertTrue(cancelled.singleOrNull()?.let { it.startsWith("Postcondition of run might not hold") && "NO_LEASES" in it } == true, "LD_noleak must fail alone: $cancelled")
+        // The same release that no cancellation ends: A4 ends the obligation on a throw.
+        assertEquals(emptyList(), failures(emit(body.replace("LOCK", "lock"), extra = assumes)))
     }
 
     @Test

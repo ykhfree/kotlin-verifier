@@ -289,7 +289,7 @@ private class KvirPrinter(
             is Raise -> line(indent, "raise", s.pos)
             is Call -> {
                 val outs = if (s.outs.isEmpty()) "" else "${s.outs.joinToString { decl(it) }} := "
-                val throws = if (s.throws.isEmpty()) "" else " throws ${kinds(s.throws)}"
+                val throws = (if (s.throws.isEmpty()) "" else " throws ${kinds(s.throws)}") + (s.cx?.let { " cx=$it" } ?: "")
                 val obligation =
                     s.obligation?.let { o ->
                         "; ${if (o.creates) "creates" else "consumes"} ${o.obligation}(${o.args.joinToString { expr(it) }})${o.ifNotNull?.let { " if ${it.name} != null" } ?: ""}"
@@ -364,6 +364,7 @@ private class KvirPrinter(
             is Elvis -> "${operand(e.a)} ?: ${operand(e.b)}"
             is Ite -> "if ${operand(e.cond)} then ${operand(e.a)} else ${operand(e.b)}"
             is EnumLit -> "${e.type.name}.${e.entry}"
+            is CaughtIs -> "caught ${if (e.negated) "!is" else "is"} {${kinds(e.kinds)}}"
         }
 
     /** Operators inside operators get parentheses, so the printed text has one reading. */

@@ -18,7 +18,10 @@ data class Construct(
     val reason: String,
 )
 
-/** The construct fixtures of DESIGN-E 6.4, one per row, in row order (E0: FIR shapes; E2: lowering). */
+/**
+ * The construct fixtures of DESIGN-E 6.4, one per row, in row order (E0: FIR shapes; E2: lowering); from row 17 on, the
+ * constructs of DESIGN-E5 2.
+ */
 object ClientConstructs {
     private const val SUPPLIED = "return Data(value = callable.call(), ttl = 0L)"
 
@@ -501,6 +504,32 @@ object ClientConstructs {
                     """,
                 ),
                 "logging",
+            ),
+            // DESIGN-E5 2 row 4 (`if (e is CancellationException) throw e`); the rejected `is` test on a value made the
+            // lowering loop between expr and valueInto until the stack overflowed (DESIGN-E5 6.1 item 3).
+            Construct(
+                17,
+                "an is-test on the caught exception",
+                Snippet(
+                    """
+                    val cur =
+                        try {
+                            config.get.invoke(key)
+                        } catch (e: Exception) {
+                            if (e is RuntimeException) throw e
+                            throw ClientError(Code.GET, e)
+                        }
+                    if (cur != null) return cur
+                    $SUPPLIED
+                    """,
+                ),
+                Snippet(
+                    """
+                    if (callable is Runnable) log.info("runnable for key '{}'", key)
+                    $SUPPLIED
+                    """,
+                ),
+                "translates no TypeOperatorCall as a value",
             ),
         )
 }

@@ -10,18 +10,23 @@ sealed interface ExcKind {
 
 /**
  * The library kinds: RejectedExecutionException, another RuntimeException, a checked exception other than
- * InterruptedException, InterruptedException, and java.lang.Error.
+ * InterruptedException, InterruptedException, a coroutine cancellation (a CancellationException, DESIGN-E5 2.1; only in a
+ * module that uses CANCEL), and java.lang.Error.
  */
 enum class LibExc : ExcKind {
     REE,
     RTE,
     CHK,
     INTR,
+    CANCEL,
     ERR,
     ;
 
     override val label: String get() = name
 }
+
+/** The library kinds that are Exceptions, in kind order; CANCEL only in a module that uses it (DESIGN-E5 2.1). */
+fun exceptionKinds(usesCancel: Boolean): List<LibExc> = LibExc.entries.filter { it != LibExc.ERR && (usesCancel || it != LibExc.CANCEL) }
 
 /**
  * `throw C(E.X, ...)`: an exception of class [cls] (simple name) whose first argument is the enum entry [code], or
@@ -109,6 +114,8 @@ data class ObligationOp(
 /**
  * A call of a trusted declaration or a built-in client model (DESIGN-E 3.3): it returns with its results in [outs]
  * (each declares a new local or assigns a mutable one in scope, W4), or throws one of [throws]; an Error is A1's.
+ * [cx] is set for a cancellation point (a call that may throw CANCEL, DESIGN-E5 2.2): true where a cancellation may end
+ * it, false where none can (inside withContext(NonCancellable), which the lowering translates from DESIGN-E5 S4 on).
  */
 data class Call(
     val outs: List<Local>,
@@ -117,6 +124,7 @@ data class Call(
     val throws: List<ExcKind>,
     val obligation: ObligationOp?,
     override val pos: Pos,
+    val cx: Boolean? = null,
 ) : Stmt
 
 /** `catch (e: [type])`: catches the kinds [kinds] (DESIGN-E 3.5). */
@@ -137,6 +145,18 @@ data class Try(
     val fin: List<Stmt>?,
     override val pos: Pos,
 ) : Stmt
+
+/**
+ * `e is C` on the exception the innermost catch caught (DESIGN-E5 2 row 4): its kind is one of [kinds], the kinds
+ * `catch (e: C)` would take. [negated] is `e !is C`. W23: it appears only in a catch body.
+ */
+data class CaughtIs(
+    val kinds: List<ExcKind>,
+    val negated: Boolean,
+    override val pos: Pos,
+) : Expr {
+    override val type get() = KType.BoolT
+}
 
 /** Throws an exception of [kind]; null rethrows the exception its catch caught. */
 data class Throw(

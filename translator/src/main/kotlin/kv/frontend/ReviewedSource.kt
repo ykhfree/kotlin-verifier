@@ -52,6 +52,27 @@ internal data class ValueDeclaration(
     val where: String get() = whereOf(file, source, keyword)
 }
 
+/**
+ * A value parameter of a function of a Kotlin file: the declaration of a trusted param (DESIGN-E5, JE9). [function] is
+ * where the declaration of its function starts; [reviewStart] (its first modifier keyword, else its name) and [end]
+ * bound the reviewed text.
+ */
+internal data class ParamDeclaration(
+    val file: File,
+    val function: Int,
+    val name: String,
+    val nameStart: Int,
+    val reviewStart: Int,
+    val end: Int,
+    val source: String,
+) {
+    /** The reviewed unit of a trusted param: the parameter from its first modifier keyword (else its name) to its end, its type included. */
+    val reviewedText: String get() = source.substring(reviewStart, end)
+
+    /** `File.kt:line` of the parameter name, for messages. */
+    val where: String get() = whereOf(file, source, nameStart)
+}
+
 private fun whereOf(
     file: File,
     source: String,
@@ -130,6 +151,31 @@ internal object ReviewedSource {
             }
         }
         visit(tree.root, emptyList())
+        return out
+    }
+
+    /** Every value parameter of every function of [file], functions in classes and objects at any depth included. */
+    fun parameters(file: File): List<ParamDeclaration> {
+        val text = file.readText()
+        val tree = KotlinLightParser.buildLightTree(text, null, null)
+        val out = mutableListOf<ParamDeclaration>()
+
+        fun visit(node: LighterASTNode) {
+            for (child in tree.children(node)) {
+                when (child.tokenType) {
+                    KtNodeTypes.FUN ->
+                        tree.children(child).filter { it.tokenType == KtNodeTypes.VALUE_PARAMETER_LIST }
+                            .flatMap { tree.children(it) }.filter { it.tokenType == KtNodeTypes.VALUE_PARAMETER }
+                            .forEach { p ->
+                                val parts = tree.children(p)
+                                val name = parts.firstOrNull { it.tokenType == KtTokens.IDENTIFIER } ?: return@forEach
+                                out += ParamDeclaration(file, child.startOffset, text.substring(name.startOffset, name.endOffset), name.startOffset, tree.reviewStart(parts, name), p.endOffset, text)
+                            }
+                    KtNodeTypes.CLASS, KtNodeTypes.OBJECT_DECLARATION -> tree.children(child).filter { it.tokenType == KtNodeTypes.CLASS_BODY }.forEach(::visit)
+                }
+            }
+        }
+        visit(tree.root)
         return out
     }
 

@@ -40,3 +40,5 @@ fun run: {val token = config.lock.Lock.tryLock(key; CREATE); Client.release(key;
 fun release: {when[stmt](&&(!=(token; null), !=(kind; null)) -> {config.lock.Lock.unLock(key; kind; token)})}
 ## 16 slf4j logging
 fun run: {log.Logger.info(run for key '{}'; key); return->fun run(Data.Data(callable.Callable.call(); 0))}
+## 17 an is-test on the caught exception
+fun run: {val cur = try{config.get.Function1.invoke(key)} catch(Exception){when[stmt](TypeOperatorCall -> {throw(e)}); throw(ClientError.ClientError(GET; e))}; when[stmt](!=(cur; null) -> {return->fun run(cur)}); return->fun run(Data.Data(callable.Callable.call(); 0))}

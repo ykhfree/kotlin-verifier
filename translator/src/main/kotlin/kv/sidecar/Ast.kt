@@ -170,6 +170,18 @@ data class ObligationUse(
 )
 
 /**
+ * The keyword after `trusted`: `fun` binds a function; `value KNAME` a function-typed property (DESIGN-E 6.2); `param
+ * FUN.PARAM` a function-typed parameter of a function, such as the supplier an entry takes (DESIGN-E5 2 row 12, JE9).
+ */
+enum class TrustedKind(
+    val keyword: String,
+) {
+    FUN("fun"),
+    VALUE("value"),
+    PARAM("param"),
+}
+
+/**
  * `trusted fun KSIG`: [fn] is the Kotlin name, [params] the parameter types as written. [fresh] is the class of
  * `returns fresh NAME` and [throws] the `throws` clause (DESIGN-B.md 3.2). [sha256] is the fingerprint the `reviewed`
  * note records (B6): of the Kotlin declaration from `fun` to its end. [reviewPos] is the `reviewed` keyword.
@@ -193,8 +205,8 @@ data class TrustedDecl(
      * or null when written as a bare Kotlin type (the model drops it). Empty if every parameter is bare.
      */
     val named: List<Typed?> = emptyList(),
-    /** `trusted value KNAME`: a function-typed property the code invokes (DESIGN-E 6.2); false for `trusted fun`. */
-    val value: Boolean = false,
+    /** What the declaration binds: a function, or a function-typed property or parameter the code invokes. */
+    val kind: TrustedKind = TrustedKind.FUN,
     val creates: ObligationUse? = null,
     val consumes: ObligationUse? = null,
     /** `throws KIND {, KIND}` (DESIGN-E 3.5): the exception kinds; empty for B's bare `throws` or no clause. */

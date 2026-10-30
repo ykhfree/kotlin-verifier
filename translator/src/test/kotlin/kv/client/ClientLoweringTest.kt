@@ -55,6 +55,7 @@ class ClientLoweringTest {
             14 to listOf("throw ClientError(SUP)", "if (null != null) && (Kind.CREATE != null)"),
             15 to listOf("var arg_18_22: Kind? := null", "if (token__17 != null) && (arg_18_22 != null)"),
             16 to listOf("call r_18_29: Int := Callable.call() throws RTE, CHK, INTR", "return new_18_16"),
+            17 to listOf("catch Exception: REE, RTE, CHK, INTR, ClientError(GET)", "if caught is {REE, RTE, ClientError(GET)}", "rethrow"),
         )
 
     @Test
@@ -79,6 +80,34 @@ class ClientLoweringTest {
         val callback = printModule(lower(ClientConstructs.all.single { it.row == 10 }.supported, "callback"))
         assertTrue(callback.lines().any { "no-effect whenComplete callback: logs only" in it }, callback)
         assertTrue(callback.lines().any { "no-effect fun report: called by a no-effect callback" in it }, callback)
+    }
+
+    @Test
+    fun `a suspend call, a suspend value and a trusted param passed to a helper are cancellation points (DESIGN-E5 2 row 12)`() {
+        val body =
+            """
+            val token = config.slock.tryLock(key, Kind.CREATE)
+            if (token != null) config.slock.unLock(key, Kind.CREATE, token)
+            val cur = config.sget(key)
+            if (cur != null) return cur
+            return Data(value = produce(supplier), ttl = 0L)
+            """
+        val helper = "private suspend fun produce(f: suspend () -> T?): T? = f()"
+        val o = ClientFixture.resolve(File(dir, "suspend").apply { mkdirs() }, ClientFixture.client(body, helper, suspend = true), ClientFixture.sidecar(head = ClientFixture.SUSPEND_SIDECAR_HEAD))
+        assertNull(o.compileMessages, o.compileMessages)
+        assertEquals(emptyList(), o.errors)
+        val m = o.module ?: fail("no module")
+        val text = printModule(m)
+        assertFalse(m.incomplete, text)
+        assertEquals(emptyList(), checkWellFormed(m))
+        for (call in listOf(
+            "SuspendLock.tryLock(k, Kind.CREATE) throws RTE, CANCEL cx=true; creates Lease(",
+            "SuspendLock.unLock(k, Kind.CREATE, token__18) throws RTE, CANCEL cx=true; consumes Lease(",
+            "cur__20: Data? := Config.sget(k) throws RTE, CHK, CANCEL cx=true",
+            ": Int := supplier() throws RTE, CHK, INTR, CANCEL cx=true",
+        )) {
+            assertTrue(call in text, "lacks '$call':\n$text")
+        }
     }
 
     @Test

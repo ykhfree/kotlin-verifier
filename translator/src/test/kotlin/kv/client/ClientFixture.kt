@@ -24,6 +24,12 @@ object ClientFixture {
             fun unLock(key: String, kind: Kind, token: String): Boolean
         }
 
+        interface SuspendLock {
+            suspend fun tryLock(key: String, kind: Kind): String?
+
+            suspend fun unLock(key: String, kind: Kind, token: String): Boolean
+        }
+
         enum class Kind { CREATE, UPDATE }
 
         enum class Mode { BOTH, ONLY_CREATE, ONLY_UPDATE }
@@ -39,7 +45,9 @@ object ClientFixture {
         class Config<T>(
             val get: (String) -> Data<T>?,
             val set: (String, Data<T>, Long) -> Boolean,
+            val sget: suspend (String) -> Data<T>?,
             val lock: Lock,
+            val slock: SuspendLock,
             val executor: Executor,
             val mode: Mode,
             val maxAttempt: Int,
@@ -56,11 +64,15 @@ object ClientFixture {
         fun stamp(): Long = System.currentTimeMillis()
         """.trimIndent() + "\n"
 
-    /** The client class: entry `run(key, callable)` with [body], then [helpers] (members of the class). */
+    /**
+     * The client class: entry `run(key, callable)` with [body], then [helpers] (members of the class). With [suspend],
+     * a coroutine client (DESIGN-E5): `suspend fun run(key, callable, supplier)`, `supplier` a suspend function value.
+     */
     fun client(
         body: String,
         helpers: String = "",
         result: String = "Data<T>",
+        suspend: Boolean = false,
     ): String =
         """
         |package fx
@@ -75,9 +87,9 @@ object ClientFixture {
         |class Client<T>(
         |    private val config: Config<T>,
         |) {
-        |    fun run(
+        |    ${if (suspend) "suspend " else ""}fun run(
         |        key: String,
-        |        callable: Callable<T?>,
+        |        callable: Callable<T?>,${if (suspend) "\n|        supplier: suspend () -> T?," else ""}
         |    ): $result {
         |${body.trimIndent().prependIndent("        ")}
         |    }
@@ -112,11 +124,26 @@ object ClientFixture {
         use slf4j.Logger
         """.trimIndent() + "\n"
 
-    /** A whole fixture sidecar: [SIDECAR_HEAD], the operation of `run` with [items], and [extra] declarations. */
+    /**
+     * [SIDECAR_HEAD] for a suspend client (DESIGN-E5): the lock is SuspendLock, whose calls a cancellation may end, so
+     * they throw CANCEL too; so may the suspend value `Config.sget` and the supplier, the trusted param `run.supplier`.
+     */
+    val SUSPEND_SIDECAR_HEAD: String =
+        listOf("tryLock(key: Key, kind: Kind)", "unLock(key: Key, kind: Kind, token: Token)").fold(SIDECAR_HEAD) { head, fn ->
+            val line = head.lines().single { it.startsWith("trusted fun Lock.$fn") }
+            head.replace(line, line.replace("Lock.$fn", "SuspendLock.$fn") + ", CANCEL")
+        } +
+            """
+            trusted value Config.sget(key: Key) returns d: Data? throws RTE, CHK, CANCEL
+            trusted param Client.run.supplier() returns v: Int throws RTE, CHK, INTR, CANCEL
+            """.trimIndent() + "\n"
+
+    /** A whole fixture sidecar: [head], the operation of `run` with [items], and [extra] declarations. */
     fun sidecar(
         items: String = "result res",
         extra: String = "",
-    ): String = SIDECAR_HEAD + "\noperation run = fun Client.run {\n${items.trimIndent().prependIndent("  ")}\n}\n" + extra
+        head: String = SIDECAR_HEAD,
+    ): String = head + "\noperation run = fun Client.run {\n${items.trimIndent().prependIndent("  ")}\n}\n" + extra
 
     /** The test classpath: the stdlib and slf4j (from the req-shield classpath). */
     val classpath: List<File> by lazy { listOf(Harness.stdlib) + kv.ReqShield.classpath.filter { "slf4j" in it.name } }

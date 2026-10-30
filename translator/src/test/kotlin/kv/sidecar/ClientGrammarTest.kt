@@ -69,7 +69,7 @@ class ClientGrammarTest {
         assertTrue(tryLock.throws)
         assertEquals(listOf("key", "kind", "token"), s.trusted.single { it.shortName == "unLock" }.consumes!!.args.map { it.text })
         val set = s.trusted.single { it.shortName == "set" }
-        assertTrue(set.value)
+        assertEquals(TrustedKind.VALUE, set.kind)
         // A bare Kotlin type is a parameter the model drops; a named one is passed.
         assertEquals(listOf("key", "data", null), set.named.map { it?.name?.text })
         assertEquals(listOf("Key", "Data", "kotlin.Long"), set.params.map { it.text })
@@ -150,9 +150,11 @@ class ClientGrammarTest {
     fun `an unknown exception kind is an error`() {
         val errors = check(ClientFixture.sidecar().replace("returns d: Data? throws RTE, CHK", "returns d: Data? throws RTE, IOException"))
         assertEquals(listOf("unknown-exception-kind"), codes(errors), errors.joinToString("\n"))
-        assertTrue("throws 'IOException'" in errors.single().message && "REE, RTE, CHK, INTR" in errors.single().message, errors.single().message)
+        assertTrue("throws 'IOException'" in errors.single().message && "REE, RTE, CHK, INTR, CANCEL" in errors.single().message, errors.single().message)
         // An Error is A1's, not a kind a trusted call lists.
         assertEquals(listOf("unknown-exception-kind"), codes(check(ClientFixture.sidecar().replace("throws RTE, CHK, INTR", "throws RTE, ERR"))))
+        // DESIGN-E5 2.1: a cancellation is a kind a trusted call lists.
+        assertEquals(emptyList(), codes(check(ClientFixture.sidecar(head = ClientFixture.SUSPEND_SIDECAR_HEAD))))
     }
 
     @Test

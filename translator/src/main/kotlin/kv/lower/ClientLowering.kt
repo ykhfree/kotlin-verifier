@@ -5,6 +5,7 @@ import kv.emit.parseVE
 import kv.emit.walk
 import kv.frontend.RUN_ASYNC
 import kv.frontend.SidecarResolver
+import kv.frontend.isFunctionClass
 import kv.frontend.unwrapTask
 import kv.kvir.And
 import kv.kvir.Arith
@@ -14,6 +15,7 @@ import kv.kvir.BoolLit
 import kv.kvir.Break
 import kv.kvir.Call
 import kv.kvir.Catch
+import kv.kvir.CaughtIs
 import kv.kvir.Cmp
 import kv.kvir.CmpOp
 import kv.kvir.Diagnostic
@@ -53,6 +55,7 @@ import kv.kvir.Try
 import kv.kvir.Unsupported
 import kv.kvir.Var
 import kv.kvir.While
+import kv.kvir.exceptionKinds
 import kv.kvir.walk
 import kv.model.ClientModel
 import kv.model.ClientModels
@@ -66,7 +69,9 @@ import kv.sidecar.Sidecar
 import kv.sidecar.SidecarError
 import kv.sidecar.SidecarException
 import kv.sidecar.TrustedDecl
+import kv.sidecar.TrustedKind
 import kv.sidecar.Vexpr
+import kv.sidecar.usesCancel
 import org.jetbrains.kotlin.KtFakeSourceElementKind
 import org.jetbrains.kotlin.contracts.description.LogicOperationKind
 import org.jetbrains.kotlin.descriptors.ClassKind
@@ -105,6 +110,7 @@ import org.jetbrains.kotlin.fir.expressions.FirStatement
 import org.jetbrains.kotlin.fir.expressions.FirThisReceiverExpression
 import org.jetbrains.kotlin.fir.expressions.FirThrowExpression
 import org.jetbrains.kotlin.fir.expressions.FirTryExpression
+import org.jetbrains.kotlin.fir.expressions.FirTypeOperatorCall
 import org.jetbrains.kotlin.fir.expressions.FirVariableAssignment
 import org.jetbrains.kotlin.fir.expressions.FirWhenExpression
 import org.jetbrains.kotlin.fir.expressions.FirWhileLoop
@@ -139,6 +145,9 @@ private val RUNTIME = setOf("java/lang/RuntimeException", "kotlin/RuntimeExcepti
 private val ERROR = setOf("java/lang/Error", "kotlin/Error")
 private const val REE_CLASS = "java/util/concurrent/RejectedExecutionException"
 private val INTERRUPTED = setOf("java/lang/InterruptedException", "kotlin/InterruptedException")
+
+/** kotlinx.coroutines.CancellationException and kotlin.coroutines.cancellation.CancellationException are aliases of it. */
+private const val CANCELLATION = "java/util/concurrent/CancellationException"
 private val NUMBER = setOf("kotlin/Int", "kotlin/Long")
 
 /** Classes whose operators a pure argument may use (an argument the model drops, DESIGN-v0.md 2.3). */
@@ -213,9 +222,13 @@ internal class ClientLowering(
 
     /** Trusted declarations by the callable id and parameter count of their Kotlin function or property. */
     val trustedFuns: Map<String, TrustedDecl> =
-        sidecar.trusted.filter { !it.value }.mapNotNull { t -> resolver.trusted[t.shortName]?.let { idOf(it) to t } }.toMap()
+        sidecar.trusted.filter { it.kind == TrustedKind.FUN }.mapNotNull { t -> resolver.trusted[t.shortName]?.let { idOf(it) to t } }.toMap()
     val trustedValues: Map<String, TrustedDecl> =
-        sidecar.trusted.filter { it.value }.mapNotNull { t -> resolver.trustedValues[t.shortName]?.let { it.callableId.toString() to t } }.toMap()
+        sidecar.trusted.filter { it.kind == TrustedKind.VALUE }.mapNotNull { t -> resolver.trustedValues[t.shortName]?.let { it.callableId.toString() to t } }.toMap()
+
+    /** Trusted params by their Kotlin parameter (DESIGN-E5 2 row 12, JE9). */
+    val trustedParams: Map<FirBasedSymbol<*>, TrustedDecl> =
+        sidecar.trusted.filter { it.kind == TrustedKind.PARAM }.mapNotNull { t -> resolver.trustedParams[t.fn.text]?.let { it to t } }.toMap()
 
     /** Sidecar enums by Kotlin class id. */
     val enums: Map<ClassId, EnumDef> =
@@ -235,8 +248,12 @@ internal class ClientLowering(
     /** Callbacks the lowering checked have no effect, with what they are: the ledger holds them as no-effect (6.4 row 10). */
     val noEffect = IdentityHashMap<FirElement, String>()
 
-    /** The exception kinds the code throws (DESIGN-E 3.5), found before any catch is lowered. */
-    val thrown: List<Thrown> = thrownKinds()
+    /** The exception kinds the code throws (DESIGN-E 3.5), found before any catch is lowered, each with its class. */
+    private val thrownClasses: Map<Thrown, ClassId> = thrownKinds()
+    val thrown: List<Thrown> = thrownClasses.keys.toList()
+
+    /** DESIGN-E5 2.1: catches and tests take a cancellation only in a module that uses CANCEL. */
+    private val usesCancel = sidecar.usesCancel
 
     /** The Kotlin type of each instance value a unit reads, by its source (`this.a.b`), for [freeUnused]. */
     val instanceTypes = mutableMapOf<String, ClassId?>()
@@ -270,24 +287,26 @@ internal class ClientLowering(
         return out
     }
 
-    private fun thrownKinds(): List<Thrown> {
-        val out = linkedSetOf<Thrown>()
+    private fun thrownKinds(): Map<Thrown, ClassId> {
+        val out = linkedMapOf<Thrown, ClassId>()
         ctx.moduleClass.accept(
             object : FirVisitorVoid() {
                 override fun visitElement(element: FirElement) {
-                    if (element is FirThrowExpression) thrownKind(element.exception)?.let { out += it }
+                    if (element is FirThrowExpression) thrownKind(element.exception)?.let { out.putIfAbsent(it, thrownClass(element.exception)!!) }
                     element.acceptChildren(this)
                 }
             },
         )
-        return out.toList()
+        return out
     }
+
+    /** The class of `throw C(...)`; null if the exception is not a constructor call. */
+    private fun thrownClass(e: FirExpression): ClassId? = ((unwrap(e) as? FirFunctionCall)?.let { ctx.calleeOf(it) } as? FirConstructorSymbol)?.callableId?.classId
 
     /** The kind of `throw C(E.X, ...)`; null if the exception is not a constructor call or its code is no enum entry. */
     fun thrownKind(e: FirExpression): Thrown? {
-        val call = unwrap(e) as? FirFunctionCall ?: return null
-        val ctor = ctx.calleeOf(call) as? FirConstructorSymbol ?: return null
-        val cls = ctor.callableId.classId ?: return null
+        val cls = thrownClass(e) ?: return null
+        val call = unwrap(e) as FirFunctionCall
         val first = call.arguments.firstOrNull()?.let { unwrap(it) }
         val code =
             when {
@@ -301,18 +320,32 @@ internal class ClientLowering(
         return Thrown(cls.shortClassName.asString(), code, supers.any { it in RUNTIME })
     }
 
-    /** The kinds `catch (e: T)` catches, T by class id (DESIGN-E 3.5), or null for a type the model cannot map. */
+    /**
+     * The kinds `catch (e: T)` catches, T by class id (DESIGN-E 3.5), or null for a type the model cannot map. A
+     * CancellationException is a RuntimeException (DESIGN-E5 2.1); in a module without CANCEL it is one of the RTEs, so
+     * its catch would split RTE and is not mapped.
+     */
     fun catchKinds(id: String): List<ExcKind>? {
-        val lib = listOf(LibExc.REE, LibExc.RTE, LibExc.CHK, LibExc.INTR)
+        val lib = exceptionKinds(usesCancel)
         return when {
             id in THROWABLE -> lib + LibExc.ERR + thrown
             id in EXCEPTION -> lib + thrown
-            id in RUNTIME -> listOf(LibExc.REE, LibExc.RTE) + thrown.filter { it.runtime }
+            id in RUNTIME -> lib.filter { it == LibExc.REE || it == LibExc.RTE || it == LibExc.CANCEL } + thrown.filter { it.runtime }
             id in ERROR -> listOf(LibExc.ERR)
             id == REE_CLASS -> listOf(LibExc.REE)
             id in INTERRUPTED -> listOf(LibExc.INTR)
+            id == CANCELLATION && usesCancel -> listOf(LibExc.CANCEL)
             else -> null
         }
+    }
+
+    /**
+     * The kinds `catch (e: C)` catches for a class C the module throws itself (DESIGN-E5 2.1 item 3): the kinds of C and
+     * of its subclasses. Null if the module throws no C.
+     */
+    fun ownKinds(id: ClassId): List<ExcKind>? {
+        if (id !in thrownClasses.values) return null
+        return thrownClasses.filterValues { id.asString() in supertypes(it) }.keys.toList()
     }
 
     /** The entries of the sidecar operations, their tasks, the ledger and the diagnostics, as one module. */
@@ -460,8 +493,8 @@ internal class ClientLowering(
         return (ctx.calleeOf(receiver) as? FirPropertySymbol)?.let { trustedValues[it.callableId.toString()] }
     }
 
-    fun isInvoke(sym: FirNamedFunctionSymbol): Boolean =
-        sym.callableId.callableName.asString() == "invoke" && sym.callableId.classId?.let { it.packageFqName.asString() == "kotlin" && it.shortClassName.asString().startsWith("Function") } == true
+    /** The invoke of a function value, a suspend one included (DESIGN-E5 2 row 12). */
+    fun isInvoke(sym: FirNamedFunctionSymbol): Boolean = sym.callableId.callableName.asString() == "invoke" && isFunctionClass(sym.callableId.classId)
 
     /** The client model of [sym], if any. */
     fun clientModel(sym: FirCallableSymbol<*>): ClientModel? {
@@ -507,6 +540,9 @@ private class ClientUnit(
 
     /** Free values by sidecar name or by Kotlin property path. */
     private val free = linkedMapOf<String, FreeValue>()
+
+    /** The parameters of the catches being lowered, innermost last (null: a getOrElse lambda without one). */
+    private val catchParams = ArrayDeque<FirBasedSymbol<*>?>()
 
     /** Task parameters: the captured symbol, its local, and the caller's value at the spawn. */
     private val captured = linkedMapOf<FirBasedSymbol<*>, Pair<Local, Expr>>()
@@ -922,16 +958,35 @@ private class ClientUnit(
         mark(t)
         mark(t.tryBlock)
         val body = collect { lambdaLike(t.tryBlock.statements, Scope(scope), sink) }
+        // The kinds that reach the next catch: the body's, less those of the catches before it.
+        var reaching = raised(body, null)
         val catches =
             t.catches.mapNotNull { c ->
                 mark(c)
                 markAll(c.parameter)
                 mark(c.block)
                 val type = c.parameter.returnTypeRef.coneType
-                val kinds = type.lowerBoundIfFlexible().classId?.asString()?.let(m::catchKinds) ?: return@mapNotNull unsupported("catch (${c.parameter.name}: ${type.lowerBoundIfFlexible().classId?.asFqNameString()})", "the model cannot tell which library exceptions this type catches; it maps Throwable, Exception, RuntimeException, Error, RejectedExecutionException and InterruptedException (DESIGN-E 3.5)", c.parameter)
+                val id = type.lowerBoundIfFlexible().classId
+                val what = "catch (${c.parameter.name}: ${id?.asFqNameString()})"
+                val lib = id?.asString()?.let(m::catchKinds)
+                val own = if (lib == null) id?.let(m::ownKinds) else null
+                val kinds =
+                    lib ?: own ?: return@mapNotNull unsupported(
+                        what,
+                        "the model cannot tell which library exceptions this type catches; it maps Throwable, Exception, RuntimeException, Error, RejectedExecutionException, InterruptedException, CancellationException in a module that uses CANCEL, and a class the module throws (DESIGN-E 3.5, DESIGN-E5 2.1)",
+                        c.parameter,
+                    )
+                // DESIGN-E5 2.1 item 3: a trusted call's RTE or CHK may be an exception of the module's class too.
+                if (own != null && reaching.any { it == LibExc.RTE || it == LibExc.CHK }) {
+                    return@mapNotNull unsupported(what, "an RTE or CHK of the try body may be a ${id?.shortClassName} too, and the model cannot tell which; it maps a catch of a class the module throws only when no RTE or CHK reaches it (DESIGN-E5 2.1 item 3)", c.parameter)
+                }
+                reaching = reaching - kinds.toSet()
                 val inner = Scope(scope)
                 inner.vars[c.parameter.symbol] = Bound.Exception
-                Catch(type.lowerBoundIfFlexible().classId!!.shortClassName.asString(), kinds, collect { lambdaLike(c.block.statements, inner, sink) }, ctx.posOf(c.parameter))
+                catchParams.addLast(c.parameter.symbol)
+                val handler = collect { lambdaLike(c.block.statements, inner, sink) }
+                catchParams.removeLast()
+                Catch(type.lowerBoundIfFlexible().classId!!.shortClassName.asString(), kinds, handler, ctx.posOf(c.parameter))
             }
         val fin =
             t.finallyBlock?.let { f ->
@@ -942,6 +997,36 @@ private class ClientUnit(
             }
         out += Try(body, catches, fin, ctx.posOf(t))
     }
+
+    /**
+     * The kinds that can leave [stmts], Errors aside (DESIGN-E5 2.1 item 3). A rethrow rethrows [caught], the kinds of
+     * its catch; null stands for a catch outside [stmts], whose kinds are not known here: any library kind.
+     */
+    private fun raised(
+        stmts: List<Stmt>,
+        caught: Collection<ExcKind>?,
+    ): Set<ExcKind> =
+        stmts.flatMap { st ->
+            when (st) {
+                is Call -> st.throws
+                is Spawn -> st.throws
+                is Throw -> st.kind?.let(::listOf) ?: caught ?: LibExc.entries
+                is If -> raised(st.then, caught) + raised(st.els, caught)
+                is While -> raised(st.body, caught)
+                is Inline -> raised(st.body, null)
+                is Try -> {
+                    var left = raised(st.body, caught)
+                    val fromCatches = mutableSetOf<ExcKind>()
+                    for (c in st.catches) {
+                        val k = left intersect c.kinds.toSet()
+                        left = left - k
+                        if (k.isNotEmpty()) fromCatches += raised(c.body, k)
+                    }
+                    left + fromCatches + raised(st.fin.orEmpty(), caught)
+                }
+                else -> emptyList()
+            }
+        }.toSet()
 
     /** The statements of a try, catch or lambda body; the last one's value goes to [sink] (null: a statement). */
     private fun lambdaLike(
@@ -972,6 +1057,8 @@ private class ClientUnit(
         val x = unwrap(t.exception)
         // Rethrow of the caught exception (DESIGN-E 6.3: Throw with no kind).
         if (x is FirPropertyAccessExpression && ctx.calleeOf(x)?.let { scope.local(it) } == Bound.Exception) {
+            // After `if (e is C)` the rethrown e is a smart cast.
+            markCasts(t.exception)
             markAll(x)
             out += Throw(null, pos)
             return
@@ -1053,8 +1140,7 @@ private class ClientUnit(
         markCasts(e)
         val pos = ctx.posOf(x)
         // A declared local that branches assign starts with its initial value.
-        val branching = x is FirWhenExpression || x is FirTryExpression || x is FirElvisExpression || x is FirSafeCallExpression ||
-            x is FirFunctionCall && ctx.calleeOf(x)?.let(m::clientModel)?.role == ClientRole.GET_OR_ELSE
+        val branching = branches(x) || x is FirFunctionCall && ctx.calleeOf(x)?.let(m::clientModel)?.role == ClientRole.GET_OR_ELSE
         if (sink is Sink.Declare && branching) {
             val d = default(sink.v.type, pos) ?: return run { unsupported("value with branches", "a ${typeName(sink.v.type)} value with branches has no initial value for them to overwrite", x) }
             out += Let(sink.v, d, true, pos)
@@ -1077,6 +1163,9 @@ private class ClientUnit(
             else -> expr(x, scope, sinkType(sink))?.let { emit(sink, it, pos) }
         }
     }
+
+    /** True for a value that comes from branches: when, try, elvis and safe call. */
+    private fun branches(x: FirExpression) = x is FirWhenExpression || x is FirTryExpression || x is FirElvisExpression || x is FirSafeCallExpression
 
     /** `a ?: b`: a's value if it is not null, else b's. A left side `a?.f { ... }` whose f never returns is an if. */
     private fun elvis(
@@ -1180,6 +1269,10 @@ private class ClientUnit(
         scope: Scope,
     ): TrustedDecl? = m.trustedOf(c) ?: if (isInvoke(c)) trustedValueOf(c.dispatchReceiver, scope) else null
 
+    /**
+     * The trusted value or param an invoke's receiver [e] reads: a property path, a trusted param (DESIGN-E5, JE9), or
+     * a helper parameter or task capture bound to one of these.
+     */
     private fun trustedValueOf(
         e: FirExpression?,
         scope: Scope,
@@ -1187,6 +1280,7 @@ private class ClientUnit(
         val x = unwrap(e) as? FirPropertyAccessExpression ?: return null
         val sym = ctx.calleeOf(x)
         if (sym is FirPropertySymbol && !sym.isLocal) return m.trustedValues[sym.callableId.toString()]
+        sym?.let { m.trustedParams[it] }?.let { return it }
         return when (val b = sym?.let { lookupLocal(it, scope) }) {
             is Bound.Arg -> trustedValueOf(b.arg, b.scope)
             else -> null
@@ -1343,7 +1437,10 @@ private class ClientUnit(
                     ifNotNull = u.ifNotNull?.let { outV },
                 )
             }
-        out += Call(listOfNotNull(outV), name, args, t.throwKinds.map { LibExc.valueOf(it.text) }, obligation, pos)
+        val throws = t.throwKinds.map { LibExc.valueOf(it.text) }
+        // DESIGN-E5 2.2: a call that may throw CANCEL is a cancellation point; every context of a unit is cancellable.
+        val cx = if (LibExc.CANCEL in throws) true else null
+        out += Call(listOfNotNull(outV), name, args, throws, obligation, pos, cx)
         outV?.let { v ->
             if (sink !is Sink.Declare && sink !is Sink.Into) emit(sink, Var(v, pos), pos)
         }
@@ -1448,7 +1545,9 @@ private class ClientUnit(
         val body = collect { lambdaLike(tryLam.body?.statements.orEmpty(), Scope(scope), s) }
         val inner = Scope(scope)
         elseLam.valueParameters.firstOrNull()?.let { inner.vars[it.symbol] = Bound.Exception }
+        catchParams.addLast(elseLam.valueParameters.firstOrNull()?.symbol)
         val handler = collect { lambdaLike(elseLam.body?.statements.orEmpty(), inner, s) }
+        catchParams.removeLast()
         out += Try(body, listOf(Catch("Throwable", m.catchKinds("java/lang/Throwable")!!, handler, ctx.posOf(elseLam))), null, pos)
     }
 
@@ -1809,16 +1908,58 @@ private class ClientUnit(
             is FirFunctionCall -> callValue(x, scope, expected)
             is FirThisReceiverExpression -> unsupported("this as a value", "the module object is not a value of the model", x)
             is FirCheckNotNullCall -> unsupported("!!", "a not-null assertion throws; the client lowering does not translate it", x)
-            else -> {
-                // A branching value: a mutable temp each branch assigns.
-                val type = expected ?: ktype(x.resolvedType, ctx.slotOf(x), x) ?: return null
-                val d = default(type, pos)
-                val t = temp("value", type, pos)
-                if (d != null) out += Let(t, d, true, pos)
-                valueInto(x, scope, if (d != null) Sink.Into(t, d is NullLit) else Sink.Declare(t))
-                Var(t, pos)
+            is FirTypeOperatorCall -> {
+                val caught = caughtSubject(x, scope)
+                if (caught != null) caughtIs(x, caught) else branchingValue(x, scope, expected)
             }
+            else -> branchingValue(x, scope, expected)
         }
+    }
+
+    /**
+     * A branching value (when, try, elvis, safe call): a mutable temp each branch assigns. Any other kind is unsupported;
+     * [valueInto] sends it back here, so a fallback to it would never end (DESIGN-E5 6.1 item 3).
+     */
+    private fun branchingValue(
+        x: FirExpression,
+        scope: Scope,
+        expected: KType?,
+    ): Expr? {
+        val kind = x::class.simpleName.orEmpty().removePrefix("Fir").removeSuffix("Impl")
+        if (!branches(x)) return unsupported("value ${sourceText(x)}", "the client lowering translates no $kind as a value (DESIGN-E5 6.2 S1)", x)
+        val pos = ctx.posOf(x)
+        val type = expected ?: ktype(x.resolvedType, ctx.slotOf(x), x) ?: return null
+        val d = default(type, pos)
+        val t = temp("value", type, pos)
+        if (d != null) out += Let(t, d, true, pos)
+        valueInto(x, scope, if (d != null) Sink.Into(t, d is NullLit) else Sink.Declare(t))
+        return Var(t, pos)
+    }
+
+    /** The caught exception that `is` or `!is` test [x] tests, or null for another type operator or subject. */
+    private fun caughtSubject(
+        x: FirTypeOperatorCall,
+        scope: Scope,
+    ): FirBasedSymbol<*>? {
+        if (x.operation != FirOperation.IS && x.operation != FirOperation.NOT_IS) return null
+        val subject = unwrap(x.argumentList.arguments.singleOrNull()) as? FirPropertyAccessExpression ?: return null
+        return ctx.calleeOf(subject)?.takeIf { scope.local(it) == Bound.Exception }
+    }
+
+    /**
+     * `e is C` or `e !is C` on caught exception [e] (DESIGN-E5 2 row 4): the kinds `catch (e: C)` takes, tested on the
+     * exception of the innermost catch, which the emitter holds in a flag.
+     */
+    private fun caughtIs(
+        x: FirTypeOperatorCall,
+        e: FirBasedSymbol<*>,
+    ): Expr? {
+        markAll(x)
+        val test = sourceText(x)
+        if (catchParams.lastOrNull() != e) return unsupported(test, "a test of the exception of an outer catch is not translated; the model tests the innermost catch's exception", x)
+        val type = x.conversionTypeRef.coneType.lowerBoundIfFlexible()
+        val kinds = type.classId?.asString()?.let(m::catchKinds) ?: return unsupported(test, "the model cannot tell which kinds ${type.classId?.asFqNameString() ?: type} takes; it maps the types of a catch (DESIGN-E 3.5)", x)
+        return CaughtIs(kinds, x.operation == FirOperation.NOT_IS, ctx.posOf(x))
     }
 
     /** The value of call [c]: an operator, a `!`, an increment, or a call with an effect into a temp. */

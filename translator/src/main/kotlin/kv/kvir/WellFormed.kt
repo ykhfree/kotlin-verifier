@@ -24,7 +24,7 @@ fun checkWellFormed(module: Module): List<Violation> = if (module.kind == Module
 
 internal fun Expr.children(): List<Expr> =
     when (this) {
-        is IntLit, is BoolLit, is NullLit, is Var, is EnumLit -> emptyList()
+        is IntLit, is BoolLit, is NullLit, is Var, is EnumLit, is CaughtIs -> emptyList()
         is FieldRead -> listOf(obj)
         is Arith -> listOf(a, b)
         is Cmp -> listOf(a, b)
@@ -604,6 +604,7 @@ private class WellFormedChecker(
                 need(e.cond, KType.BoolT)
                 if (!assignable(e.a.type, e.type) || !assignable(e.b.type, e.type)) report("W5", e.pos, "if-else of type ${e.type} has values of type ${e.a.type} and ${e.b.type}")
             }
+            is CaughtIs -> report("W5", e.pos, "a test of a caught exception belongs to a client module (DESIGN-E5 2)")
             is IntLit, is BoolLit, is NullLit, is Var -> Unit
         }
     }

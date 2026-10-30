@@ -3,6 +3,7 @@ package kv.emit
 import kv.kvir.Action
 import kv.kvir.ActionKey
 import kv.kvir.Captured
+import kv.kvir.CaughtIs
 import kv.kvir.ClockRead
 import kv.kvir.InstanceVal
 import kv.kvir.NondetCall
@@ -1666,6 +1667,7 @@ private class Emitter(
             // An operation result (DESIGN-D.md 7): Viper's conditional, right-associative and weakest.
             is Ite -> "${operand(e.cond, 1)} ? ${operand(e.a, 1)} : ${operand(e.b, 0)}"
             is EnumLit -> error("enum entry ${e.type.name}.${e.entry}: client modules are emitted from DESIGN-E E3 on")
+            is CaughtIs -> error("a test of a caught exception: client modules only (DESIGN-E5 2)")
         }
 
     private fun operand(

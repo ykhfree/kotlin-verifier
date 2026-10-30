@@ -16,6 +16,7 @@ import kv.sidecar.SidecarError
 import kv.sidecar.StateDecl
 import kv.sidecar.StateKind
 import kv.sidecar.TrustedDecl
+import kv.sidecar.TrustedKind
 import kv.sidecar.reviewFingerprint
 import kv.sidecar.stripComments
 import org.jetbrains.kotlin.descriptors.ClassKind
@@ -94,6 +95,12 @@ private val BOOLEAN = ClassId.fromString("kotlin/Boolean")
 
 /** Packages of the JDK and the Kotlin library: a trusted fun there has no source, so its signature is reviewed. */
 private val JDK_PACKAGES = listOf("java.", "javax.", "kotlin.")
+
+/** A suspend function type `suspend (P1, ..., Pn) -> R`: K2 names it `kotlin.coroutines.SuspendFunctionN` (DESIGN-E5 2 row 12). */
+internal fun isSuspendFunctionClass(id: ClassId?): Boolean = id != null && id.packageFqName.asString() == "kotlin.coroutines" && id.shortClassName.asString().startsWith("SuspendFunction")
+
+/** A Kotlin function type: `kotlin.FunctionN`, or a suspend one ([isSuspendFunctionClass]). */
+internal fun isFunctionClass(id: ClassId?): Boolean = id != null && (id.packageFqName.asString() == "kotlin" && id.shortClassName.asString().startsWith("Function") || isSuspendFunctionClass(id))
 
 /** The class [fqn] if [file] declares it, at any nesting depth. */
 @OptIn(DirectDeclarationsAccess::class)
@@ -184,6 +191,9 @@ class SidecarResolver(
     /** Short name of each `trusted value` to its function-typed property. */
     internal val trustedValues = mutableMapOf<String, FirPropertySymbol>()
 
+    /** Kotlin name (`FUN.PARAM`) of each `trusted param` to its function-typed parameter (DESIGN-E5, JE9). */
+    internal val trustedParams = mutableMapOf<String, FirValueParameterSymbol>()
+
     /** Client operation name to its entry function. */
     internal val entryOf = linkedMapOf<String, FirNamedFunctionSymbol>()
 
@@ -196,7 +206,13 @@ class SidecarResolver(
     private fun resolveClient() {
         sidecar.enums.forEach(::enumDecl)
         sidecar.classes.forEach(::cls)
-        sidecar.trusted.forEach { if (it.value) trustedValue(it) else trustedFun(it) }
+        sidecar.trusted.forEach {
+            when (it.kind) {
+                TrustedKind.FUN -> trustedFun(it)
+                TrustedKind.VALUE -> trustedValue(it)
+                TrustedKind.PARAM -> trustedParam(it)
+            }
+        }
         sidecar.operations.forEach(::entry)
         sidecar.holes.filter { it.loop != null }.forEach(::loopHole)
     }
@@ -281,10 +297,27 @@ class SidecarResolver(
             match.size == 1 -> {
                 trusted[t.shortName] = match.single()
                 bind("trusted ${t.shortName}", t.pos, match.single())
+                cancelKind(t, match.single().resolvedStatus.isSuspend)
                 reviewed(t, match.single())
             }
             candidates.isEmpty() -> err(t.fn.pos, "unresolved", "no function '${t.fn.text}'")
             else -> err(t.fn.pos, "kotlin-type", "no '${t.fn.text}' takes (${t.params.joinToString { it.text }}) and returns ${t.returns.map { it.type.text }}; candidates take ${candidates.map { "${signature(it)} -> ${typeText(it.resolvedReturnType)}" }}")
+        }
+    }
+
+    /**
+     * DESIGN-E5 2.2 (JE10): a cancellation may end the call of a suspend function or a suspend function value, so its
+     * `throws` lists CANCEL; the call of another one is no cancellation point, so its `throws` does not.
+     */
+    private fun cancelKind(
+        t: TrustedDecl,
+        suspend: Boolean,
+    ) {
+        val what = "trusted ${t.kind.keyword} ${t.fn.text}"
+        val cancel = t.throwKinds.firstOrNull { it.text == "CANCEL" }
+        when {
+            suspend && cancel == null -> err(t.fn.pos, "cancel-kind", "$what suspends, so a cancellation may end its call: its throws lists CANCEL (DESIGN-E5 2.2)")
+            !suspend && cancel != null -> err(cancel.pos, "cancel-kind", "$what does not suspend, so no cancellation ends its call: its throws does not list CANCEL (DESIGN-E5 2.2)")
         }
     }
 
@@ -301,24 +334,79 @@ class SidecarResolver(
     }
 
     /**
-     * `trusted value KNAME(PARAMS)` (DESIGN-E 6.2): a property of a Kotlin function type `(P1, ..., Pn) -> R`; each
-     * parameter and the result must match ([matches], [resultMatches]).
+     * `trusted value KNAME(PARAMS)` (DESIGN-E 6.2): a property of a Kotlin function type `(P1, ..., Pn) -> R`, or of a
+     * suspend one (DESIGN-E5 2 row 12); each parameter and the result must match ([functionType]).
      */
     private fun trustedValue(t: TrustedDecl) {
         val prop = lookupMember(t.fn.text.split('.'), FirPropertySymbol::class).firstOrNull() ?: return err(t.fn.pos, "unresolved", "no property '${t.fn.text}'")
         bind("trusted value ${t.shortName}", t.pos, prop)
-        val type = prop.resolvedReturnType.lowerBoundIfFlexible()
-        val fn = type.classId?.takeIf { it.packageFqName.asString() == "kotlin" && it.shortClassName.asString().startsWith("Function") }
-        val args = type.typeArguments.map { it.type }
-        if (fn == null || args.any { it == null }) return err(t.fn.pos, "kotlin-type", "trusted value ${t.fn.text}: '${t.fn.text}' is a ${typeText(type)}, not a Kotlin function type")
+        if (!functionType(t, prop.resolvedReturnType)) return
+        trustedValues[t.shortName] = prop
+        reviewedValue(t, prop)
+    }
+
+    /**
+     * `trusted param FUN.PARAM(PARAMS)` (DESIGN-E5 2 row 12, JE9): a function-typed parameter of a function, such as the
+     * supplier `callable: suspend () -> T?` an entry takes. Its type must match as a trusted value's does ([functionType]).
+     */
+    private fun trustedParam(t: TrustedDecl) {
+        val path = t.fn.text.split('.')
+        val fns = if (path.size < 2) emptyList() else lookupMember(path.dropLast(1), FirNamedFunctionSymbol::class)
+        val found = fns.flatMap { f -> f.valueParameterSymbols.filter { it.name.asString() == path.last() }.map { f to it } }
+        val (fn, param) =
+            found.singleOrNull() ?: return err(
+                t.fn.pos,
+                if (found.isEmpty()) "unresolved" else "ambiguous",
+                "${if (found.isEmpty()) "no" else "${found.size}"} parameter(s) '${path.last()}' of a function '${path.dropLast(1).joinToString(".")}'",
+            )
+        bind("trusted param ${t.shortName}", t.pos, param)
+        if (!functionType(t, param.resolvedReturnType)) return
+        trustedParams[t.fn.text] = param
+        reviewedParam(t, fn, param)
+    }
+
+    /**
+     * [type], the Kotlin type of trusted value or param [t], is a function type ([isFunctionClass]) whose parameters
+     * and result match those of [t] ([matches], [resultMatches]), and [t] lists CANCEL if it suspends ([cancelKind]).
+     * False after an error.
+     */
+    private fun functionType(
+        t: TrustedDecl,
+        type: ConeKotlinType,
+    ): Boolean {
+        val what = "trusted ${t.kind.keyword} ${t.fn.text}"
+        val low = type.lowerBoundIfFlexible()
+        val args = low.typeArguments.map { it.type }
+        if (!isFunctionClass(low.classId) || args.any { it == null }) {
+            err(t.fn.pos, "kotlin-type", "$what: '${t.fn.text}' is a ${typeText(low)}, not a Kotlin function type")
+            return false
+        }
         val params = args.dropLast(1).map { it!! }
         val ok = params.size == t.params.size && params.withIndex().all { (i, p) -> matches(t, i, p) } && resultMatches(t, args.last()!!)
         if (!ok) {
             val want = "(${t.params.joinToString { it.text }}) -> ${t.returns.singleOrNull()?.type?.text ?: "any"}"
-            return err(t.fn.pos, "kotlin-type", "trusted value ${t.fn.text} is declared $want, but '${t.fn.text}' is a ${typeText(type)}")
+            err(t.fn.pos, "kotlin-type", "$what is declared $want, but '${t.fn.text}' is a ${typeText(low)}")
+            return false
         }
-        trustedValues[t.shortName] = prop
-        reviewedValue(t, prop)
+        cancelKind(t, isSuspendFunctionClass(low.classId))
+        return true
+    }
+
+    /**
+     * DESIGN-E5 (JE9): a trusted param has no body, so its `reviewed` note records the fingerprint of the parameter in
+     * its function's declaration, from its first modifier keyword (else its name) to its end.
+     */
+    private fun reviewedParam(
+        t: TrustedDecl,
+        fn: FirNamedFunctionSymbol,
+        param: FirValueParameterSymbol,
+    ) {
+        if (t.reviewed == null) return // reported as unreviewed, or not required in a client draft
+        val at = t.reviewPos ?: t.pos
+        val path = runCatching { session.firProvider.getFirCallableContainerFile(fn) }.getOrNull()?.sourceFile?.path
+        val found = path?.let { ReviewedSource.parameters(java.io.File(it)) }.orEmpty().filter { it.function == fn.source?.startOffset && it.name == param.name.asString() }
+        val decl = found.singleOrNull() ?: return err(at, "review-source", "trusted param ${t.shortName}: ${found.size} source declaration(s) of parameter ${param.name} of ${fn.callableId.asSingleFqName()}")
+        fingerprint(t, "trusted param", decl.reviewedText, "the parameter at ${decl.where}")
     }
 
     /**
