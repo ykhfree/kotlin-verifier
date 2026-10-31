@@ -2,16 +2,18 @@
 `kv verify`, check verdicts.
 
 Usage:
-  python3 -I mutants.py [--suite keylocallock|aspect] --kv KV --req-shield DIR --classpath CP --kotlinc ARGS
-                        --specs DIR --expected FILE --out DIR [--jobs N] [--only NAME[,NAME...]]
+  python3 -I mutants.py [--suite keylocallock|aspect|client|coroutine] --kv KV --req-shield DIR --classpath CP
+                        --kotlinc ARGS --specs DIR --expected FILE --out DIR [--jobs N] [--only NAME[,NAME...]]
+                        [--fixed-patch PATCH]
   python3 -I mutants.py --suite SUITE --req-shield DIR --out DIR --roots-only [--only NAME[,NAME...]]
 
 Suites: `keylocallock` (default) has the three KeyLocalLock variants and the mutants of DESIGN-v0.md 6; `aspect` has
 the three Spring aspect modules and the mutants of DESIGN-B.md 7.2 (spike/aspect/mutants.py, in Kotlin); `client` has
 the client module ReqShield (DESIGN-E E4) on two bases, the code as it is (`original`) and a copy with --fixed-patch
 applied (`fixed`), and the mutants, controls and assumption toggles of spike/protocol2/mutants.py, in Kotlin and in the
-sidecar. A client run reads the report's `Properties:` rows (the full failing set) and checks the module verdict and
-the failing property IDs.
+sidecar. `coroutine` (DESIGN-E5 S9) is the same for req-shield's core-kotlin-coroutine ReqShield, with the mutants of
+spike/protocol2c/tools/mutants_c.py (its fixed base: spike/protocol2c/fixed-coroutine.patch). A client run reads the
+report's `Properties:` rows (the full failing set) and checks the module verdict and the failing property IDs.
 For each unit (variant or module) and mutant (the unmutated original included), the script:
   1. copies the unit's sources into OUT/roots/<unit>-<mutant>/<same relative path>: KeyLock.kt and KeyLocalLock.kt of
      a variant with the support module's main sources (the library trusted funs, B6), or the whole main source
@@ -25,7 +27,8 @@ With --roots-only it stops after step 2 and prints `<unit> <mutant> <root>` per 
 
 Exit code: 0 every row matches; 1 a row does not match; 2 a script error (bad usage, an edit that does not match
 exactly once, a mutant that does not compile: rule 3, never counted as a verdict).
-UNSUPPORTED or ERROR is never expected, so it always fails the script (rule 4).
+UNSUPPORTED or ERROR is never expected, so it always fails the script (rule 4). One exception: a client suite row may
+expect INCOMPLETE, for a mutant whose construct the tool does not translate by design (coroutine K5).
 """
 import argparse
 import concurrent.futures
@@ -374,9 +377,232 @@ CLIENT_UNIT_EDITS = {
                 RECHECK_WITHOUT_FLAG.replace("{release1}", QUIET.format("after the cache recheck")).replace("{release2}", QUIET.format("after the cache recheck")))],
     },
 }
+
+# ---- The coroutine suite (DESIGN-E5 6.2 S9): req-shield core-kotlin-coroutine ReqShield.kt, the Kotlin side of
+# spike/protocol2c/tools/mutants_c.py (lines of ReqShield.kt at 2e792d2). Two entries of mutants_c.py have no Kotlin or
+# sidecar form and are not here: KC3 (a KeyLock whose tryLock does not suspend: KeyLock.kt and the signed CANCEL in
+# tryLock's `throws` would change) and AF4 (A1 off for the supplier only: Errors are A1's, for every call). ----
+COROUTINE_FILE = "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/ReqShield.kt"
+NC_UNLOCK = ("{i}withContext(NonCancellable) {{\n"
+             "{i}    reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+             "{i}}}\n")
+# executeCallable's release on failure (245-249), in the code and in the fixed code (fixed-coroutine.patch: releaseQuietly).
+CO_SUPPLIER_RELEASE = ("            if (token != null && lockType != null) {\n" + NC_UNLOCK.format(i="                ") +
+                       "            }\n")
+CO_FIXED_SUPPLIER_RELEASE = ("            if (token != null && lockType != null) {\n"
+                             "                releaseQuietly(key, lockType, token, \"after the supplier failed\")\n"
+                             "            }\n")
+# The recheck's release (110-114) and executeSetCacheFunction's (226-230).
+CO_RECHECK_RELEASE = "                if (!cacheCreationRequired) {\n" + NC_UNLOCK.format(i="                    ") + "                }\n"
+CO_FIXED_RECHECK_RELEASE = ("                if (!cacheCreationRequired) {\n"
+                            "                    releaseQuietly(key, lockType, token, \"after the cache recheck\")\n"
+                            "                }\n")
+CO_WRITE_RELEASE = "            if (token != null) {\n" + NC_UNLOCK.format(i="                ") + "            }\n"
+CO_FALLBACK = "        return buildReqShieldData(executeCallable(callable, key, null, null), timeToLiveMillis)\n"
+CO_RECHECK = ("        if (token != null) {\n"
+              "            var cacheCreationRequired = false\n"
+              "            try {\n"
+              "                // Another request may have filled the cache between our initial miss and lock acquisition.\n"
+              "                val cachedData = executeGetCacheFunction(reqShieldConfig.getCacheFunction, key)\n"
+              "                if (cachedData != null) return cachedData\n"
+              "                cacheCreationRequired = true\n"
+              "            } finally {\n"
+              "                // A hit, read failure, or cancellation must release the token; creation owns it on a miss.\n"
+              "{release}"
+              "            }\n"
+              "        }\n")
+CO_RECHECK_WITHOUT_FLAG = ("        if (token != null) {\n"
+                           "            val cachedData =\n"
+                           "                try {\n"
+                           "                    executeGetCacheFunction(reqShieldConfig.getCacheFunction, key)\n"
+                           "                } catch (e: Throwable) {\n"
+                           "{release1}"
+                           "                    throw e\n"
+                           "                }\n"
+                           "            if (cachedData != null) {\n"
+                           "{release2}"
+                           "                return cachedData\n"
+                           "            }\n"
+                           "        }\n")
+CO_SET_TRY = ("        try {\n"
+              "            currentCoroutineContext().ensureActive()\n"
+              "            setFunction(key, value, value.timeToLiveMillis)\n"
+              "        } catch (e: CancellationException) {\n"
+              "            throw e\n"
+              "        } catch (e: Exception) {\n"
+              "            throw ClientException(ErrorCode.SET_CACHE_ERROR, cause = e)\n"
+              "        } finally {\n"
+              "            // Only the holder of a token has a lock to release.\n" + CO_WRITE_RELEASE +
+              "        }\n")
+CO_ONE_LINE_RELEASE = "if (token != null) withContext(NonCancellable) { reqShieldConfig.keyLock.unLock(key, lockType, token) }"
+CO_REFRESH_TASK = ("                val reqShieldData =\n"
+                   "                    buildReqShieldData(\n"
+                   "                        executeCallable(callable, key, lockType, token),\n"
+                   "                        timeToLiveMillis,\n"
+                   "                    )\n"
+                   "                executeSetCacheFunction(reqShieldConfig.setCacheFunction, key, reqShieldData, lockType, token)\n")
+CO_LAUNCH = "reqShieldConfig.scope.launch(start = CoroutineStart.ATOMIC) {\n"
+CO_POLL_CANCEL = "                } catch (e: CancellationException) {\n                    throw e\n                } catch (e: ClientException) {\n"
+CO_SUPPLIER_CATCH = "        } catch (e: Exception) {\n            // Release the lock only when this call actually acquired one.\n"
+CO_FIXED_REFRESH_LOCK = ("                    reqShieldConfig.keyLock.tryLock(key, lockType)\n"
+                         "                } catch (e: CancellationException) {\n"
+                         "                    throw e\n")
+
+
+def quiet_inline(indent, situation):
+    """releaseQuietly(key, lockType, token, SITUATION) inlined without withContext(NonCancellable): a cancellable release."""
+    i = " " * indent
+    return ("%stry {\n"
+            "%s    reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+            "%s} catch (unlockError: Exception) {\n"
+            "%s    log.error(\"[Req-Shield] failed to unlock key '{}' {}\", key, \"%s\", unlockError)\n"
+            "%s}\n" % (i, i, i, i, situation, i))
+
+
+# Each mutant's Kotlin change is the one its tools/mutants_c.py entry names; the comment gives the hand entry's name.
+COROUTINE_EDITS = {
+    "original": [],
+    # M1_no_release_on_supplier_failure: executeCallable's catch without the release (245-249 deleted).
+    "M1": [(CO_SUPPLIER_RELEASE, "")],
+    # M3_double_release: the recheck's finally releases on every path (110: the condition deleted).
+    "M3": [("                if (!cacheCreationRequired) {\n", "                if (true) {\n")],
+    # M4_write_without_lock_after_fallback: the fallback's data is written to the cache too.
+    "M4": [(CO_FALLBACK, CO_FALLBACK.replace("timeToLiveMillis)\n", "timeToLiveMillis)\n"
+                                             "            .also { reqShieldConfig.setCacheFunction(key, it, timeToLiveMillis) }\n"))],
+    # M5_unlock_with_stale_token: a racy field lastToken, set after the create tryLock; the write task releases
+    # `lastToken ?: token` (228).
+    "M5": [("    private val reqShieldConfig: ReqShieldConfiguration<T>,\n) {\n",
+            "    private val reqShieldConfig: ReqShieldConfiguration<T>,\n) {\n    @Volatile private var lastToken: String? = null\n\n"),
+           ("        val token = if (onlyUpdateCache) null else reqShieldConfig.keyLock.tryLock(key, lockType)\n",
+            "        val token = if (onlyUpdateCache) null else reqShieldConfig.keyLock.tryLock(key, lockType)\n        lastToken = token\n"),
+           (CO_WRITE_RELEASE, CO_WRITE_RELEASE.replace("unLock(key, lockType, token)", "unLock(key, lockType, lastToken ?: token)"))],
+    # M6_unlock_wrong_lock_type: executeCallable releases LockType.CREATE instead of its lockType (247).
+    "M6": [(CO_SUPPLIER_RELEASE, CO_SUPPLIER_RELEASE.replace("unLock(key, lockType, token)", "unLock(key, LockType.CREATE, token)"))],
+    # M7_refresh_without_lock: no early return (73): the refresh runs although another request holds the lock.
+    "M7": [("        if (!onlyCreateCache && token == null) return\n\n", "")],
+    # M8_create_lock_in_update_only_mode: the create lock in every mode (99 without the ONLY_UPDATE_CACHE check).
+    "M8": [("        val token = if (onlyUpdateCache) null else reqShieldConfig.keyLock.tryLock(key, lockType)\n",
+            "        val token = reqShieldConfig.keyLock.tryLock(key, lockType)\n")],
+    # M9_swallow_supplier_error: executeCallable returns null instead of throwing SUPPLIER_ERROR (251); a cancellation
+    # still propagates.
+    "M9": [("            throw ClientException(ErrorCode.SUPPLIER_ERROR, cause = e)\n", "            null\n")],
+    # M10_retry_fallback_supplier: the fallback retries a failing supplier once, not on a cancellation. Not runCatching:
+    # the sidecar does not `use` it, and it would catch the cancellation too. Not `catch (e: ClientException)`: the
+    # tool rejects that catch here, as an RTE of the release in executeCallable may reach it (DESIGN-E5 2.1 item 3).
+    "M10": [(CO_FALLBACK, "        return buildReqShieldData(\n"
+                          "            try {\n"
+                          "                executeCallable(callable, key, null, null)\n"
+                          "            } catch (e: Exception) {\n"
+                          "                if (e is CancellationException) throw e\n"
+                          "                executeCallable(callable, key, null, null)\n"
+                          "            },\n"
+                          "            timeToLiveMillis,\n"
+                          "        )\n")],
+    # M11_only_failed_reads_count: attempts++ moved from 180 into the ClientException catch.
+    "M11": [("            attempts++\n            delay(GET_CACHE_INTERVAL_MILLIS)\n", "            delay(GET_CACHE_INTERVAL_MILLIS)\n"),
+            ("                    if (++consecutiveFailures >= MAX_CONSECUTIVE_GET_CACHE_FAILURES) break\n",
+             "                    attempts++\n                    if (++consecutiveFailures >= MAX_CONSECUTIVE_GET_CACHE_FAILURES) break\n")],
+    # M12_release_before_write: createReqShieldData releases right after the supplier, before the background write.
+    "M12": [("            buildReqShieldData(\n                executeCallable(callable, key, lockType, token),\n",
+             "            buildReqShieldData(\n                executeCallable(callable, key, lockType, token).also {\n"
+             "                    " + CO_ONE_LINE_RELEASE + "\n"
+             "                },\n")],
+    # C1_write_release_without_finally: executeSetCacheFunction without finally: release in each catch (a cancellation
+    # rethrown, another Exception as SET_CACHE_ERROR) and after a normal return. A1 is on, so no Throwable catch.
+    "C1": [(CO_SET_TRY,
+            "        try {\n"
+            "            currentCoroutineContext().ensureActive()\n"
+            "            setFunction(key, value, value.timeToLiveMillis)\n"
+            "        } catch (e: CancellationException) {\n"
+            "            " + CO_ONE_LINE_RELEASE + "\n"
+            "            throw e\n"
+            "        } catch (e: Exception) {\n"
+            "            " + CO_ONE_LINE_RELEASE + "\n"
+            "            throw ClientException(ErrorCode.SET_CACHE_ERROR, cause = e)\n"
+            "        }\n"
+            "        " + CO_ONE_LINE_RELEASE + "\n")],
+    # C2_recheck_release_without_flag: try { get } catch (e: Throwable) { NC unLock; throw e }; if (hit) { NC unLock; return }.
+    "C2": [(CO_RECHECK.replace("{release}", CO_RECHECK_RELEASE),
+            CO_RECHECK_WITHOUT_FLAG.replace("{release1}", NC_UNLOCK.format(i="                    "))
+            .replace("{release2}", NC_UNLOCK.format(i="                ")))],
+    # C3_refresh_release_in_one_finally: the refresh block releases once, in one finally around the supplier and the
+    # write; its supplier call and its write get no token.
+    "C3": [(CO_REFRESH_TASK,
+            "                try {\n"
+            "                    val reqShieldData =\n"
+            "                        buildReqShieldData(\n"
+            "                            executeCallable(callable, key, null, null),\n"
+            "                            timeToLiveMillis,\n"
+            "                        )\n"
+            "                    executeSetCacheFunction(reqShieldConfig.setCacheFunction, key, reqShieldData, lockType, null)\n"
+            "                } finally {\n"
+            "                    " + CO_ONE_LINE_RELEASE + "\n"
+            "                }\n")],
+    # K1_recheck_release_cancellable: the recheck's finally releases without withContext(NonCancellable) (111).
+    "K1": [(CO_RECHECK_RELEASE, "                if (!cacheCreationRequired) {\n"
+                                "                    reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+                                "                }\n")],
+    # K2_supplier_release_cancellable: executeCallable's release without withContext(NonCancellable) (246).
+    "K2": [(CO_SUPPLIER_RELEASE, "            if (token != null && lockType != null) {\n"
+                                 "                reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+                                 "            }\n")],
+    # K3_write_release_cancellable: executeSetCacheFunction's finally releases without withContext(NonCancellable) (227).
+    "K3": [(CO_WRITE_RELEASE, "            if (token != null) {\n"
+                              "                reqShieldConfig.keyLock.unLock(key, lockType, token)\n"
+                              "            }\n")],
+    # K4_launch_not_atomic: both launches (75, 138) without `start = CoroutineStart.ATOMIC`.
+    "K4": [("        if (!onlyCreateCache && token == null) return\n\n        " + CO_LAUNCH,
+            "        if (!onlyCreateCache && token == null) return\n\n        reqShieldConfig.scope.launch {\n"),
+           ("            )\n        " + CO_LAUNCH, "            )\n        reqShieldConfig.scope.launch {\n")],
+    # K5_supplier_catch_ioexception: executeCallable catches IOException only (243). The tool translates no catch of a
+    # type outside the modeled kinds: the module is INCOMPLETE (DESIGN-E5 8 P3). The rethrow test 250 goes too:
+    # an IOException is no CancellationException.
+    "K5": [(CO_SUPPLIER_CATCH, CO_SUPPLIER_CATCH.replace("catch (e: Exception)", "catch (e: java.io.IOException)")),
+           ("            if (e is CancellationException) throw e\n", "")],
+    # K5b_supplier_catch_runtime: executeCallable catches RuntimeException only (243).
+    "K5b": [(CO_SUPPLIER_CATCH, CO_SUPPLIER_CATCH.replace("catch (e: Exception)", "catch (e: RuntimeException)"))],
+    # K6_write_release_outside_finally: executeSetCacheFunction releases after its try, not in finally.
+    "K6": [("        } finally {\n            // Only the holder of a token has a lock to release.\n" + CO_WRITE_RELEASE + "        }\n",
+            "        }\n"
+            "        // Only the holder of a token has a lock to release.\n"
+            "        if (token != null) {\n" + NC_UNLOCK.format(i="            ") +
+            "        }\n")],
+    # K7_get_wraps_cancel: executeGetCacheFunction without catch (e: CancellationException) (204): GET_CACHE_ERROR.
+    "K7": [("        } catch (e: CancellationException) {\n            throw e\n        } catch (e: Exception) {\n"
+            "            throw ClientException(ErrorCode.GET_CACHE_ERROR",
+            "        } catch (e: Exception) {\n            throw ClientException(ErrorCode.GET_CACHE_ERROR")],
+    # K8_supplier_wraps_cancel: executeCallable without `if (e is CancellationException) throw e` (250).
+    "K8": [("            if (e is CancellationException) throw e\n", "")],
+    # K9_poll_swallows_cancel: the polling catch takes Exception (172), and the cancellation catch (170) is gone.
+    "K9": [(CO_POLL_CANCEL, "                } catch (e: Exception) {\n")],
+    # K10_naive_fix_swallows_cancel: the core fix ported without the cancellation rethrow (fixed base only).
+    "K10": [(CO_FIXED_REFRESH_LOCK, "                    reqShieldConfig.keyLock.tryLock(key, lockType)\n")],
+    # KC1_poll_without_cancel_catch: no catch (e: CancellationException) at 170 (ClientException does not take it).
+    "KC1": [(CO_POLL_CANCEL, "                } catch (e: ClientException) {\n")],
+    # KC2_task_swallows_cancel: the refresh block swallows its own cancellation (83-84 deleted).
+    "KC2": [("            } catch (e: CancellationException) {\n                throw e\n            } catch (e: Exception) {\n"
+             "                log.error(\"[Req-Shield] failed to update",
+             "            } catch (e: Exception) {\n                log.error(\"[Req-Shield] failed to update")],
+    # The assumption toggles (DESIGN-E 4, UE6) change the sidecar only (client_sidecar).
+    "A1_off": [], "A2_on": [], "A3_off": [], "A4_off": [], "A5_off": [], "A6_off": [],
+}
+# Where fixed-coroutine.patch changed the text a mutant edits: releaseQuietly. None: the mutant does not run on the base.
+COROUTINE_UNIT_EDITS = {
+    "original": {"K10": None},
+    "fixed": {
+        "M1": [(CO_FIXED_SUPPLIER_RELEASE, "")],
+        "M6": [(CO_FIXED_SUPPLIER_RELEASE, CO_FIXED_SUPPLIER_RELEASE.replace("releaseQuietly(key, lockType, token,", "releaseQuietly(key, LockType.CREATE, token,"))],
+        "C2": [(CO_RECHECK.replace("{release}", CO_FIXED_RECHECK_RELEASE),
+                CO_RECHECK_WITHOUT_FLAG.replace("{release1}", "                    releaseQuietly(key, lockType, token, \"after the cache recheck\")\n")
+                .replace("{release2}", "                releaseQuietly(key, lockType, token, \"after the cache recheck\")\n"))],
+        "K1": [(CO_FIXED_RECHECK_RELEASE, "                if (!cacheCreationRequired) {\n" + quiet_inline(20, "after the cache recheck") + "                }\n")],
+        "K2": [(CO_FIXED_SUPPLIER_RELEASE, "            if (token != null && lockType != null) {\n" + quiet_inline(16, "after the supplier failed") + "            }\n")],
+    },
+}
+
 # The toggles: an `assume` block (its line and the indented source and reviewed lines under it) removed, so the
 # assumption is off; or A2 added after A1's block, signed as the sidecar is (the fingerprint is the one `kv` computes).
-CLIENT_ASSUME_OFF = {"A1_off": "A1", "A3_off": "A3", "A4_off": "A4", "A5_off": "A5"}
+CLIENT_ASSUME_OFF = {"A1_off": "A1", "A3_off": "A3", "A4_off": "A4", "A5_off": "A5", "A6_off": "A6"}
 ASSUME_A2 = ("assume A2: lock-calls-return\n"
              "  source none \"mutant toggle A2_on\"\n"
              "  reviewed \"mutant toggle A2_on\" sha256 \"f3976b419809632a\"\n")
@@ -397,7 +623,7 @@ class Suite:
     def __init__(self, units, edits, unit_edits, sidecar, copies, edited, client=False):
         self.units = units            # unit -> directory relative to the req-shield checkout
         self.edits = edits            # mutant -> edits
-        self.unit_edits = unit_edits  # unit -> mutant -> edits that replace the shared ones
+        self.unit_edits = unit_edits  # unit -> mutant -> edits that replace the shared ones (None: not on this unit)
         self.sidecar = sidecar        # unit -> sidecar file name
         self.copies = copies          # unit -> paths to copy, relative to the checkout (files or directories)
         self.edited = edited          # unit -> the file the edits apply to, relative to the checkout
@@ -405,6 +631,10 @@ class Suite:
 
     def edits_for(self, unit, mutant):
         return self.unit_edits.get(unit, {}).get(mutant, self.edits[mutant])
+
+    def runs(self, unit, mutant):
+        """True if the mutant runs on the unit (a mutant of the fixed code only does not run on the original)."""
+        return self.edits_for(unit, mutant) is not None
 
 
 SUITES = {
@@ -421,6 +651,11 @@ SUITES = {
     "client": Suite(
         {"original": "core", "fixed": "core"}, CLIENT_EDITS, CLIENT_UNIT_EDITS, lambda u: "reqshield.core.kv",
         lambda u: ["core/src/main/kotlin", SUPPORT_DIR], lambda u: CLIENT_FILE, client=True),
+    # DESIGN-E5 S9: the coroutine variant; the fixed base is a copy with spike/protocol2c/fixed-coroutine.patch.
+    "coroutine": Suite(
+        {"original": "core-kotlin-coroutine", "fixed": "core-kotlin-coroutine"}, COROUTINE_EDITS, COROUTINE_UNIT_EDITS,
+        lambda u: "reqshield.coroutine.kv", lambda u: ["core-kotlin-coroutine/src/main/kotlin", SUPPORT_DIR],
+        lambda u: COROUTINE_FILE, client=True),
 }
 
 # `kv verify` exit codes (DESIGN-v0.md 8.3, Q7).
@@ -611,6 +846,8 @@ def read_expected(path, suite):
             variant, mutant, verdict, action, obligations = cols
             if variant not in suite.units or mutant not in suite.edits:
                 raise ScriptError("%s:%d: unknown variant or mutant: %r" % (path, n, line))
+            if not suite.runs(variant, mutant):
+                raise ScriptError("%s:%d: %s does not run on %s: %r" % (path, n, mutant, variant, line))
             ids = set() if obligations == "-" else {o.strip() for o in obligations.split(";")}
             out[(variant, mutant)] = (verdict, None if action == "-" else action, ids)
     return out
@@ -626,7 +863,8 @@ def check(result, expected):
         want = {action: ids}
         if result["failed"] != want:
             problems.append("FAILED rows %s, expected %s" % (fmt(result["failed"]), fmt(want)))
-    if result["other"]:
+    # An expected INCOMPLETE (a client mutant the tool does not translate, by design) has no Properties rows.
+    if result["other"] and verdict != "INCOMPLETE":
         problems.append("rows that are neither PROVEN nor FAILED: %s" % ", ".join(result["other"]))
     return problems
 
@@ -662,7 +900,7 @@ def main():
         if args.roots_only:
             for u in suite.units:
                 for m in suite.edits:
-                    if only is None or m in only:
+                    if (only is None or m in only) and suite.runs(u, m):
                         print(u, m, make_root(suite, args.req_shield, args.out, u, m, args.fixed_patch))
             return 0
         absent = [n for n in ("kv", "classpath", "kotlinc", "specs", "expected") if getattr(args, n) is None]
@@ -670,7 +908,8 @@ def main():
             raise ScriptError("a verify run needs %s" % ", ".join("--" + n for n in absent))
         expected = read_expected(args.expected, suite)
         work = [k for k in expected if only is None or k[1] in only]
-        missing = [(v, m) for v in suite.units for m in suite.edits if (v, m) not in expected and (only is None or m in only)]
+        missing = [(v, m) for v in suite.units for m in suite.edits
+                   if (v, m) not in expected and (only is None or m in only) and suite.runs(v, m)]
         if missing:
             raise ScriptError("no expected row for %s" % missing)
         os.makedirs(args.out, exist_ok=True)
@@ -681,7 +920,7 @@ def main():
         print("mutants.py: script error: %s" % e, file=sys.stderr)
         return 2
     bad = 0
-    unit = {"keylocallock": "variant", "client": "base"}.get(args.suite, "module")
+    unit = {"keylocallock": "variant", "client": "base", "coroutine": "base"}.get(args.suite, "module")
     print("%-10s %-9s %-8s %-6s %s" % (unit, "mutant", "verdict", "time", "failing obligations"))
     for r in results:
         problems = check(r, expected[(r["variant"], r["mutant"])])

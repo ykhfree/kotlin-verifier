@@ -256,4 +256,73 @@ class MutantScriptTest {
         assertEquals(1, bad, badOut)
         assertTrue("MISMATCH: FAILED rows properties {LD_noleak, LD_own}, expected properties {LD_own}" in badOut, badOut)
     }
+
+    /** A coroutine client report: the module line and one Properties row per [failed] property, then a PROVEN one. */
+    private fun coroutineReport(failed: List<String> = emptyList()): String =
+        (
+            listOf("c.ReqShield (reqshield.coroutine.kv)    module: ${if (failed.isEmpty()) "PROVEN" else "FAILED"} (Silicon 2.70 s)", "Properties (each property's full failing set, DESIGN-E 5.2):") +
+                failed.map { "  ${it.padEnd(18)}  FAILED  ensures of getAndSet" } + listOf("  LD_wait             PROVEN  tool fact: a loop holds no obligation", "Tool facts: LD_noleak", "")
+        ).joinToString("\n")
+
+    private val coroutinePatch = File(System.getProperty("kv.spikeDir"), "protocol2c/fixed-coroutine.patch")
+    private val coroutineFile = "core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/ReqShield.kt"
+
+    @Test
+    fun `every coroutine edit applies once to the pinned file on both bases, and K10 runs on the fixed base only`() {
+        val p =
+            ProcessBuilder(
+                "python3", "-I", script.path, "--suite", "coroutine", "--req-shield", ReqShield.dir.path, "--out", File(dir, "out").path,
+                "--roots-only", "--fixed-patch", coroutinePatch.path,
+            ).redirectErrorStream(true).start()
+        val out = p.inputStream.bufferedReader().readText()
+        check(p.waitFor(120, TimeUnit.SECONDS)) { "mutants.py did not finish" }
+        assertEquals(0, p.exitValue(), out)
+        val roots = out.lines().filter { it.isNotBlank() }.map { it.split(" ").take(2).joinToString(" ") }
+        assertEquals(33, roots.count { it.startsWith("original ") }, out)
+        assertEquals(34, roots.count { it.startsWith("fixed ") }, out)
+        assertTrue("fixed K10" in roots && "original K10" !in roots, out)
+        // The fixed base has the patch; its K1 is the quiet release without NonCancellable.
+        val k1 = File(dir, "out/roots/fixed-K1/$coroutineFile").readText()
+        assertTrue("private suspend fun releaseQuietly(" in k1 && "log.error(\"[Req-Shield] failed to unlock key '{}' {}\", key, \"after the cache recheck\", unlockError)" in k1, k1)
+        assertTrue("releaseQuietly" !in File(ReqShield.dir, coroutineFile).readText(), "req-shield is not touched")
+    }
+
+    @Test
+    fun `the coroutine expected file has one parsable row for each run, and an expected INCOMPLETE matches only an INCOMPLETE run`() {
+        File(System.getProperty("kv.specDir"), "reqshield/reqshield.coroutine.kv").copyTo(File(dir, "reqshield.coroutine.kv"))
+        // A fake run per row of the real expected file: its verdict, and its properties FAILED in the Properties rows.
+        val rows = File(System.getProperty("kv.scriptsDir"), "coroutine-mutants-expected.txt").readText()
+        val responses =
+            rows.lines().filter { it.isNotBlank() && !it.startsWith("#") }.associate { line ->
+                val cols = line.substringBefore("  #").trim().split(Regex("\\s{2,}"))
+                val response =
+                    when (cols[2]) {
+                        "INCOMPLETE" -> Response(3, "c.ReqShield (reqshield.coroutine.kv)    module: INCOMPLETE\n  entry getAndSetReqShieldData  ReqShield.kt:43:5   UNSUPPORTED\n")
+                        "PROVEN" -> Response(0, coroutineReport())
+                        else -> Response(1, coroutineReport(cols[3].split(";").map { it.trim() }))
+                    }
+                "${cols[0]}-${cols[1]}" to response
+            }
+        assertEquals(67, responses.size)
+        val patch = listOf("--fixed-patch", coroutinePatch.path)
+        val (exit, out) = run(COROUTINE_MUTANTS.joinToString(","), rows, responses, suite = "coroutine", extra = patch)
+        assertEquals(0, exit, out)
+        assertTrue("67 run(s), 0 mismatch(es)" in out, out)
+        // K5 expects INCOMPLETE: a FAILED run is a mismatch; a K10 row on the original is a script error.
+        val (k5, k5Out) = run("K5", rows, responses + ("original-K5" to Response(1, coroutineReport(listOf("LD_noleak")))), suite = "coroutine", extra = patch)
+        assertEquals(1, k5, k5Out)
+        assertTrue("MISMATCH: verdict FAILED, expected INCOMPLETE" in k5Out, k5Out)
+        val (k10, k10Out) = run("K10", "$rows\noriginal  K10  FAILED  RET_cancel\n", responses, suite = "coroutine", extra = patch)
+        assertEquals(2, k10, k10Out)
+        assertTrue("K10 does not run on original" in k10Out, k10Out)
+        // A6_off drops `assume A6` with its source and reviewed lines.
+        val a6Off = File(dir, "out/sidecars/fixed-A6_off.kv").readText()
+        assertTrue("assume A6:" !in a6Off && "assume A5:" in a6Off && "scope.launch(start = ATOMIC) does not throw" !in a6Off, a6Off)
+    }
+
+    private companion object {
+        val COROUTINE_MUTANTS =
+            listOf("original", "M1", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10", "M11", "M12", "C1", "C2", "C3", "K1", "K2", "K3", "K4", "K5", "K5b", "K6", "K7", "K8", "K9", "K10", "KC1", "KC2") +
+                listOf("A1_off", "A2_on", "A3_off", "A4_off", "A5_off", "A6_off")
+    }
 }

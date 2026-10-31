@@ -171,6 +171,26 @@ class ClientLoweringTest {
     }
 
     @Test
+    fun `an entry without a result that returns the Job of launch gets the launch reason, not the runAsync one`() {
+        // The one way a Job reaches the spawn with a value sink: a return from an entry whose sidecar names no result,
+        // so no type check of the entry's out rejects the Job first (a local, a helper's out or an argument does).
+        val body = "return config.scope.launch(start = CoroutineStart.ATOMIC) { log.info(\"refresh\") }"
+        val o =
+            ClientFixture.resolve(
+                File(dir, "jobentry").apply { mkdirs() },
+                ClientFixture.client(body, result = "kotlinx.coroutines.Job", suspend = true),
+                ClientFixture.sidecar(items = "", head = ClientFixture.COROUTINE_SIDECAR_HEAD),
+            )
+        assertNull(o.compileMessages, o.compileMessages)
+        assertEquals(emptyList(), o.errors)
+        val m = o.module ?: fail("no module")
+        assertTrue(m.incomplete, printModule(m))
+        val launch = unsupported(m).filter { "value of launch" in it }
+        assertEquals(1, launch.size, unsupported(m).toString())
+        assertTrue("the Job launch returns is not used (DESIGN-E5 2.4 item 5)" in launch.single(), launch.single())
+    }
+
+    @Test
     fun `withContext(NonCancellable) runs its block in place with cx = false, and another context is unsupported (DESIGN-E5 2 row 8)`() {
         val body =
             """

@@ -1,0 +1,94 @@
+# Expected `kv verify` results of the coroutine suite of scripts/mutants.py (DESIGN-E5 6.2 S9): req-shield
+# core-kotlin-coroutine ReqShield on two bases, the code as it is (original) and a copy with
+# spike/protocol2c/fixed-coroutine.patch (fixed).
+# Taken from spike/protocol2c/verdicts.txt, the full failing sets of the hand mutants (DESIGN-E5 4.4): canonical ->
+# original, fixed -> fixed; the hand name and its verdict there are in the comment after each row. The info rows of
+# verdicts.txt (UE7b, G1, K1x, X1: decision and encoding probes of the hand model) have no row here.
+# Columns, separated by two or more spaces: base, mutant, module verdict, the failing property IDs as the
+# report's Properties rows name them (separated by ';'); '-' means none.
+#
+# Rows of verdicts.txt with no row here (no Kotlin or sidecar form, DESIGN-E5 8 P3):
+# - KC3_lock_calls_not_cancellable (ACCEPTED on both bases): a KeyLock whose tryLock does not suspend. In Kotlin that
+#   is an edit of KeyLock.kt and its implementations, and the signed `throws RTE, CANCEL` of tryLock would change
+#   (the cancel-kind check rejects CANCEL on a non-suspend function).
+# - AF4_supplier_error_only (DETECTED on both bases): A1 off for the supplier only. A sidecar turns Errors on for
+#   every call (A1); A1_off below is that row.
+# One row differs from the hand model by design (DESIGN-E5 8 P3): K5 catches IOException, which no modeled kind is;
+# the tool does not translate that catch, so the module is INCOMPLETE (the hand model: LD_noleak + the base set).
+# Two deviations (measured 2026-10-31): K1 and K2 on the fixed base add RET_cancel. The fixed code's release there is
+# releaseQuietly; without withContext(NonCancellable) it may raise CANCEL, and its `catch (unlockError: Exception)`
+# swallows it, so the call ends without the CancellationException that RET_cancel asks for. The hand mutants make the
+# release cancellable (cx = true) but add no `EV_raised_CANCEL(tr, e)` after it, which the tool emits after every entry
+# call that may raise CANCEL; with that line, the hand mutants fail exactly the sets below (tools/isolate_c.py on a
+# scratch copy: LD_noleak, RET_cancel for both). On the original both already fail RET_cancel.
+# K8 on the original is masked: its one defect, RET_cancel, is one the original already fails (verdicts.txt).
+# K10 runs on the fixed base only (the core fix ported without the cancellation rethrow).
+#
+# base    mutant    verdict     properties
+original  original  FAILED      RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                          # original: FAILED
+original  M1        FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck                                                   # M1_no_release_on_supplier_failure: DETECTED
+original  M3        FAILED      LD_own; LD_supplier; LD_transfer; RET_cancel; RET_hit; RET_recheck                            # M3_double_release: DETECTED
+original  M4        FAILED      LD_write; RET_cancel; RET_hit; RET_recheck; RET_supplier; RET_supplier_error                  # M4_write_without_lock_after_fallback: DETECTED
+original  M5        FAILED      LD_own; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                  # M5_unlock_with_stale_token: DETECTED
+original  M6        FAILED      LD_own; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                  # M6_unlock_wrong_lock_type: DETECTED
+original  M7        FAILED      LD_supplier; LD_write; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                   # M7_refresh_without_lock: DETECTED
+original  M8        FAILED      MODE_create; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                             # M8_create_lock_in_update_only_mode: DETECTED
+original  M9        FAILED      LD_own; LD_transfer; LD_write; RET_cancel; RET_hit; RET_recheck; RET_supplier_error           # M9_swallow_supplier_error: DETECTED
+original  M10       FAILED      RET_cancel; RET_hit; RET_recheck; RET_supplier_error; SUP_once                                # M10_retry_fallback_supplier: DETECTED
+original  M11       FAILED      HOLE; RET_cancel; RET_hit; RET_recheck; RET_supplier_error; TERM                              # M11_only_failed_reads_count: DETECTED
+original  M12       FAILED      LD_transfer; RET_cancel; RET_hit; RET_recheck; RET_supplier; RET_supplier_error               # M12_release_before_write: DETECTED
+original  C1        FAILED      RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                          # C1_write_release_without_finally: ACCEPTED
+original  C2        FAILED      RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                          # C2_recheck_release_without_flag: ACCEPTED
+original  C3        FAILED      RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                          # C3_refresh_release_in_one_finally: ACCEPTED
+original  K1        FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # K1_recheck_release_cancellable: DETECTED
+original  K2        FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # K2_supplier_release_cancellable: DETECTED
+original  K3        FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # K3_write_release_cancellable: DETECTED
+original  K4        FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # K4_launch_not_atomic: DETECTED
+original  K5        INCOMPLETE  -                                                                                             # K5_supplier_catch_ioexception: DETECTED there (see above)
+original  K5b       FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # K5b_supplier_catch_runtime: DETECTED
+original  K6        FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # K6_write_release_outside_finally: DETECTED
+original  K7        FAILED      HOLE; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                    # K7_get_wraps_cancel: DETECTED
+original  K8        FAILED      RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                          # K8_supplier_wraps_cancel: MASKED
+original  K9        FAILED      HOLE; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                    # K9_poll_swallows_cancel: DETECTED
+original  KC1       FAILED      RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                          # KC1_poll_without_cancel_catch: ACCEPTED
+original  KC2       FAILED      RET_cancel; RET_hit; RET_recheck; RET_supplier_error                                          # KC2_task_swallows_cancel: ACCEPTED
+original  A1_off    FAILED      LD_noleak; RET_cancel; RET_get_error; RET_hit; RET_recheck; RET_supplier; RET_supplier_error  # A1_off_errors_not_fatal: DETECTED
+original  A2_on     PROVEN      -                                                                                             # A2_on_lock_calls_return: PROVEN
+original  A3_off    FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # A3_off_accepted_task_may_be_dropped: DETECTED
+original  A4_off    FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # A4_off_throwing_unlock_keeps_obligation: DETECTED
+original  A5_off    FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error                               # A5_off_throwing_trylock_may_take_lock: DETECTED
+original  A6_off    FAILED      LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier; RET_supplier_error                 # A6_off_dispatch_may_throw: DETECTED
+fixed     original  PROVEN      -                                                                                             # original: PROVEN
+fixed     M1        FAILED      LD_noleak                                                                                     # M1_no_release_on_supplier_failure: DETECTED
+fixed     M3        FAILED      LD_own; LD_supplier; LD_transfer                                                              # M3_double_release: DETECTED
+fixed     M4        FAILED      LD_write; RET_supplier                                                                        # M4_write_without_lock_after_fallback: DETECTED
+fixed     M5        FAILED      LD_own                                                                                        # M5_unlock_with_stale_token: DETECTED
+fixed     M6        FAILED      LD_own                                                                                        # M6_unlock_wrong_lock_type: DETECTED
+fixed     M7        FAILED      LD_supplier; LD_write                                                                         # M7_refresh_without_lock: DETECTED
+fixed     M8        FAILED      MODE_create                                                                                   # M8_create_lock_in_update_only_mode: DETECTED
+fixed     M9        FAILED      LD_own; LD_transfer; LD_write; RET_supplier_error                                             # M9_swallow_supplier_error: DETECTED
+fixed     M10       FAILED      SUP_once                                                                                      # M10_retry_fallback_supplier: DETECTED
+fixed     M11       FAILED      HOLE; TERM                                                                                    # M11_only_failed_reads_count: DETECTED
+fixed     M12       FAILED      LD_transfer; RET_supplier                                                                     # M12_release_before_write: DETECTED
+fixed     C1        PROVEN      -                                                                                             # C1_write_release_without_finally: ACCEPTED
+fixed     C2        PROVEN      -                                                                                             # C2_recheck_release_without_flag: ACCEPTED
+fixed     C3        PROVEN      -                                                                                             # C3_refresh_release_in_one_finally: ACCEPTED
+fixed     K1        FAILED      LD_noleak; RET_cancel                                                                         # K1_recheck_release_cancellable: DETECTED (there without RET_cancel; see above)
+fixed     K2        FAILED      LD_noleak; RET_cancel                                                                         # K2_supplier_release_cancellable: DETECTED (there without RET_cancel; see above)
+fixed     K3        FAILED      LD_noleak                                                                                     # K3_write_release_cancellable: DETECTED
+fixed     K4        FAILED      LD_noleak                                                                                     # K4_launch_not_atomic: DETECTED
+fixed     K5        INCOMPLETE  -                                                                                             # K5_supplier_catch_ioexception: DETECTED there (see above)
+fixed     K5b       FAILED      LD_noleak; RET_supplier_error                                                                 # K5b_supplier_catch_runtime: DETECTED
+fixed     K6        FAILED      LD_noleak                                                                                     # K6_write_release_outside_finally: DETECTED
+fixed     K7        FAILED      HOLE; RET_cancel                                                                              # K7_get_wraps_cancel: DETECTED
+fixed     K8        FAILED      RET_cancel                                                                                    # K8_supplier_wraps_cancel: DETECTED
+fixed     K9        FAILED      HOLE                                                                                          # K9_poll_swallows_cancel: DETECTED
+fixed     K10       FAILED      RET_cancel                                                                                    # K10_naive_fix_swallows_cancel: DETECTED
+fixed     KC1       PROVEN      -                                                                                             # KC1_poll_without_cancel_catch: ACCEPTED
+fixed     KC2       PROVEN      -                                                                                             # KC2_task_swallows_cancel: ACCEPTED
+fixed     A1_off    FAILED      LD_noleak; RET_cancel; RET_get_error; RET_hit; RET_recheck; RET_supplier; RET_supplier_error  # A1_off_errors_not_fatal: DETECTED
+fixed     A2_on     PROVEN      -                                                                                             # A2_on_lock_calls_return: PROVEN
+fixed     A3_off    FAILED      LD_noleak                                                                                     # A3_off_accepted_task_may_be_dropped: DETECTED
+fixed     A4_off    FAILED      LD_noleak                                                                                     # A4_off_throwing_unlock_keeps_obligation: DETECTED
+fixed     A5_off    FAILED      LD_noleak                                                                                     # A5_off_throwing_trylock_may_take_lock: DETECTED
+fixed     A6_off    FAILED      LD_noleak; RET_hit; RET_supplier                                                              # A6_off_dispatch_may_throw: DETECTED

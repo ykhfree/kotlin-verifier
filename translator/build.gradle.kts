@@ -224,6 +224,29 @@ val lowerClient by tasks.registering(JavaExec::class) {
     kv("lower", "--root", reqShieldDir, layout.projectDirectory.file("../specs/reqshield/reqshield.core.kv").asFile.path)
 }
 
+// `./gradlew discoverClientCoroutine`, `resolveClientCoroutine`, `lowerClientCoroutine` and `verifyClientCoroutine`:
+// DESIGN-E5 6.2 S7. The same for req-shield's core-kotlin-coroutine module and its sidecar
+// ../specs/reqshield/reqshield.coroutine.kv (signed 2026-10-30, DESIGN-E 13.1). verify writes
+// build/kv/reqshield.coroutine.vpr (needs Silicon); like `kv verify` it exits 1 on FAILED, which the pinned code is
+// (DESIGN-E5 8 P1), so the task fails until req-shield has the fix.
+val coroutineClientSidecar = layout.projectDirectory.file("../specs/reqshield/reqshield.coroutine.kv").asFile.path
+val discoverClientCoroutine by tasks.registering(JavaExec::class) {
+    description = "Lists the client module candidates of req-shield's core-kotlin-coroutine module (DESIGN-E5)."
+    kv("discover", "--client", "$reqShieldDir/core-kotlin-coroutine/src/main/kotlin")
+}
+val resolveClientCoroutine by tasks.registering(JavaExec::class) {
+    description = "Binds the names of the coroutine ReqShield sidecar to FIR symbols (DESIGN-E5)."
+    kv("resolve", "--root", reqShieldDir, coroutineClientSidecar)
+}
+val lowerClientCoroutine by tasks.registering(JavaExec::class) {
+    description = "Prints the KVIR of the coroutine ReqShield sidecar and checks W1-W22 (DESIGN-E5)."
+    kv("lower", "--root", reqShieldDir, coroutineClientSidecar)
+}
+val verifyClientCoroutine by tasks.registering(JavaExec::class) {
+    description = "Verifies the coroutine ReqShield with Silicon and prints the client report (DESIGN-E5)."
+    kv("verify", "--root", reqShieldDir, "--out", layout.buildDirectory.file("kv/reqshield.coroutine.vpr").get().asFile.path, coroutineClientSidecar)
+}
+
 // `./gradlew mutantsReqShield`: M8 (DESIGN-v0.md 6 and 7). Applies the Kotlin mutants to temp copies of the three
 // KeyLocalLock variants, runs the installed `kv verify` on each, and checks the verdicts and failing obligations
 // against scripts/mutants-expected.txt. Needs python3 and Silicon. It takes about a minute, so `test` does not run it.
@@ -293,6 +316,33 @@ val mutantsClient by tasks.registering(Exec::class) {
             listOf(
                 "-I", "scripts/mutants.py", "--suite", "client", "--kv", kv, "--req-shield", reqShieldDir, "--classpath", reqShieldClasspath.asPath,
                 "--kotlinc", reqShieldKotlincArgs, "--specs", specs, "--expected", "scripts/client-mutants-expected.txt", "--out", out,
+                "--jobs", jobs, "--fixed-patch", patch,
+            ) + (only?.let { listOf("--only", it) } ?: emptyList())
+        },
+    )
+}
+
+// `./gradlew mutantsCoroutine`: DESIGN-E5 6.2 S9. The same script with `--suite coroutine`: the Kotlin mutants, controls
+// and assumption toggles of spike/protocol2c/tools/mutants_c.py on req-shield core-kotlin-coroutine ReqShield, on the
+// original code and on a copy with spike/protocol2c/fixed-coroutine.patch, checked against
+// scripts/coroutine-mutants-expected.txt (the full failing sets of spike/protocol2c/verdicts.txt). Needs python3, patch
+// and Silicon. Options: -PmutantJobs=N, -PmutantOnly=M1,K4.
+val mutantsCoroutine by tasks.registering(Exec::class) {
+    group = "kv"
+    description = "Runs the E5 Kotlin mutant script on the coroutine client module ReqShield (original and fixed)."
+    dependsOn(tasks.installDist)
+    executable = "python3"
+    val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
+    val out = layout.buildDirectory.dir("kv/coroutine-mutants").get().asFile.path
+    val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
+    val patch = layout.projectDirectory.file("../spike/protocol2c/fixed-coroutine.patch").asFile.path
+    val jobs = providers.gradleProperty("mutantJobs").getOrElse("2")
+    val only = providers.gradleProperty("mutantOnly").orNull
+    argumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                "-I", "scripts/mutants.py", "--suite", "coroutine", "--kv", kv, "--req-shield", reqShieldDir, "--classpath", reqShieldClasspath.asPath,
+                "--kotlinc", reqShieldKotlincArgs, "--specs", specs, "--expected", "scripts/coroutine-mutants-expected.txt", "--out", out,
                 "--jobs", jobs, "--fixed-patch", patch,
             ) + (only?.let { listOf("--only", it) } ?: emptyList())
         },

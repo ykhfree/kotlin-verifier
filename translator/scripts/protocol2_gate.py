@@ -1,13 +1,16 @@
 """DESIGN-E 6.10 E3 gate: is a generated client model the hand model of spike/protocol2 up to the E3 rename table, the
-E3 structural edits and normalization?
+E3 structural edits and normalization? With `--suite coroutine` (DESIGN-E5 6.2 S8, JE13), the same for the coroutine
+variant of ReqShield and its hand model in spike/protocol2c.
 
 The hand models are spike/protocol2/target.vpr (`--base canonical`) and fixed.vpr (`--base fixed`, target.vpr with FIX
-of spike/protocol2/mutants.py). This script reads them and never writes into spike/. It applies, to a copy:
+of spike/protocol2/mutants.py); for the coroutine suite, spike/protocol2c/target-coroutine.vpr and the same with FIX of
+spike/protocol2c/tools/mutants_c.py. This script reads them and never writes into spike/. It applies, to a copy:
 1. STRUCTURAL: edits where the tool's encoding differs from the hand model but means the same (each with its reason).
    On the fixed base the edits pass through FIX first (as mutants.py does for its mutants), then FIXED_ONLY applies.
 2. RENAMES: names that differ only (the tool picks its names; the main session renames the hand model).
 Then it compares with the normalizer spike/vpr_normalize.py plus the two changes E3 needs (NORMALIZER below).
-Usage: python3 -I protocol2_gate.py --spike DIR --base canonical|fixed GENERATED.vpr [--write EXPECTED.vpr]
+Usage: python3 -I protocol2_gate.py --spike DIR [--suite core|coroutine] --base canonical|fixed GENERATED.vpr
+                                    [--write EXPECTED.vpr]
 Exit 0: the same program. Exit 1: different (a unified diff of the normalized forms). Exit 2: an edit did not match.
 """
 import argparse
@@ -160,6 +163,41 @@ FIXED_ONLY = [
      "as above: the catch sets the flag, and the refresh runs under `exc == NONE && !ret`"),
 ]
 
+# ---- the coroutine suite (DESIGN-E5 6.2 S8): the hand model was written in the tool's layout and names ----
+# It has no RENAMES. The catch flag of handleLockFailure's `catch (e: CancellationException)` @170 is caught_170_22 in
+# the hand model and caught_170_26 in the tool (the column of the catch parameter `e`); LOCAL below matches both, and
+# both are the method's same local in the same place, so the normalizer maps them to one name.
+COROUTINE_STRUCTURAL = [
+    ("            var ret_121_13: Bool := false  // a pending return\n"
+     "            var brk_165_9: Bool := false  // a pending break\n",
+     "            var brk_165_9: Bool := false\n"
+     "            var ret_121_13: Bool := false\n", 1,
+     "the tool declares the flags of a block in the source order of the jumps that set them: the break @174 comes "
+     "before the return @178"),
+]
+COROUTINE_FIXED_ONLY = [
+    ("        var token__71: Int := NULL\n        if (!onlyCreateCache__70) {\n",
+     "        var token__71: Int := NULL\n        var ret_51_17: Bool := false\n        if (!onlyCreateCache__70) {\n", 1,
+     "fixed-coroutine.patch's `catch (e: Exception) { ...; return }` around the refresh tryLock is a pending return "
+     "of updateReqShieldData (a flag); the hand model encodes it by `token == NULL` after a throw"),
+    ("          if (e_71_52 != NONE && (e_71_52 == CANCEL || !IS_EXCEPTION(e_71_52))) {   // FIX: an Exception skips the refresh\n"
+     "            exc := e_71_52\n          }\n        }\n        if (exc == NONE) {\n",
+     "          if (e_71_52 != NONE) {\n            if (e_71_52 == CANCEL) {\n              exc := e_71_52\n"
+     "            } elseif (IS_EXCEPTION(e_71_52)) {\n              ret_51_17 := true\n            } else {\n"
+     "              exc := e_71_52\n            }\n          }\n        }\n        if (exc == NONE && !ret_51_17) {\n", 1,
+     "as above: the CancellationException catch rethrows, the Exception catch sets the flag, and the refresh runs "
+     "under `exc == NONE && !ret`"),
+]
+
+# Per suite: the hand model's directory under --spike, its file, the FIX script, and the tables above.
+SUITES = {
+    "core": {"dir": "protocol2", "target": "target.vpr", "fix": "mutants.py", "structural": STRUCTURAL,
+             "fixed_only": FIXED_ONLY, "scoped": SCOPED, "renames": RENAMES, "pre": PRE_MACROS},
+    "coroutine": {"dir": "protocol2c", "target": "target-coroutine.vpr", "fix": "tools/mutants_c.py",
+                  "structural": COROUTINE_STRUCTURAL, "fixed_only": COROUTINE_FIXED_ONLY, "scoped": [],
+                  "renames": [], "pre": ["TASK_75_PRE", "TASK_138_PRE"]},
+}
+
 # ---- the normalizer change E3 needs (DESIGN-E 6.10 E3), on top of spike/vpr_normalize.py ----
 # a) LOCAL also matches the tool's and the hand model's flag and temp names: <name>_<line>[_<col>][_at<line>...]
 #    (e_224_13_at43, ret_50_20, brk_181_9, dropped_145_at69, found_187, d_197) and _at suffixes on <name>__<line>.
@@ -201,25 +239,27 @@ def edit(text, edits, what):
     return text
 
 
-def expected(spike, base, generated):
-    p2 = os.path.join(spike, "protocol2")
-    text = open(os.path.join(p2, "target.vpr")).read()
-    edits = STRUCTURAL
+def expected(spike, base, generated, suite="core"):
+    s = SUITES[suite]
+    target = os.path.join(spike, s["dir"], s["target"])
+    text = open(target).read()
+    edits = s["structural"]
     if base == "fixed":
-        fix = load(os.path.join(p2, "mutants.py"), "p2mutants")
-        text = fix.base_text("fixed")
-        edits = [(fix.fixify(o), fix.fixify(n), c, r) for o, n, c, r in STRUCTURAL] + FIXED_ONLY
+        fix = load(os.path.join(spike, s["dir"], s["fix"]), "p2mutants")
+        # spike/protocol2/mutants.py reads its own target.vpr; tools/mutants_c.py takes the target's path.
+        text = fix.base_text("fixed") if suite == "core" else fix.base_text(target, "fixed")
+        edits = [(fix.fixify(o), fix.fixify(n), c, r) for o, n, c, r in edits] + s["fixed_only"]
     text = edit(text, edits, "structural")
-    for start, end, pairs in SCOPED:
+    for start, end, pairs in s["scoped"]:
         a, b = text.index(start), text.index(end)
         part = text[a:b]
         for old, new in pairs:
             part = word(part, old, new)
         text = text[:a] + part + text[b:]
     pres = re.findall(r"define (TASK_\d+_PRE)\(", open(generated).read())
-    if len(pres) != len(PRE_MACROS):
-        raise SystemExit("the generated model has %d task precondition macros, expected %d" % (len(pres), len(PRE_MACROS)))
-    for old, new in RENAMES + list(zip(PRE_MACROS, pres)):
+    if len(pres) != len(s["pre"]):
+        raise SystemExit("the generated model has %d task precondition macros, expected %d" % (len(pres), len(s["pre"])))
+    for old, new in s["renames"] + list(zip(s["pre"], pres)):
         text = word(text, old, new)
     return text
 
@@ -227,13 +267,14 @@ def expected(spike, base, generated):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--spike", required=True)
+    ap.add_argument("--suite", choices=sorted(SUITES), default="core")
     ap.add_argument("--base", choices=("canonical", "fixed"), required=True)
     ap.add_argument("--write")
     ap.add_argument("generated")
     args = ap.parse_args()
     norm = load(os.path.join(args.spike, "vpr_normalize.py"), "vpr_normalize")
     norm.LOCAL = LOCAL
-    want = expected(args.spike, args.base, args.generated)
+    want = expected(args.spike, args.base, args.generated, args.suite)
     if args.write:
         with open(args.write, "w") as f:
             f.write(want)

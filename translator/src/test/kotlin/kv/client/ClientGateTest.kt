@@ -11,7 +11,8 @@ import kotlin.test.assertEquals
 /**
  * DESIGN-E 6.10 E3 acceptance: the generated model of the core ReqShield is spike/protocol2/target.vpr, and that of
  * the fixed copy (fixed-core.patch) is spike/protocol2/fixed.vpr, up to the rename table and the structural edits of
- * scripts/protocol2_gate.py and the normalizer change it names (DESIGN-E 6.10: LOCAL).
+ * scripts/protocol2_gate.py and the normalizer change it names (DESIGN-E 6.10: LOCAL). DESIGN-E5 6.2 S8: the same for
+ * the coroutine ReqShield and spike/protocol2c/target-coroutine.vpr (`--suite coroutine`).
  */
 class ClientGateTest {
     @TempDir
@@ -20,10 +21,11 @@ class ClientGateTest {
     private fun gate(
         base: String,
         generated: String,
+        suite: String = "core",
     ): Pair<Int, String> {
         val vpr = File(dir, "$base.vpr").apply { writeText(generated) }
         val script = File(System.getProperty("kv.scriptsDir"), "protocol2_gate.py")
-        return python(script.path, "--spike", spikeDir.path, "--base", base, "--write", File(dir, "expected.$base.vpr").path, vpr.path)
+        return python(script.path, "--spike", spikeDir.path, "--suite", suite, "--base", base, "--write", File(dir, "expected.$base.vpr").path, vpr.path)
     }
 
     @Test
@@ -37,6 +39,20 @@ class ClientGateTest {
     fun `the generated model of the fixed copy is fixed_vpr`() {
         val o = Protocol2.resolveFixed(dir)
         val (code, out) = gate("fixed", emitClient(o.module!!, o.sidecar!!).text)
+        assertEquals(0, code, out)
+    }
+
+    @Test
+    fun `the generated coroutine model is target-coroutine_vpr`() {
+        val o = CoroutineVerifyTest.outcome
+        val (code, out) = gate("canonical", emitClient(o.module!!, o.sidecar!!).text, "coroutine")
+        assertEquals(0, code, out)
+    }
+
+    @Test
+    fun `the generated model of the fixed coroutine copy is target-coroutine_vpr with FIX`() {
+        val o = CoroutineVerifyTest.resolveFixed(dir)
+        val (code, out) = gate("fixed", emitClient(o.module!!, o.sidecar!!).text, "coroutine")
         assertEquals(0, code, out)
     }
 }
