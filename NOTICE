@@ -1,0 +1,8 @@
+kotlin-verifier
+Copyright 2026 kanghyun.yang
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The files under translator/src/test/fixtures/req-shield/ come from req-shield
+(https://github.com/line/req-shield), Copyright 2024 LY Corporation, Apache License 2.0.
+See translator/src/test/fixtures/req-shield/NOTICE.md.

@@ -129,5 +129,5 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 
 ## 라이선스
 
-Apache License 2.0 (`LICENSE`).
+Copyright 2026 kanghyun.yang. Apache License 2.0 (`LICENSE`, `NOTICE`).
 `translator/src/test/fixtures/req-shield/`의 req-shield 파일은 req-shield의 Apache License 2.0을 따른다 (그 폴더의 `NOTICE.md`).

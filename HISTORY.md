@@ -605,4 +605,4 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 사용자 결정: Apache License 2.0.
 - 근거 (메인 세션의 제안): req-shield fixture와 같은 라이선스, Kotlin 컴파일러와 같은 라이선스, 특허 조항. Viper(MPL-2.0)와 Z3는 저장소에 넣지 않고 따로 설치한 것을 실행만 한다.
 - 한 일: 루트에 apache.org의 표준 원문을 `LICENSE`로 두었다 (SHA-256 `cfc7749b…`). README에 라이선스 절을 더했다.
-
+- 사용자 결정: 저작권자는 `kanghyun.yang`이다. 루트에 `NOTICE`(Copyright 2026 kanghyun.yang)를 두었다. `LICENSE`는 표준 원문 그대로다. req-shield에는 NOTICE 파일이 없어서 옮겨 적을 고지문이 없다.
