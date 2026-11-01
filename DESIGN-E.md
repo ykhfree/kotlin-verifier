@@ -1362,3 +1362,21 @@ JE9 `trusted param`을 새로 둔다. JE10 CANCEL은 `throws`에 적고 FIR과 �
 4. `verifyClientCoroutine`은 고정 기준(수정 전 코드)에서 FAILED로 exit 1이다. 이것이 맞는 결과다.
 
 남은 한계: 취소는 sticky로 두지 않았다 (JE11). 사용자 함수가 NonCancellable 안에서 스스로 던지는 CancellationException은 모델에 없다.
+
+## 14. E6 reactor 변형 설계 (2026-11-01, 도구 변경 없음)
+
+사용자 결정 (2026-11-01): E6을 진행한다. 세부 설계는 deep-reasoner가 했다. 전문(영어 초안)은 `spike/protocol2r/DESIGN-E6.md`에 있다.
+
+산출물 (`spike/protocol2r/`):
+- `target-reactor.vpr`: 손 Viper 기준 모델.
+- `verdicts.txt`: 측정한 판정. 두 base에서 67개 파일을 쟀다.
+- `fixed-reactor.patch`: req-shield 수정안이다 (+202/-51, 테스트 포함).
+- `reqshield.reactor.kv.draft`: sidecar 초안이다. 메모는 모두 제안이고, 서명하지 않았다.
+- `tools/`, `probe/`: 측정 스크립트와 탐색 입력이다.
+- 새 스냅숏 `specdraft/reqshield-reactor/snapshot`(129블록)도 있다.
+- 실행 출력, req-shield 사본, reactor-core 소스 jar(약 70 MB)는 저장소에 넣지 않았다.
+
+핵심 결과 (손 모델 측정과 소스 읽기. 도구로는 아직 확인하지 않았다):
+1. 타당성 판정은 통과했다. 한 구독을 순차 신호 경로로 보고, 호출자의 취소는 동시 사건으로 본다. 취소가 오면 그때 걸린 취소 hook이 실행되고, 신호 경로는 계속 간다. 6.11 3번의 번역(doOnCancel = CANCEL의 catch, 실행이 멈춤)은 건전하지 않다. 그 번역은 원본의 LD_own과 LD_transfer 실패를 숨긴다.
+2. 원본 reactor 코드는 LD_own, LD_transfer, POLL_bound, RET_hit에서 FAILED다. 다른 14개는 PROVEN이다. 메인 세션이 소스에서 두 가지를 확인했다. 첫째, `repeatWhenEmpty { take(maxAttemptGetCache) }`는 첫 읽기 뒤에 `maxAttemptGetCache`번 더 읽는다. 테스트도 `2 + maxAttemptGetCache`를 고정한다. 그러나 README 159행과 KDoc은 "up to `maxAttemptGetCache` times"라고 쓴다. 둘째, `keyLock.tryLock(key, lockType)`은 `Mono.defer` 없이 바로 불린다.
+3. 추정: 12-19 인일이다.
