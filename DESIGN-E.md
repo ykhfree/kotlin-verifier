@@ -1380,3 +1380,17 @@ JE9 `trusted param`을 새로 둔다. JE10 CANCEL은 `throws`에 적고 FIR과 �
 1. 타당성 판정은 통과했다. 한 구독을 순차 신호 경로로 보고, 호출자의 취소는 동시 사건으로 본다. 취소가 오면 그때 걸린 취소 hook이 실행되고, 신호 경로는 계속 간다. 6.11 3번의 번역(doOnCancel = CANCEL의 catch, 실행이 멈춤)은 건전하지 않다. 그 번역은 원본의 LD_own과 LD_transfer 실패를 숨긴다.
 2. 원본 reactor 코드는 LD_own, LD_transfer, POLL_bound, RET_hit에서 FAILED다. 다른 14개는 PROVEN이다. 메인 세션이 소스에서 두 가지를 확인했다. 첫째, `repeatWhenEmpty { take(maxAttemptGetCache) }`는 첫 읽기 뒤에 `maxAttemptGetCache`번 더 읽는다. 테스트도 `2 + maxAttemptGetCache`를 고정한다. 그러나 README 159행과 KDoc은 "up to `maxAttemptGetCache` times"라고 쓴다. 둘째, `keyLock.tryLock(key, lockType)`은 `Mono.defer` 없이 바로 불린다.
 3. 추정: 12-19 인일이다.
+
+### 14.1 사용자 결정 (2026-11-01)
+
+| ID | 결정 |
+|---|---|
+| UE10 | (a) 호출자가 취소한 뒤에는 supplier가 lock 없이 시작될 수 있다. LD_supplier에 `|| cancelled`가 붙는다. LD_write는 엄격하게 둔다 |
+| UE11 | (b) 코드를 문서에 맞춘다: 폴링은 정확히 `maxAttemptGetCache`번이다. 메인 세션이 소스에서 확인했다: README 159행과 KDoc은 "up to `maxAttemptGetCache` times"이고, 코드와 테스트는 한 번 더 읽는다 |
+| UE12 | (b) 111행의 `tryLock`을 `Mono.defer`로 감싼다 |
+| UE13 | UE7 (a)를 reactor에도 적용한다. 취소된 구독에는 RET 절을 적용하지 않는다. RET_cancel에 해당하는 절은 없다 (아무것도 전달되지 않으므로) |
+| UE14 | `fixed-reactor.patch`(테스트 6개)를 req-shield 작업 브랜치에 적용한다. 경쟁 테스트는 시험용 `LateMono`를 쓴다. `LateMono`는 취소를 무시하고 신호를 하나 더 보내서, 실제로 가능한 순서를 재현 가능하게 만든다. 검증 도구의 고정 기준은 `2e792d2` 그대로다 |
+
+메인 세션 결정 (설계안대로): JE16 `MonoLowering`을 따로 둔다. JE17 releaseLock은 그 자리의 unLock으로 모델한다. JE18 늦은 신호는 모두 허용한다. JE19 critic 검토는 했다 (`spike/protocol2r/CRITIC-E6.md`). JE20 `acquired`를 쓴다.
+
+아직 하지 않은 것: 예측 등록과 범위 결정. critic이 찾은 규칙 보완(O1-O8)을 설계에 넣은 뒤에 한다 (advisor 권고).
