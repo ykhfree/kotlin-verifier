@@ -44,5 +44,3 @@ cd translator
 
 실험 기록(변이 검사, AI가 쓴 코드, 파일럿, 손 모델 전체, 측정 보고서 `MUTATION.md`·`AI-CODE.md`·`PROTOCOL2.md`·`PHASE1.md`)은 비공개 저장소 `kotlin-verifier-experiments`에 있다.
 설계 문서가 `spike/`, `aicode/`, `mutation/`, `pilot-c/`, `specdraft/`, `frontend-probe/` 아래의 경로를 가리키면, 그 파일은 테스트 입력 폴더나 실험 저장소에 있다.
-
-작업 이력은 `HISTORY.md`에 있다.

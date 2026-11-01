@@ -120,7 +120,6 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 | 문서 | 내용 |
 |---|---|
 | `DEVELOPMENT.md` | 도구 개발: 테스트 실행, Gradle 작업, 폴더 구조 |
-| `HISTORY.md` | 작업 이력 |
 | `DESIGN-v0.md` | KVIR, sidecar 명세, ghost 상태 (L1 모듈) |
 | `DESIGN-B.md` | aspect 캐시 모듈 |
 | `DESIGN-C.md` | 자연어 명세 → sidecar 흐름, 서명 규칙 |
