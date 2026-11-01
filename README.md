@@ -126,3 +126,8 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 | `DESIGN-C.md` | 자연어 명세 → sidecar 흐름, 서명 규칙 |
 | `DESIGN-D.md` | compute 밖의 예약 단계 |
 | `DESIGN-E.md` | L3 client 프로토콜 |
+
+## 라이선스
+
+Apache License 2.0 (`LICENSE`).
+`translator/src/test/fixtures/req-shield/`의 req-shield 파일은 req-shield의 Apache License 2.0을 따른다 (그 폴더의 `NOTICE.md`).

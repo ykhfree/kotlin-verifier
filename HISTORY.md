@@ -600,3 +600,9 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   5. git filter-repo로 지운 경로를 이력 전체에서 지웠다. 그리고 force push했다.
 - 확인 (측정, 실험 폴더가 없는 사본에서): 전체 테스트 837개 통과 (22분 22초). `mutantsClient` 42회, `mutantsCoroutine` 67회에서 불일치 0. `aicodeEnv`가 새 경로를 쓴다.
 
+## 라이선스 (2026-11-01)
+
+- 사용자 결정: Apache License 2.0.
+- 근거 (메인 세션의 제안): req-shield fixture와 같은 라이선스, Kotlin 컴파일러와 같은 라이선스, 특허 조항. Viper(MPL-2.0)와 Z3는 저장소에 넣지 않고 따로 설치한 것을 실행만 한다.
+- 한 일: 루트에 apache.org의 표준 원문을 `LICENSE`로 두었다 (SHA-256 `cfc7749b…`). README에 라이선스 절을 더했다.
+
