@@ -127,38 +127,38 @@ operation getAndSet = fun ReqShield.getAndSetReqShieldData {
   // UE7 (a): a RET clause does not apply to a call that ends with a cancellation.
   ensures RET_hit: first == HIT && exc != CANCEL ==> exc == NONE && res == first.obj
     source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
-    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
-    reviewed "ykhfree 2026-10-30: a first read that hits returns that data, whatever the lock calls do, unless the call is cancelled" sha256 "2837783dad2b0931"
+    source none "user decision UE7 2026-10-30: a cancelled call may end with its CancellationException instead of a result"
+    reviewed "ykhfree 2026-10-30: a first read that hits returns that data, whatever the lock calls do, unless the call is cancelled" sha256 "07f7af37a9abdc3c"
   ensures RET_get_error: first == THREW && exc != CANCEL ==> exc == ClientException(GET_CACHE_ERROR)
     source "ClientException.kt#ClientException" quote "Wraps failures raised by client-provided functions (supplier, cache getter/setter, lock functions)." sha256 "a3f2f2b5d5f541a7"
-    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
-    reviewed "ykhfree 2026-10-30: a first read that throws gives ClientException(GET_CACHE_ERROR), unless the call is cancelled" sha256 "a9886c8edb227cdb"
+    source none "user decision UE7 2026-10-30: a cancelled call may end with its CancellationException instead of a result"
+    reviewed "ykhfree 2026-10-30: a first read that throws gives ClientException(GET_CACHE_ERROR), unless the call is cancelled" sha256 "20f263d76ea463ea"
   ensures RET_recheck: recheck == HIT && exc != CANCEL ==> exc == NONE && res == recheck.obj && nsup == 0 && nspawn == 0
     source none "ReqShield.kt:104 (coroutine), a code comment: Another request may have filled the cache between our initial miss and lock acquisition."
     source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
-    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
-    reviewed "ykhfree 2026-10-30: a recheck hit under the CREATE lock returns that data, with no supplier call and no background task, unless the call is cancelled" sha256 "28e2dc74ce2bbcaa"
+    source none "user decision UE7 2026-10-30: a cancelled call may end with its CancellationException instead of a result"
+    reviewed "ykhfree 2026-10-30: a recheck hit under the CREATE lock returns that data, with no supplier call and no background task, unless the call is cancelled" sha256 "ca18be6672e61e9c"
   ensures RET_poll: poll.hit && exc != CANCEL ==> exc == NONE && res == poll.obj && nsup == 0
     source "ReqShield.kt#handleLockFailure" quote "Another request owns the create lock, so wait for it to fill the cache." sha256 "86fa18223492c680"
     source "README.md#waiting-for-another-request-lock-not-acquired/1" quote "A request that loses the lock polls the cache every 50 ms" sha256 "b3e9e99f6203e70e"
-    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
-    reviewed "ykhfree 2026-10-30: a poll that finds data returns it without a supplier call, unless the call is cancelled" sha256 "9c50e5d3540e1e25"
+    source none "user decision UE7 2026-10-30: a cancelled call may end with its CancellationException instead of a result"
+    reviewed "ykhfree 2026-10-30: a poll that finds data returns it without a supplier call, unless the call is cancelled" sha256 "e3923f3f201d4423"
   ensures RET_supplier: sup == OK && exc != CANCEL ==> exc == NONE && res != null && res.value == sup.val
     source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
     source none "core-kotlin-coroutine ReqShieldTest.kt:838, a test name: should not fail the caller when the background cache write fails"
-    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
-    reviewed "ykhfree 2026-10-30: the caller gets the supplier's value, unless the call is cancelled" sha256 "837e3a8c1e9b5c76"
+    source none "user decision UE7 2026-10-30: a cancelled call may end with its CancellationException instead of a result"
+    reviewed "ykhfree 2026-10-30: the caller gets the supplier's value, unless the call is cancelled" sha256 "194772a73dcd2561"
   ensures RET_supplier_error: sup == THREW && exc != CANCEL ==> exc == ClientException(SUPPLIER_ERROR)
     source "README.md#waiting-for-another-request-lock-not-acquired/3" quote "A supplier failure is propagated as a" sha256 "0b4eefa677614205"
     source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
-    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
-    reviewed "ykhfree 2026-10-30: a supplier that throws gives ClientException(SUPPLIER_ERROR), whatever the unlock does, unless the call is cancelled" sha256 "d2fb7de4830de16d"
+    source none "user decision UE7 2026-10-30: a cancelled call may end with its CancellationException instead of a result"
+    reviewed "ykhfree 2026-10-30: a supplier that throws gives ClientException(SUPPLIER_ERROR), whatever the unlock does, unless the call is cancelled" sha256 "86f1bf665eb9db67"
   // UE8 (a): a cancellation reaches the caller as a CancellationException.
   ensures RET_cancel: cancelled ==> exc == CANCEL
     source "ReqShield.kt#handleLockFailure" quote "[delay] is a cancellation point, so a cancelled caller" sha256 "86fa18223492c680"
     source none "core-kotlin-coroutine ReqShieldTest.kt:920 and 1008: the call fails with the TimeoutCancellationException; the task completes with the same CancellationException"
-    source none "user decision UE8 (pending): a cancellation reaches the caller as its CancellationException; a failed release does not replace it"
-    reviewed "ykhfree 2026-10-30: a call in which a cancellation was raised ends with a CancellationException" sha256 "110f7f5d43e1bca8"
+    source none "user decision UE8 2026-10-30: a cancellation reaches the caller as its CancellationException; a failed release does not replace it"
+    reviewed "ykhfree 2026-10-30: a call in which a cancellation was raised ends with a CancellationException" sha256 "a5a947313cf95535"
 }
 
 // ---- Hole (layer 5): the polling loop; the order differs from core (read, attempts++, delay) ----
