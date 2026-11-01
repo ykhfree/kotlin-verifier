@@ -1336,3 +1336,29 @@ JE9 `trusted param`을 새로 둔다. JE10 CANCEL은 `throws`에 적고 FIR과 �
 7. P7: 사용자 질문 1회(UE7-UE9, 끝남)와 서명 메모 26개.
 8. P8: 크기는 코드 +400-600줄, 테스트 +600-900줄이다.
 9. P9: core hole로 시작한 LLM hole 실행은 `cancelled ==> exc == CANCEL`을 더하려고 적어도 한 번 Silicon을 더 부른다.
+
+### 13.3 결과 (2026-10-30 ~ 11-01, 측정)
+
+진행 (orchestration-policy): 세부 설계는 deep-reasoner가 했다 (규칙 3). 계획은 advisor가 검토했다. 구현은 feature-developer가 격리된 worktree에서 세 묶음으로 했다. 메인 세션은 묶음마다 diff를 검토하고 가져와서, 영향받는 테스트를 다시 돌렸다. req-shield 수정(UE9)은 다른 feature-developer가 했다.
+
+커밋: `63840a7`(S1-S3), `3a2e14e`(S4-S6), `ea20ffd`(S7-S9). req-shield 작업 브랜치에는 `5bdc4d9`(수정과 테스트 4개)와 `0e2e48c`(취소 예외를 다시 던지는 부분을 지키는 테스트)가 있다. 둘 다 push하지 않았다.
+
+| 예측 | 결과 |
+|---|---|
+| P1 원본은 RET_hit, RET_recheck, RET_supplier_error, RET_cancel에서만 FAILED | 맞음. 다른 성질 15개는 PROVEN이다 (`CoroutineVerifyTest`) |
+| P2 고친 사본 PROVEN | 맞음 |
+| P3 변이 묶음이 `verdicts.txt`를 재현하고, 다른 행은 많아야 2개 | 틀림. `mutantsCoroutine` 67회(원본 33, 고친 사본 34)에서 기대값과의 불일치는 0이다. 그러나 손 모델과 다른 행이 4개다. 인코딩 차이 2개(K1, K2: 고친 사본에서 RET_cancel도 실패한다. 손 변이에 `EV_raised_CANCEL`이 없기 때문이다. 그 줄을 더하면 손 모델도 같은 집합을 낸다)와, Kotlin이나 sidecar로 표현할 수 없어서 뺀 행 2개(KC3, AF4)다. K5는 설계대로 INCOMPLETE다 |
+| P4 gate 구조 편집 10개 이하, 이름 바꿈 5개 이하 | 맞음. 편집은 원본 1개, 고친 사본 3개이고, 이름 바꿈은 0개다 |
+| P5 회귀 없음 | 맞음. core와 L1의 출력 76개가 S0 기준과 같다. 변이 33/30/42회 불일치 0 |
+| P6 Silicon 3.5 s 이하, `kv verify` 40 s 이하 | 맞음. Silicon 2.73 s, `kv verify` 21.3 s |
+| P7 질문 1회, 메모 26개 | 맞음. 다만 출처 줄 7개에 "(pending)"이 남아 있어서, 사용자 승인으로 날짜로 고치고 지문 7개를 다시 기록했다 (2026-11-01) |
+| P8 코드 +400-600줄, 테스트 +600-900줄 | 틀림. 코드 +753/-122줄, 테스트 +1351/-24줄이다 (`44a5623` 대비). 스크립트와 Gradle은 +356/-26줄이다 |
+| P9 LLM hole 실행 | 재지 않았다. hole은 손 모델의 6개 conjunct를 그대로 썼다 |
+
+메인 세션이 정한 것 (묶음 보고의 열린 질문):
+1. 바깥 catch의 예외를 안쪽 catch에서 다시 던지는 것은 UNSUPPORTED다. E5 전부터 있던 잠재 오류이고, 2묶음에서 막았다.
+2. 생성 Viper와 손 모델의 두 차이는 gate에서 편집으로 기록한다 (emitter는 바꾸지 않는다).
+3. context 인자가 있는 `launch`는 UNSUPPORTED로 둔다.
+4. `verifyClientCoroutine`은 고정 기준(수정 전 코드)에서 FAILED로 exit 1이다. 이것이 맞는 결과다.
+
+남은 한계: 취소는 sticky로 두지 않았다 (JE11). 사용자 함수가 NonCancellable 안에서 스스로 던지는 CancellationException은 모델에 없다.

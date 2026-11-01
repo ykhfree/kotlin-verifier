@@ -5,7 +5,7 @@ AI가 생성한 Kotlin/JVM 코드가 우리의 명세대로 작성되었는지 *
 Microsoft Research의 PDD Kit("의도 → 형식 명세 → 코드가 명세를 만족함을 증명")와 같은 일을 Kotlin/JVM에서 한다.
 대상은 AI가 쓴 코드와 기존 코드(req-shield) 모두다. 동시성이 있는 코드를 다룬다.
 
-상태 (2026-10-29): 바로 할 수 있는 일은 모두 끝났다. 남은 일 2개는 외부 조건(Confluence 시험 페이지, 결정 UE6)을 기다린다 (아래 "열린 과제").
+상태 (2026-11-01): 바로 할 수 있는 일은 모두 끝났다. 남은 일은 Confluence 실제 페이지 확인(시험 페이지가 필요함)과 reactor 변형(설계가 먼저 필요함)이다 (아래 "열린 과제").
 
 ## 동작 방식
 
@@ -27,16 +27,17 @@ sidecar 명세 (.kv) ───────┘                                   
 |---|---|---|
 | L1 상태 모듈: 연산 하나가 `ConcurrentHashMap.compute` 하나 | req-shield `KeyLocalLock` (core, coroutine, reactor) | `DESIGN-v0.md` |
 | aspect 캐시: `getOrCreate`와 생성 함수 | req-shield `ReqShieldAspect` (3개 모듈) | `DESIGN-B.md` |
-| L3 client 프로토콜: lock 의무, 사건 기록, 백그라운드 과제 | req-shield core `ReqShield` | `DESIGN-E.md` |
+| L3 client 프로토콜: lock 의무, 사건 기록, 백그라운드 과제 | req-shield `ReqShield` (core, coroutine) | `DESIGN-E.md` |
 
 ## 측정 결과 (요약)
 
 모든 수치는 측정값이다. 상세는 괄호 안의 문서에 있다.
 
-- 변이 검사: KeyLocalLock 33회, aspect 30회, client 42회. 기대 판정과의 불일치는 0이다 (`MUTATION.md`, `PROTOCOL2.md`).
+- 변이 검사: KeyLocalLock 33회, aspect 30회, client(core) 42회, client(coroutine) 67회. 기대 판정과의 불일치는 0이다 (`MUTATION.md`, `PROTOCOL2.md`, `DESIGN-E.md` 13.3).
 - AI가 쓴 구현 24개 (action 72개): 72개 모두 판정했다. 블라인드 판정자와 비교한 결과, 놓친 결함 0, 잘못된 경보 0이다 (`AI-CODE.md` 16).
 - req-shield core `ReqShield`: 도구가 결함 3개(RET_hit, RET_recheck, RET_supplier_error)를 보고했다. 고친 코드는 PROVEN이다. 이 수정은 req-shield에 커밋했다 (`PROTOCOL2.md` 6-7절).
-- 테스트 794개가 통과한다 (2026-10-29).
+- req-shield coroutine `ReqShield`: 도구가 결함 4개(위 셋과 RET_cancel)를 보고했다. core 수정이 coroutine에 옮겨지지 않았기 때문이다. 고친 코드는 PROVEN이다. 이 수정은 req-shield 작업 브랜치에 커밋했다 (`DESIGN-E.md` 13.3).
+- 테스트 837개가 통과한다 (2026-11-01).
 
 ## 필요한 것
 
@@ -65,7 +66,8 @@ cd translator
 | `verifyReqShield` | KeyLocalLock 3개 변형을 증명하고 보고서를 출력한다 |
 | `verifyAspect` | aspect 캐시 모듈을 증명한다 |
 | `resolveClient`, `lowerClient` | ReqShield core sidecar를 묶고, KVIR를 출력한다 |
-| `mutantsReqShield`, `mutantsAspect`, `mutantsClient` | 변이 검사를 돌리고 기대 판정과 비교한다 |
+| `resolveClientCoroutine`, `lowerClientCoroutine`, `verifyClientCoroutine` | ReqShield coroutine sidecar를 묶고, KVIR를 출력하고, 증명한다 |
+| `mutantsReqShield`, `mutantsAspect`, `mutantsClient`, `mutantsCoroutine` | 변이 검사를 돌리고 기대 판정과 비교한다 |
 
 CLI 명령 (`kv`를 인자 없이 실행하면 전체 사용법이 나온다):
 
@@ -122,4 +124,4 @@ exclude "conf:123456#배경/1" because "정보용 설명" sha256 "..."   // 일�
 - `free` 묶기는 서명이 덮지 않는다. `kv resolve`는 한 값을 두 번 묶는 것(`free-duplicate`)과, client에서 읽히지 않는 경로에 묶은 것(`free-unused`)을 잡는다 (`DESIGN-C.md` 10.16). 두 묶기를 맞바꾼 경우와 L1의 `param`·`local` 오묶기는 아직 잡지 못한다. 그런 sidecar는 전처럼 FAILED나 ERROR가 된다.
 - 묶인 Kotlin 지역 변수의 계산식을 바꿔도(예: `val now = nowToEpochTime() + lockTimeoutMillis`) PROVEN이 그대로다. 도구가 `free` 값의 계산을 번역하지 않기 때문이다 (`DESIGN-v0.md` 2.12 규칙 1, `DESIGN-C.md` 10.16). 사용자 결정(2026-10-29)으로 알려진 한계로 둔다. 그래서 묶인 지역 변수의 계산식은 사람이 읽어야 한다.
 - Confluence 가져오기(C6)는 공식 API 스펙에 맞춰 만들었지만, 실제 Confluence 페이지로는 아직 확인하지 않았다 (`DESIGN-C.md` 10.8의 미확인 항목).
-- coroutine 변형의 client 프로토콜(E5)은 결정 UE6이 필요하다.
+- reactor 변형의 client 프로토콜(E6)은 별도 설계가 필요하다 (`DESIGN-E.md` 6.11 3번).
