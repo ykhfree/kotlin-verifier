@@ -1341,7 +1341,7 @@ JE9 `trusted param`을 새로 둔다. JE10 CANCEL은 `throws`에 적고 FIR과 �
 
 진행 (orchestration-policy): 세부 설계는 deep-reasoner가 했다 (규칙 3). 계획은 advisor가 검토했다. 구현은 feature-developer가 격리된 worktree에서 세 묶음으로 했다. 메인 세션은 묶음마다 diff를 검토하고 가져와서, 영향받는 테스트를 다시 돌렸다. req-shield 수정(UE9)은 다른 feature-developer가 했다.
 
-커밋: `63840a7`(S1-S3), `3a2e14e`(S4-S6), `ea20ffd`(S7-S9). req-shield 작업 브랜치에는 `5bdc4d9`(수정과 테스트 4개)와 `0e2e48c`(취소 예외를 다시 던지는 부분을 지키는 테스트)가 있다. 둘 다 push하지 않았다.
+커밋: `63840a7`(S1-S3), `3a2e14e`(S4-S6), `ea20ffd`(S7-S9). req-shield 작업 브랜치에는 `1120cd6`(수정과 테스트 4개)와 `8efeeea`(취소 예외를 다시 던지는 부분을 지키는 테스트)가 있다. 처음 번호는 `5bdc4d9`, `0e2e48c`였다. 원격 브랜치가 다시 쓰여서 그 위로 옮겼고, 2026-11-01에 fork로 push했다 (`HISTORY.md`).
 
 | 예측 | 결과 |
 |---|---|

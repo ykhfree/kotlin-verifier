@@ -543,3 +543,9 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 결과 (`DESIGN-E.md` 13.3): 원본 coroutine `ReqShield`는 RET_hit, RET_recheck, RET_supplier_error, RET_cancel에서 FAILED다. req-shield 수정(`5bdc4d9`, `0e2e48c`, 작업 브랜치, push 안 함)을 적용한 사본은 PROVEN이다. 예측 9개 중 6개가 맞았다. P3, P8은 틀렸고, P9는 재지 않았다. 전체 테스트 837개 통과, 변이 33/30/42/67회에서 불일치 0.
 - 커밋: `236b85f`(설계), `15841c4`(결정과 예측), `63840a7`, `3a2e14e`, `ea20ffd`(구현), `85f450e`(출처 줄 날짜), `616fa9d`(기록). 모두 push하지 않았다.
 - main HEAD(`616fa9d`)에서 다시 쟀다 (2026-11-01): 전체 테스트 837개 통과, 변이 33/30/42/67회에서 불일치 0.
+
+## req-shield push (2026-11-01, 사용자 결정)
+
+- 원격 fork 브랜치(`ykhfree/feature/NOISSUE/upgrade-kotlin2-and-deps`)는 그사이 `c5aaea8`로 강제 갱신되어 있었다. `c5aaea8`은 `1739f01`(core 수정)을 다시 쓴 판이다. core 테스트 하나가 바로 실행하는 executor를 써서, 호출 0회 검사가 백그라운드 갱신과 경쟁하지 않게 했다. coroutine 파일 두 개는 두 판에서 같다.
+- E5의 req-shield 커밋 2개를 `c5aaea8` 위로 옮겼다 (rebase, 충돌 없음). 새 번호는 `1120cd6`(옛 `5bdc4d9`, 수정과 테스트 4개)와 `8efeeea`(옛 `0e2e48c`, 취소 예외를 다시 던지는 부분의 테스트)다. 강제 push는 하지 않았다.
+- req-shield 전체 빌드 통과 (테스트 367개, coroutine 모듈 62개). fork에 fast-forward로 push했다 (`c5aaea8..8efeeea`). 업스트림 `origin`(`line/req-shield`)에는 push하지 않았다.
