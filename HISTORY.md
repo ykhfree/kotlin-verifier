@@ -571,3 +571,13 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   2. req-shield 수정 세 개의 push 상태와 커밋 번호를 적었다.
   3. AI 코드 결과에 주장의 범위(`AI-CODE.md` 1-2절)를 붙였다.
   4. exit code, 판정 규칙, 신뢰 가정, "새 모듈에 적용하기" 절을 더했다.
+
+## README를 도구 설명으로 정리 (2026-11-01)
+
+- 사용자 지적: README에는 도구의 상세 설명만 둔다. 커밋, push 상태, req-shield 이야기는 넣지 않는다.
+- 사용자 결정: 측정 결과는 README에 문서 링크 한 줄만 둔다.
+- 한 일:
+  1. README에서 상태 줄, 측정 결과 요약, req-shield 수정과 커밋 번호를 지웠다. 이 내용은 이 문서의 앞 항목에 있다.
+  2. 모듈 종류 표를 req-shield 예 대신 코드 모양의 설명으로 바꿨다. 사용법은 새 모듈에 적용하는 순서로 합쳤다.
+  3. 테스트 준비(req-shield `2e792d2` fixture), Gradle 작업, 폴더 구조를 새 `DEVELOPMENT.md`로 옮겼다.
+- 확인: `./gradlew installDist -PreqShieldDir=/nonexistent-req-shield`가 통과한다 (CLI 빌드에 req-shield가 필요 없음, 측정).

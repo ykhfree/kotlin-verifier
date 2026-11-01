@@ -3,9 +3,7 @@
 AI가 생성한 Kotlin/JVM 코드가 우리의 명세대로 작성되었는지 **증명**하는 도구다. 테스트가 아니라 모든 경우를 다루는 증명이다.
 
 Microsoft Research의 PDD Kit("의도 → 형식 명세 → 코드가 명세를 만족함을 증명")와 같은 일을 Kotlin/JVM에서 한다.
-대상은 AI가 쓴 코드와 기존 코드(req-shield) 모두다. 동시성이 있는 코드를 다룬다.
-
-상태 (2026-11-01): 바로 할 수 있는 일은 모두 끝났다. 남은 일은 Confluence 실제 페이지 확인(시험 페이지가 필요함)이다. reactor 변형의 도구 확장은 사용자 결정으로 미뤘다 (아래 "열린 과제").
+대상은 AI가 쓴 코드와 사람이 쓴 기존 코드 모두다. 동시성이 있는 코드를 다룬다.
 
 ## 동작 방식
 
@@ -15,75 +13,55 @@ Kotlin 소스 (수정 없음) ─┐
 sidecar 명세 (.kv) ───────┘                                                                       (성질마다 PROVEN / FAILED)
 ```
 
-1. 사람이 명세를 sidecar 파일(`specs/**/*.kv`)에 쓴다. 각 절에는 원문 근거(`source`)와 서명(`reviewed ... sha256`)이 붙는다.
+1. 사람이 명세를 sidecar 파일(`.kv`)에 쓴다. 각 절에는 원문 근거(`source`)와 서명(`reviewed ... sha256`)이 붙는다.
 2. 도구가 Kotlin 소스를 K2 FIR로 읽고, sidecar의 이름을 코드의 심볼에 묶는다 (`kv resolve`).
 3. 도구가 코드를 중간 표현 KVIR로 낮추고, 지원하지 않는 구문을 거부한다 (`kv lower`).
 4. 도구가 Viper 프로그램을 만들고 Silicon으로 증명한다 (`kv emit`, `kv verify`).
 5. 보고서는 성질마다 PROVEN 또는 FAILED를 낸다. 서명된 절이나 신뢰한 함수 본문이 바뀌면 `stale-review` 오류가 난다.
 
-다루는 모듈 종류는 세 가지다.
+## 지원하는 코드 모양
 
-| 종류 | 예 | 설계 문서 |
+도구는 다음 세 가지 모양의 모듈을 다룬다. 다른 모양의 코드는 sidecar를 써도 증명할 수 없다.
+
+| 모양 | 설명 | 설계 문서 |
 |---|---|---|
-| L1 상태 모듈: 연산 하나가 `ConcurrentHashMap.compute` 하나 | req-shield `KeyLocalLock` (core, coroutine, reactor) | `DESIGN-v0.md` |
-| aspect 캐시: `getOrCreate`와 생성 함수 | req-shield `ReqShieldAspect` (3개 모듈) | `DESIGN-B.md` |
-| L3 client 프로토콜: lock 의무, 사건 기록, 백그라운드 과제 | req-shield `ReqShield` (core, coroutine) | `DESIGN-E.md` |
+| L1 상태 모듈 | 연산 하나가 `ConcurrentHashMap.compute` 하나다 | `DESIGN-v0.md` |
+| aspect 캐시 | `getOrCreate`와 생성 함수로 객체를 한 번만 만든다 | `DESIGN-B.md` |
+| L3 client 프로토콜 | lock 의무, 사건 기록, 백그라운드 과제(`CompletableFuture.runAsync`, kotlinx `launch`)가 있다 | `DESIGN-E.md` |
 
-## 측정 결과 (요약)
-
-모든 수치는 측정값이다. 상세는 괄호 안의 문서에 있다.
-
-- 변이 검사: KeyLocalLock 33회, aspect 30회, client(core) 42회, client(coroutine) 67회. 기대 판정과의 불일치는 0이다 (`MUTATION.md`, `PROTOCOL2.md`, `DESIGN-E.md` 13.3).
-- AI가 쓴 구현 24개 (action 72개): 72개 모두 판정했다. 블라인드 판정자와 비교한 결과, 놓친 결함 0, 잘못된 경보 0이다 (`AI-CODE.md` 16).
-  주장의 범위: 대상은 coroutine `KeyLocalLock` 하나다. 본 실험의 12개는 AI에게 "검증 가능한 부분집합"의 모양 틀을 주고 논리만 채우게 했다. AI가 자유롭게 설계한 경우는 별도 실험(자유 구현 3개)으로만 봤다 (`AI-CODE.md` 1-2절).
-- req-shield core `ReqShield`: 도구가 결함 3개(RET_hit, RET_recheck, RET_supplier_error)를 보고했다. 고친 코드는 PROVEN이다 (`PROTOCOL2.md` 6-7절).
-- req-shield reactor `ReqShield`: 손 모델이 결함 5개(LD_own, LD_transfer, LD_write, POLL_bound, RET_hit)를 찾았다. 고친 코드는 손 모델에서 PROVEN이다. 도구는 아직 reactor 코드를 읽지 못한다 (`DESIGN-E.md` 14).
-- req-shield coroutine `ReqShield`: 도구가 결함 4개(위 셋과 RET_cancel)를 보고했다. core 수정이 coroutine에 옮겨지지 않았기 때문이다. 고친 코드는 PROVEN이다 (`DESIGN-E.md` 13.3).
-- 위 세 수정은 ykhfree fork의 `feature/NOISSUE/upgrade-kotlin2-and-deps` 브랜치에 push했다: core `c5aaea8`, coroutine `1120cd6`·`8efeeea`, reactor `12d571e` (`HISTORY.md`). 업스트림(`line/req-shield`)에는 push하지 않았다.
-- 테스트 837개가 통과한다 (2026-11-01).
-
-## 필요한 것
+## 설치
 
 1. JDK 21.
-2. Viper 릴리스 v.26.08의 `tools` 디렉터리 (Silicon과 Z3). 환경 변수 `VIPER_HOME`으로 지정한다.
+2. Viper 릴리스 v.26.08의 `tools` 디렉터리 (Silicon과 Z3). 환경 변수 `VIPER_HOME`이나 `--viper-home`으로 지정한다.
    지정하지 않으면 `~/.local/opt/viper/v.26.08-release/tools`를 쓴다.
-3. 테스트와 Gradle 작업에만: req-shield의 `2e792d2` 커밋 checkout과 그 jar (`*/build/libs/*-1.0.0.jar`, req-shield에서 `./gradlew build`로 만든다).
-   기본 경로는 worktree `/Users/ykhfree/IdeaProjects/req-shield-verifier-pin`이다.
-   다른 경로는 Gradle 속성으로 준다: `./gradlew -PreqShieldDir=/path/to/req-shield test`.
-   테스트와 변이 기대값은 이 커밋에 맞춰져 있다. 다른 커밋을 쓰면 테스트가 실패할 수 있다.
-   - `2e792d2`는 원격의 어느 브랜치나 태그에도 없다. 로컬 pin worktree에만 남아 있다 (2026-11-01 확인).
-   - fork 브랜치의 기준 커밋 `5513126`은 같은 업그레이드의 다른 판이다. 두 커밋은 예제 모듈 3개(`req-shield-spring-boot4-*example`)에서만 다르고, 검증 대상 라이브러리 모듈은 같다. `5513126`에서 테스트를 돌려 보지는 않았다.
-
-`kv` CLI 자체는 req-shield가 필요 없다. 대상 소스는 `--root DIR`로, 의존 jar는 `--classpath CP`로 준다 (아래 "새 모듈에 적용하기").
-
-## 빌드와 실행
-
-모든 명령은 `translator/`에서 실행한다.
+3. CLI를 만든다. 결과는 `translator/build/install/kv/bin/kv`다.
 
 ```bash
 cd translator
-./gradlew test            # 테스트 전체 (Silicon 실행 포함, 측정 약 21분)
-./gradlew installDist     # CLI: build/install/kv/bin/kv
+./gradlew installDist
 ```
 
-자주 쓰는 Gradle 작업:
+## 사용법
 
-| 작업 | 하는 일 |
-|---|---|
-| `verifyReqShield` | KeyLocalLock 3개 변형을 증명하고 보고서를 출력한다 |
-| `verifyAspect` | aspect 캐시 모듈을 증명한다 |
-| `resolveClient`, `lowerClient` | ReqShield core sidecar를 묶고, KVIR를 출력한다 |
-| `resolveClientCoroutine`, `lowerClientCoroutine`, `verifyClientCoroutine` | ReqShield coroutine sidecar를 묶고, KVIR를 출력하고, 증명한다 |
-| `mutantsReqShield`, `mutantsAspect`, `mutantsClient`, `mutantsCoroutine` | 변이 검사를 돌리고 기대 판정과 비교한다 |
+1. 후보를 찾는다: `kv discover --classpath CP FILE.kt|DIR...`. client 모듈은 `--client`를 붙인다.
+2. sidecar를 쓴다: 모듈, 소스 파일, 상태, 신뢰 모델, 성질. 예는 `specs/`에 있다.
+3. 내장 신뢰 모델에 없는 호출(예: DB, HTTP client)은 `trusted fun`으로 계약을 쓰고 사람이 서명한다.
+4. 이름을 묶는다: `kv resolve --root DIR --classpath CP SIDECAR.kv`.
+5. 지원하지 않는 구문을 확인한다: `kv lower --root DIR --classpath CP SIDECAR.kv`.
+6. 증명한다: `kv verify --root DIR --classpath CP SIDECAR.kv`.
+
+`--root`는 sidecar의 `source` 경로가 기준으로 삼는 디렉터리다. `--classpath`는 대상 코드가 쓰는 jar다.
 
 CLI 명령 (`kv`를 인자 없이 실행하면 전체 사용법이 나온다):
 
 ```
-kv discover | resolve | lower | emit | verify   # 소스 → 증명의 각 단계
-kv mutation-sites                                # 변이를 넣을 위치
-kv hole skeleton | check                         # LLM이 채우는 불변식 hole
+kv discover | resolve | lower | emit | verify        # 소스 → 증명의 각 단계
+kv mutation-sites                                    # 변이를 넣을 위치
+kv hole skeleton | check                             # LLM이 채우는 불변식 hole
 kv spec snapshot | stale | restamp | check | cells   # 자연어 명세 → sidecar 흐름 (DESIGN-C)
 ```
+
+## 판정 읽기
 
 `kv verify`의 exit code: 0 PROVEN, 1 FAILED, 2 사용법 오류, 3 INCOMPLETE, 4 ERROR (컴파일 오류, sidecar 오류, 규칙 위반, Silicon 없음, Silicon 비정상 실행).
 
@@ -103,22 +81,14 @@ PROVEN은 모델 위의 증명이다. Silicon이 확인하지 않는 가정이 �
 4. `trusted fun`의 계약은 사람이 본문을 읽고 확인했다.
 5. 로그와 거부 카운터는 모델 상태에 영향이 없다.
 
-## 새 모듈에 적용하기
+## 자연어 명세에서 sidecar 만들기
 
-도구 코드는 req-shield의 클래스나 함수 이름을 쓰지 않는다. 대상은 sidecar의 `module`과 `source` 줄이 정한다. 단, 코드가 위 표의 세 가지 모양 중 하나여야 한다. req-shield 밖의 코드로 잰 결과는 아직 없다.
+명세가 Markdown이나 Confluence 페이지에 있을 때 쓴다 (`DESIGN-C.md`).
 
-1. 후보를 찾는다: `kv discover --classpath CP FILE.kt|DIR...` (client 모듈은 `--client`를 붙인다).
-2. sidecar를 쓴다: 모듈, 상태, 신뢰 모델, 성질. 예는 `specs/reqshield/`에 있다.
-3. 내장 신뢰 모델에 없는 호출(예: DB, HTTP client)은 `trusted fun`으로 계약을 쓰고 사람이 서명한다.
-4. 지원하지 않는 구문을 확인한다: `kv lower --root DIR --classpath CP SIDECAR.kv`.
-5. 증명한다: `kv verify --root DIR --classpath CP SIDECAR.kv`.
-
-Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
-
-1. API 토큰을 Keychain에 한 번 저장한다. 토큰은 프롬프트에서 입력한다 (명령줄에 쓰지 않는다): `security add-generic-password -s SERVICE -a EMAIL -w`
-2. 페이지를 받는다: `python3 -I translator/scripts/confluence_fetch.py --site https://SITE.atlassian.net --email EMAIL --keychain-service SERVICE --out DIR PAGE_ID...`
-3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 한국어 이름(`비밀번호: ...`, `토큰 = ...`)도 잡는다. 단, `비밀번호는 ...`처럼 조사 뒤의 값은 ASCII 글자와 숫자를 모두 담을 때만 가린다 (`DESIGN-C.md` 10.13).
-4. 받은 폴더(DIR)는 원문 그대로라서 커밋하지 않는다.
+1. 원문을 블록으로 나눈다: `kv spec snapshot --out SNAP NAME=FILE...`. 블록마다 앵커와 지문이 붙는다.
+2. sidecar의 의도 절마다 원문을 인용한다: `source "<anchor>" quote "<인용>"`.
+3. 원문이 바뀌었는지 확인한다: `kv spec stale --snapshot SNAP SIDECAR.kv`. 인용이 원문 어디에도 없으면 `stale-source` 오류다.
+4. 사람에게 보이기 전에 검사한다: `kv spec check`.
 
 명세에 새 문단이 생겼을 때 빠뜨리지 않으려면, sidecar에 범위를 적는다 (`DESIGN-C.md` 10.10):
 
@@ -129,34 +99,32 @@ exclude "conf:123456#배경/1" because "정보용 설명" sha256 "..."   // 일�
 
 `kv spec stale`은 범위 안의 블록을 어느 절도 인용하지 않고 제외 목록에도 없으면 `uncovered-block` 오류를 낸다. `review intent` 아래에서는 `scope`와 `exclude`에도 서명(`reviewed`)이 필요하다.
 
-## 폴더 구조
+Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 
-| 경로 | 내용 |
-|---|---|
-| `translator/` | 도구 본체 (Kotlin, Gradle). `src/main/kotlin/kv/`, 스크립트는 `scripts/` |
-| `specs/reqshield/` | req-shield의 서명된 sidecar 명세 |
-| `spike/` | 손으로 쓴 Viper 기준 모델. 도구의 출력을 이것과 비교한다 |
-| `mutation/` | 변이 검사의 결과와 블라인드 판정 |
-| `aicode/` | AI가 쓴 구현의 수집, 판정, 도구 결과 |
-| `pilot-c/`, `specdraft/` | 자연어 명세에서 sidecar를 만드는 흐름의 파일럿과 원문 스냅숏 |
-| `frontend-probe/` | 초기 탐색: KeyLocalLock의 K2 FIR을 출력하는 플러그인 |
-| `upstream/` | SnaKt 저장소의 기존 이슈에 남길 댓글 초안 (게시하지 않음) |
+1. API 토큰을 Keychain에 한 번 저장한다. 토큰은 프롬프트에서 입력한다 (명령줄에 쓰지 않는다): `security add-generic-password -s SERVICE -a EMAIL -w`
+2. 페이지를 받는다: `python3 -I translator/scripts/confluence_fetch.py --site https://SITE.atlassian.net --email EMAIL --keychain-service SERVICE --out DIR PAGE_ID...`
+3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 한국어 이름(`비밀번호: ...`, `토큰 = ...`)도 잡는다. 단, `비밀번호는 ...`처럼 조사 뒤의 값은 ASCII 글자와 숫자를 모두 담을 때만 가린다 (`DESIGN-C.md` 10.13).
+4. 받은 폴더(DIR)는 원문 그대로라서 커밋하지 않는다.
+
+## 알려진 한계
+
+- 위의 세 가지 모양만 다룬다. Reactor(`Mono` 사슬)로 쓴 client 프로토콜은 아직 읽지 못한다 (설계: `spike/protocol2r/DESIGN-E6-v2.md`).
+- 묶인 Kotlin 지역 변수의 계산식을 바꿔도(예: `val now = nowToEpochTime() + lockTimeoutMillis`) PROVEN이 그대로다. 도구가 `free` 값의 계산을 번역하지 않기 때문이다 (`DESIGN-v0.md` 2.12 규칙 1, `DESIGN-C.md` 10.16). 그래서 묶인 지역 변수의 계산식은 사람이 읽어야 한다.
+- `free` 묶기는 서명이 덮지 않는다. `kv resolve`는 한 값을 두 번 묶는 것(`free-duplicate`)과, client에서 읽히지 않는 경로에 묶은 것(`free-unused`)을 잡는다 (`DESIGN-C.md` 10.16). 두 묶기를 맞바꾼 경우와 L1의 `param`·`local` 오묶기는 아직 잡지 못한다. 그런 sidecar는 FAILED나 ERROR가 된다.
+- Confluence 가져오기는 공식 API 스펙에 맞춰 만들었지만, 실제 Confluence 페이지로는 아직 확인하지 않았다 (`DESIGN-C.md` 10.8의 미확인 항목).
+
+판별력 측정(변이 검사, AI가 쓴 코드의 판정)은 `MUTATION.md`, `AI-CODE.md`, `PROTOCOL2.md`에 있다.
 
 ## 문서
 
 | 문서 | 내용 |
 |---|---|
+| `DEVELOPMENT.md` | 도구 개발: 테스트 실행, Gradle 작업, 폴더 구조 |
+| `HISTORY.md` | 작업 이력 |
 | `PHASE1.md` | 조사와 1단계 계획 |
 | `DESIGN-v0.md` | KVIR, sidecar 명세, ghost 상태 (L1 모듈) |
 | `DESIGN-B.md` | aspect 캐시 모듈 |
 | `DESIGN-C.md` | 자연어 명세 → sidecar 흐름, 서명 규칙 |
-| `DESIGN-D.md` | compute 밖의 예약 단계 (AI 코드 대응) |
-| `DESIGN-E.md` | L3 client 프로토콜 (ReqShield) |
+| `DESIGN-D.md` | compute 밖의 예약 단계 |
+| `DESIGN-E.md` | L3 client 프로토콜 |
 | `MUTATION.md`, `AI-CODE.md`, `PROTOCOL2.md` | 측정 계획(결과 전 예측)과 결과 |
-
-## 열린 과제
-
-- `free` 묶기는 서명이 덮지 않는다. `kv resolve`는 한 값을 두 번 묶는 것(`free-duplicate`)과, client에서 읽히지 않는 경로에 묶은 것(`free-unused`)을 잡는다 (`DESIGN-C.md` 10.16). 두 묶기를 맞바꾼 경우와 L1의 `param`·`local` 오묶기는 아직 잡지 못한다. 그런 sidecar는 전처럼 FAILED나 ERROR가 된다.
-- 묶인 Kotlin 지역 변수의 계산식을 바꿔도(예: `val now = nowToEpochTime() + lockTimeoutMillis`) PROVEN이 그대로다. 도구가 `free` 값의 계산을 번역하지 않기 때문이다 (`DESIGN-v0.md` 2.12 규칙 1, `DESIGN-C.md` 10.16). 사용자 결정(2026-10-29)으로 알려진 한계로 둔다. 그래서 묶인 지역 변수의 계산식은 사람이 읽어야 한다.
-- Confluence 가져오기(C6)는 공식 API 스펙에 맞춰 만들었지만, 실제 Confluence 페이지로는 아직 확인하지 않았다 (`DESIGN-C.md` 10.8의 미확인 항목).
-- reactor 변형의 client 프로토콜(E6): 설계와 손 모델은 있고, 도구 확장(추정 15-23 인일)은 사용자 결정으로 미뤘다 (`spike/protocol2r/DESIGN-E6-v2.md`).
