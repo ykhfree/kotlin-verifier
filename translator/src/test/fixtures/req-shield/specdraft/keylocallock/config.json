@@ -1,0 +1,12 @@
+{
+ "format": "kv-spec-run/1",
+ "snapshot": "../../pilot-c/packet",
+ "skeleton": "SKELETON.kv",
+ "language": "LANGUAGE.md",
+ "subject": "the local lock, `KeyLocalLock`: its `tryLock`, its `unLock` and its cleanup monitor (`sweep`)",
+ "coverage": "the local lock (its tryLock, unLock, cleanup monitor, map size cap, tokens or keys)",
+ "variant": "../../specs/reqshield/keylocallock.coroutine.kv",
+ "hole": "../../pilot-c/specs-signed/keylocallock.common.kv",
+ "reference": "../../pilot-c/specs-signed/keylocallock.coroutine.kv",
+ "code": true
+}

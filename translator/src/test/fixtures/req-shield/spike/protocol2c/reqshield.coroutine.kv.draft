@@ -1,0 +1,171 @@
+// DRAFT (DESIGN-E5 5): sidecar for req-shield core-kotlin-coroutine ReqShield, the L3 client protocol under cancellation.
+// Not signed. Every `reviewed` line below is a PROPOSED note; sha256 "0000000000000000" marks a fingerprint the tool
+// computes in the signing round (kv resolve reports stale-review with the value; DESIGN-E 12.6 steps 6-8).
+// Quoted sources are blocks of `kv spec snapshot` (specdraft/reqshield-coroutine/snapshot, new) over README.md,
+// CLAUDE.md and the KDoc of the coroutine ReqShield.kt, ReqShieldConfiguration.kt, KeyLock.kt and support
+// ClientException.kt. README/CLAUDE blocks and ClientException.kt#ClientException have the core snapshot's values.
+// A `//` comment or a test of the coroutine module is no snapshot block: such a source is a `source none` line.
+review intent
+
+module com.linecorp.cse.reqshield.kotlin.coroutine.ReqShield client
+source "core-kotlin-coroutine/src/main/kotlin"
+
+// The core's scope note has sha256 "9dee5e78c92be221"; whether the unit is only the README section is not checked here.
+scope "README.md#waiting-for-another-request-lock-not-acquired"
+  reviewed "PROPOSED: this sidecar answers for every block of the README section on a request that waits for another request's lock" sha256 "0000000000000000"
+
+// ---- Types ----
+type Key   = opaque                                       // the cache key the call gets
+type Token = opaque                                       // a lock's ownership token
+enum LockType = LockType                                  // CREATE, UPDATE (the coroutine package's LockType)
+enum Mode = ReqShieldWorkMode                             // the coroutine config package's ReqShieldWorkMode
+class Data = ReqShieldData { value: Int = value }         // the cached object; `value` is the supplier's value
+
+// ---- Vocabulary (layer 3) ----
+obligation Lease(Key, LockType, Token)
+
+// As reqshield.core.kv, with the supplier `callable` (a suspend function parameter), the spawn `kotlinx.launch`, and one
+// new event form: `raised KIND` is true once a call of the entry raised that kind (DESIGN-E5 2.8; tasks do not record it).
+trace {
+  first   = first getCacheFunction
+  recheck = getCacheFunction while holds(Lease(k, CREATE, _))
+  poll    = hit getCacheFunction where !first && !holds(Lease(k, CREATE, _))
+  npoll   = count getCacheFunction where !first && !holds(Lease(k, CREATE, _))
+  consec  = trailing failures of npoll
+  sup     = last callable
+  nsup    = count callable
+  ntryC   = count KeyLock.tryLock where lt == CREATE
+  ntryU   = count KeyLock.tryLock where lt == UPDATE
+  nspawn  = count kotlinx.launch                                            // blocks the dispatcher accepted
+  cancelled = raised CANCEL                                                 // E5: some call raised a cancellation
+  derived PHASE   = first == HIT ? UPDATE : CREATE
+  derived GAVE_UP = npoll >= maxAttempt || consec >= 3
+}
+
+review vocabulary
+  reviewed "PROPOSED: the vocabulary of the lock-discipline protocol for the coroutine variant: types, enums, the Data binding, obligation Lease, the trace rules with PHASE and GAVE_UP, and the cancellation record `cancelled` (DESIGN-E 3.1, 3.2; DESIGN-E5 2.8)" sha256 "0000000000000000"
+
+// ---- Trust (layer 2) ----
+// CANCEL in `throws`: the call is a suspension point; it raises a CancellationException only when it runs in a
+// cancellable context (not inside withContext(NonCancellable)). The tool checks CANCEL against the FIR: a suspend
+// function or a suspend function type must list it, any other must not (DESIGN-E5 6, step S3).
+trusted fun KeyLock.tryLock(k: Key, lt: LockType) returns t: Token? creates Lease(k, lt, t) if t != null throws RTE, CANCEL
+  reviewed "PROPOSED: coroutine KeyLock.kt contract: a non-null token is one acquisition that the caller must release; the suspend call may throw a RuntimeException, or a CancellationException when the caller is cancelled" sha256 "0000000000000000"
+trusted fun KeyLock.unLock(k: Key, lt: LockType, t: Token) returns released: Bool consumes Lease(k, lt, t) throws RTE, CANCEL
+  reviewed "PROPOSED: coroutine KeyLock.kt contract: unLock ends the acquisition of its token; it may throw a RuntimeException; a cancelled unLock (outside NonCancellable) may not have released" sha256 "0000000000000000"
+trusted value ReqShieldConfiguration.getCacheFunction(k: Key) returns d: Data? throws RTE, CHK, CANCEL
+  reviewed "PROPOSED: a suspend user function: returns the cached data or null, and may throw" sha256 "0000000000000000"
+trusted value ReqShieldConfiguration.setCacheFunction(k: Key, d: Data, kotlin.Long) returns b: Bool throws RTE, CHK, CANCEL
+  reviewed "PROPOSED: a suspend user function: writes the cache, and may throw" sha256 "0000000000000000"
+trusted param ReqShield.getAndSetReqShieldData.callable() returns v: Int throws RTE, CHK, INTR, CANCEL
+  reviewed "PROPOSED: the caller's suspend supplier: returns a value, or throws a RuntimeException, a checked exception, an interrupt, or a CancellationException" sha256 "0000000000000000"
+
+use kotlinx.launch
+use kotlinx.withContext
+use kotlinx.ensureActive
+use kotlinx.delay
+use slf4j.Logger
+
+trusted fun com.linecorp.cse.reqshield.support.utils.decideToUpdateCache(kotlin.Long, kotlin.Long, kotlin.Int) returns b: Bool
+  reviewed "ykhfree 2026-10-27: CommonUtils.kt:19-28 reads the clock and returns passedDuration >= ttl * pct / 100; it has no lock or cache effect, and the model leaves the result free" sha256 "a858dc2f51d5892c"
+
+// ---- Assumptions (DESIGN-E 4, DESIGN-E5 2.4); A2 is off (UE3) ----
+assume A1: errors-are-fatal
+  source none "user decision UE2 (2026-10-26): a java.lang.Error ends the process, so no call throws one"
+  reviewed "PROPOSED: assumed, not proven: a java.lang.Error ends the process (in the coroutine variant this also covers a supplier Error, which catch (e: Exception) does not release: Phase 0 A_F4)" sha256 "0000000000000000"
+assume A3: accepted-tasks-run
+  source "README.md#thread-pools-and-schedulers/3" quote "accepts a `CoroutineScope` for background cache writes" sha256 "41a428d404dc17fc"
+  source none "user decision UE4 (2026-10-26): a task the executor accepted runs; for a coroutine: a block the dispatcher accepted runs"
+  reviewed "PROPOSED: assumed, not proven: a launched block that the dispatcher accepted runs (no executor shutdownNow drops it)" sha256 "0000000000000000"
+assume A4: throwing-release-ends-obligation
+  source none "user decision UE3 with A4 (2026-10-27), core ReqShield.kt:150, a code comment: A failed release must not cost the caller its data; the lock then expires on its own"
+  reviewed "PROPOSED: assumed, not proven: an unLock that throws a RuntimeException ends the obligation, and the lock expires by its lease; a cancelled unLock is not covered" sha256 "0000000000000000"
+assume A5: throwing-acquire-takes-nothing
+  source none "user decision UE3 with A5 (2026-10-27), core ReqShieldConfiguration.kt KDoc: must let the lock expire"
+  reviewed "PROPOSED: assumed, not proven: a tryLock that throws (a failure or a cancellation) leaves the caller no obligation, and the lock expires by its lease" sha256 "0000000000000000"
+assume A6: dispatch-does-not-throw
+  source none "user decision UE6 (2026-10-29): the coroutine dispatcher's dispatch does not throw, so scope.launch(start = CoroutineStart.ATOMIC) does not throw and its block runs"
+  source "README.md#thread-pools-and-schedulers/3" quote "default: a shared supervisor scope on" sha256 "41a428d404dc17fc"
+  reviewed "PROPOSED: assumed, not proven: scope.launch(start = ATOMIC) does not throw (kotlinx 1.8.1 has no catch around dispatch; Dispatchers.IO throws only after a shutdown)" sha256 "0000000000000000"
+
+// ---- The public function: one coroutine's run ----
+operation getAndSet = fun ReqShield.getAndSetReqShieldData {
+  free mode = this.reqShieldConfig.reqShieldWorkMode
+  free maxAttempt = this.reqShieldConfig.maxAttemptGetCache
+  result res
+  guard LD_write: setCacheFunction requires
+      (PHASE == CREATE && mode != ONLY_UPDATE_CACHE ==> holds(Lease(k, CREATE, _))) &&
+      (PHASE == UPDATE && mode != ONLY_CREATE_CACHE ==> holds(Lease(k, UPDATE, _)))
+    source "CLAUDE.md#work-modes/2" quote "refreshes of existing entries still happen but without a lock" sha256 "d5348c7ce8fa2571"
+    source "CLAUDE.md#work-modes/3" quote "on a cache miss every request calls the supplier and writes the cache without a lock" sha256 "b74493bbb6f1dcf8"
+    source none "user decision UE5 (2026-10-27): the fallback after the wait does not write the cache"
+    reviewed "PROPOSED (same as core): a cache write on a collapsing path holds that path's lock; the fallback after the wait writes no cache (UE5)" sha256 "0000000000000000"
+  guard LD_supplier: callable requires
+      (PHASE == CREATE && mode != ONLY_UPDATE_CACHE ==> holds(Lease(k, CREATE, _)) || GAVE_UP) &&
+      (PHASE == UPDATE && mode != ONLY_CREATE_CACHE ==> holds(Lease(k, UPDATE, _)))
+    source "ReqShield.kt#handleLockFailure" quote "end the wait early, after which the supplier is called on this coroutine as the last resort." sha256 "86fa18223492c680"
+    source "CLAUDE.md#project-overview/1" quote "ensuring only one request for the same cache key is processed at a time" sha256 "4c399b7f21c48357"
+    source "README.md#waiting-for-another-request-lock-not-acquired/2" quote "Three consecutive failures are treated as a cache outage and the request falls back to calling the supplier itself right away." sha256 "4a446045254ea7eb"
+    reviewed "PROPOSED (same as core): a supplier call on a collapsing path holds that path's lock, except the creation fallback after the wait gave up" sha256 "0000000000000000"
+  ensures MODE_create: mode == ONLY_UPDATE_CACHE ==> ntryC == 0
+    source "CLAUDE.md#work-modes/3" quote "on a cache miss every request calls the supplier and writes the cache without a lock" sha256 "b74493bbb6f1dcf8"
+    source none "ReqShield.kt:97 (coroutine), a code comment: ONLY_UPDATE_CACHE collapses requests on update only, so the creation runs without a lock."
+    reviewed "PROPOSED (same as core): ONLY_UPDATE_CACHE never tries the CREATE lock" sha256 "0000000000000000"
+  ensures MODE_update: mode == ONLY_CREATE_CACHE ==> ntryU == 0
+    source "CLAUDE.md#work-modes/2" quote "refreshes of existing entries still happen but without a lock" sha256 "d5348c7ce8fa2571"
+    source none "ReqShield.kt:69 (coroutine), a code comment: ONLY_CREATE_CACHE collapses requests on creation only, so the update runs without a lock."
+    reviewed "PROPOSED (same as core): ONLY_CREATE_CACHE never tries the UPDATE lock" sha256 "0000000000000000"
+  ensures SUP_once: nsup <= 1
+    source "ReqShield.kt#handleLockFailure" quote "end the wait early, after which the supplier is called on this coroutine as the last resort." sha256 "86fa18223492c680"
+    source "README.md#waiting-for-another-request-lock-not-acquired/3" quote "When the attempts are exhausted the request calls the supplier once." sha256 "0b4eefa677614205"
+    reviewed "PROPOSED (same as core): one request calls the supplier at most once on the calling coroutine" sha256 "0000000000000000"
+  ensures POLL_bound: npoll <= (maxAttempt < 0 ? 0 : maxAttempt)
+    source "README.md#waiting-for-another-request-lock-not-acquired/1" quote "up to `maxAttemptGetCache` times (default 60)." sha256 "b3e9e99f6203e70e"
+    reviewed "PROPOSED (same as core): the wait polls the cache at most maxAttemptGetCache times" sha256 "0000000000000000"
+  // UE7 (proposed (a)): a RET clause does not apply to a call that ends with a cancellation.
+  ensures RET_hit: first == HIT && exc != CANCEL ==> exc == NONE && res == first.obj
+    source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
+    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
+    reviewed "PROPOSED: a first read that hits returns that data, whatever the lock calls do, unless the call is cancelled" sha256 "0000000000000000"
+  ensures RET_get_error: first == THREW && exc != CANCEL ==> exc == ClientException(GET_CACHE_ERROR)
+    source "ClientException.kt#ClientException" quote "Wraps failures raised by client-provided functions (supplier, cache getter/setter, lock functions)." sha256 "a3f2f2b5d5f541a7"
+    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
+    reviewed "PROPOSED: a first read that throws gives ClientException(GET_CACHE_ERROR), unless the call is cancelled" sha256 "0000000000000000"
+  ensures RET_recheck: recheck == HIT && exc != CANCEL ==> exc == NONE && res == recheck.obj && nsup == 0 && nspawn == 0
+    source none "ReqShield.kt:104 (coroutine), a code comment: Another request may have filled the cache between our initial miss and lock acquisition."
+    source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
+    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
+    reviewed "PROPOSED: a recheck hit under the CREATE lock returns that data, with no supplier call and no background task, unless the call is cancelled" sha256 "0000000000000000"
+  ensures RET_poll: poll.hit && exc != CANCEL ==> exc == NONE && res == poll.obj && nsup == 0
+    source "ReqShield.kt#handleLockFailure" quote "Another request owns the create lock, so wait for it to fill the cache." sha256 "86fa18223492c680"
+    source "README.md#waiting-for-another-request-lock-not-acquired/1" quote "A request that loses the lock polls the cache every 50 ms" sha256 "b3e9e99f6203e70e"
+    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
+    reviewed "PROPOSED: a poll that finds data returns it without a supplier call, unless the call is cancelled" sha256 "0000000000000000"
+  ensures RET_supplier: sup == OK && exc != CANCEL ==> exc == NONE && res != null && res.value == sup.val
+    source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
+    source none "core-kotlin-coroutine ReqShieldTest.kt:838, a test name: should not fail the caller when the background cache write fails"
+    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
+    reviewed "PROPOSED: the caller gets the supplier's value, unless the call is cancelled" sha256 "0000000000000000"
+  ensures RET_supplier_error: sup == THREW && exc != CANCEL ==> exc == ClientException(SUPPLIER_ERROR)
+    source "README.md#waiting-for-another-request-lock-not-acquired/3" quote "A supplier failure is propagated as a" sha256 "0b4eefa677614205"
+    source none "user decision UE3 (2026-10-26): the caller does not lose a result it already has"
+    source none "user decision UE7 (pending): a cancelled call may end with its CancellationException instead of a result"
+    reviewed "PROPOSED: a supplier that throws gives ClientException(SUPPLIER_ERROR), whatever the unlock does, unless the call is cancelled" sha256 "0000000000000000"
+  // UE8 (proposed (a)): a cancellation reaches the caller as a CancellationException.
+  ensures RET_cancel: cancelled ==> exc == CANCEL
+    source "ReqShield.kt#handleLockFailure" quote "[delay] is a cancellation point, so a cancelled caller" sha256 "86fa18223492c680"
+    source none "core-kotlin-coroutine ReqShieldTest.kt:920 and 1008: the call fails with the TimeoutCancellationException; the task completes with the same CancellationException"
+    source none "user decision UE8 (pending): a cancellation reaches the caller as its CancellationException; a failed release does not replace it"
+    reviewed "PROPOSED: a call in which a cancellation was raised ends with a CancellationException" sha256 "0000000000000000"
+}
+
+// ---- Hole (layer 5): the polling loop; the order differs from core (read, attempts++, delay) ----
+// The six conjuncts of e5/target-coroutine.vpr (the sixth is new: the loop keeps a raised cancellation).
+hole loop ReqShield.handleLockFailure """
+  0 <= attempts && (maxAttempt < 0 ? attempts == 0 : attempts <= maxAttempt) &&
+  npoll <= (maxAttempt < 0 ? 0 : maxAttempt) && (exc == NONE && !returned && !broke ==> npoll == attempts) &&
+  (exc == NONE && !returned ==> consec == consecutiveFailures) &&
+  (broke ==> consecutiveFailures >= 3) && (!broke ==> consecutiveFailures < 3) &&
+  returned == poll.hit && (returned ==> poll.obj == result && exc == NONE) &&
+  (cancelled ==> exc == CANCEL)
+"""

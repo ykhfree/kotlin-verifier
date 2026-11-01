@@ -22,8 +22,9 @@ class SpecPipelineScriptTest {
     lateinit var dir: File
 
     private val repo = File(System.getProperty("kv.specDir")).parentFile
+    private val fixtures = File(System.getProperty("kv.fixtureDir"))
     private val script = File(System.getProperty("kv.scriptsDir"), "spec.py")
-    private val protocol = File(repo, "specdraft/keylocallock")
+    private val protocol = File(fixtures, "specdraft/keylocallock")
     private val java = File(System.getProperty("java.home"), "bin/java").path
     private val run get() = File(dir, "run")
 
@@ -127,7 +128,7 @@ class SpecPipelineScriptTest {
                 )
             }
         val config = File(dir, "config.json")
-        config.writeText(File(protocol, "config.json").readText().replace("\"../../", "\"${repo.path}/").replace("\"SKELETON.kv\"", "\"${protocol.path}/SKELETON.kv\"").replace("\"LANGUAGE.md\"", "\"${protocol.path}/LANGUAGE.md\"").replace("\"code\": true", "\"code\": false"))
+        config.writeText(File(protocol, "config.json").readText().replace("\"../../specs/", "\"${repo.path}/specs/").replace("\"../../", "\"${fixtures.path}/").replace("\"SKELETON.kv\"", "\"${protocol.path}/SKELETON.kv\"").replace("\"LANGUAGE.md\"", "\"${protocol.path}/LANGUAGE.md\"").replace("\"code\": true", "\"code\": false"))
         decisions?.let { config.writeText(config.readText().replace("\"code\": false", "\"decisions\": [\"${it.path}\"],\n \"code\": false")) }
         return ok(spec("task", "--run", run.path, "--drafter", drafter, "--config", config.path, "--env", env.path))
     }
@@ -168,7 +169,7 @@ class SpecPipelineScriptTest {
         ok(spec("cells", "--run", run.path, "--cells", pilotCells.path, "--notes", File(protocol, "pilot-cells-notes.md").path))
         specResource("answers/opus.json").copyTo(File(box(2), "ANSWERS.json"), true)
         ok(spec("collect", "--run", run.path, "--drafter", "opus"))
-        ok(spec("questions", "--run", run.path, "--groups", File(repo, "specdraft/pilot-replay/groups-opus.json").path))
+        ok(spec("questions", "--run", run.path, "--groups", File(fixtures, "specdraft/pilot-replay/groups-opus.json").path))
     }
 
     /** Words of a verification result or of the check report: none may reach a drafter in a correction round. */
@@ -370,7 +371,7 @@ class SpecPipelineScriptTest {
     @Test
     fun `align - the box holds the decisions, the check accepts the aligned draft, not an undecided or other cell, nor a cell decided open`() {
         pipeline()
-        val decisions = File(repo, "specdraft/pilot-replay/decisions-opus.json")
+        val decisions = File(fixtures, "specdraft/pilot-replay/decisions-opus.json")
         ok(spec("align", "--run", run.path, "--decisions", decisions.path))
         val alignBox = File(run, "align/box")
         assertEquals(setOf("TASK.md", "DRAFT.kv", "DECISIONS.md", "SOURCES.md", "LANGUAGE.md", "SKELETON.kv", "check.sh"), alignBox.list()!!.toSet())
@@ -449,7 +450,7 @@ class SpecPipelineScriptTest {
     fun `align --check - a verification failure fails the check and goes to FEEDBACK as error lines in DRAFT_kv positions`() {
         pipeline(fakeVerify = true)
         withCode()
-        ok(spec("align", "--run", run.path, "--decisions", File(repo, "specdraft/pilot-replay/decisions-opus.json").path))
+        ok(spec("align", "--run", run.path, "--decisions", File(fixtures, "specdraft/pilot-replay/decisions-opus.json").path))
         val draft = alignedWithoutMonitorDuty.replace("// ---- Inductive invariant", "// FAKE: verify fails\n// ---- Inductive invariant")
         assertTrue("FAKE: verify fails" in draft)
         File(run, "align/box/DRAFT.kv").writeText(draft)
@@ -493,7 +494,7 @@ class SpecPipelineScriptTest {
     fun `outcomes - every implementation runs on each option draft with --draft, and the rows go into the bundle`() {
         pipeline(fakeVerify = true)
         withCode()
-        val impls = listOf("T-sonnet-1", "T-sonnet-4").flatMap { listOf("--impl", "$it=${File(repo, "aicode/round2/impl/$it")}") }
+        val impls = listOf("T-sonnet-1", "T-sonnet-4").flatMap { listOf("--impl", "$it=${File(fixtures, "aicode/round2/impl/$it")}") }
         val args = listOf("outcomes", "--run", run.path, "--group", "D1", "--mutants", File(protocol, "decision-mutants.json").path) + impls
         val out = ok(spec(*(args + listOf("--option", "A=${File(pilotDir, "aligned/opus.kv")}", "--option", "B=${File(run, "drafts/opus/DRAFT.kv")}")).toTypedArray()))
         assertTrue("option A (C04 null, C15 stays): the draft decides the cells so (mode b)" in out, out)

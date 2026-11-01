@@ -1,0 +1,24 @@
+{
+ "cells": {
+  "C01": "DETERMINED(backed)",
+  "C02": "DETERMINED(unbacked)",
+  "C03": "DETERMINED(null)",
+  "C04": "DETERMINED(null)",
+  "C05": "DETERMINED(null)",
+  "C06": "INFEASIBLE",
+  "C07": "INFEASIBLE",
+  "C08": "DETERMINED(true)",
+  "C10": "DETERMINED(false)",
+  "C11": "DETERMINED(false)",
+  "C12": "DETERMINED(false)",
+  "C13": "DETERMINED(unbacked)",
+  "C14": "DETERMINED(stays)",
+  "C15": "DETERMINED(dropped)",
+  "C16": "DETERMINED(dropped)",
+  "C17": "DETERMINED(false)",
+  "C18": "DETERMINED(backed)",
+  "C19": "DETERMINED(null)",
+  "C20": "DETERMINED(token)"
+ },
+ "errors_outside_scenarios": []
+}

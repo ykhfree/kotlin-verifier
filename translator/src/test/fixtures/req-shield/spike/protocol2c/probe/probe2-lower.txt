@@ -1,0 +1,53 @@
+client module com.linecorp.cse.reqshield.kotlin.coroutine.ReqShield
+files ReqShield.kt
+types
+  Key = opaque
+  Token = opaque
+enums
+  LockType = com.linecorp.cse.reqshield.kotlin.coroutine.LockType {CREATE, UPDATE}
+  Mode = com.linecorp.cse.reqshield.kotlin.coroutine.config.ReqShieldWorkMode {CREATE_AND_UPDATE_CACHE, ONLY_CREATE_CACHE, ONLY_UPDATE_CACHE}
+class Data = ReqShieldData
+  value: Int = value
+obligation Lease(Key, LockType, Token)
+thrown ClientException(GET_CACHE_ERROR), ClientException(SET_CACHE_ERROR), ClientException(SUPPLIER_ERROR)
+entry getAndSet = fun ReqShield.getAndSetReqShieldData            @43:5
+  param k: Key                                                    @44:9
+  free  mode: Mode <- this.reqShieldConfig.reqShieldWorkMode (instance val reqShieldConfig.reqShieldWorkMode @70:31) @70:31
+  free  maxAttempt: Int <- this.reqShieldConfig.maxAttemptGetCache (instance val reqShieldConfig.maxAttemptGetCache @165:27) @165:27
+  result res: Data
+  status unsupported
+    U203_13 UNSUPPORTED call of kotlin.coroutines.SuspendFunction1.invoke in action getAndSet at ReqShield.kt:203:13: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @203:13
+    U204_18 UNSUPPORTED catch (e: java.util.concurrent.CancellationException) in action getAndSet at ReqShield.kt:204:18: the model cannot tell which library exceptions this type catches; it maps Throwable, Exception, RuntimeException, Error, RejectedExecutionException and InterruptedException (DESIGN-E 3.5) @204:18
+    U75_9 UNSUPPORTED call of kotlinx.coroutines.launch in action getAndSet at ReqShield.kt:75:9: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @75:9
+    U111_21 UNSUPPORTED call of kotlinx.coroutines.withContext in action getAndSet at ReqShield.kt:111:21: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @111:21
+    U241_13 UNSUPPORTED call of kotlinx.coroutines.ensureActive in action getAndSet at ReqShield.kt:241:13: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @241:13
+    U242_13 UNSUPPORTED call of kotlin.coroutines.SuspendFunction0.invoke in action getAndSet at ReqShield.kt:242:13: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @242:13
+    U246_17 UNSUPPORTED call of kotlinx.coroutines.withContext in action getAndSet at ReqShield.kt:246:17: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @246:17
+    U138_9 UNSUPPORTED call of kotlinx.coroutines.launch in action getAndSet at ReqShield.kt:138:9: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @138:9
+    U168_21 UNSUPPORTED call of kotlin.also in action getAndSet at ReqShield.kt:168:21: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @168:21
+    U170_26 UNSUPPORTED catch (e: java.util.concurrent.CancellationException) in action getAndSet at ReqShield.kt:170:26: the model cannot tell which library exceptions this type catches; it maps Throwable, Exception, RuntimeException, Error, RejectedExecutionException and InterruptedException (DESIGN-E 3.5) @170:26
+    U172_26 UNSUPPORTED catch (e: com.linecorp.cse.reqshield.support.exception.ClientException) in action getAndSet at ReqShield.kt:172:26: the model cannot tell which library exceptions this type catches; it maps Throwable, Exception, RuntimeException, Error, RejectedExecutionException and InterruptedException (DESIGN-E 3.5) @172:26
+    U181_13 UNSUPPORTED call of kotlinx.coroutines.delay in action getAndSet at ReqShield.kt:181:13: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @181:13
+  translates FIR nodes 12-415,464-507
+  body
+    unsupported call of kotlin.coroutines.SuspendFunction1.invoke: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @203:13
+    unsupported catch (e: java.util.concurrent.CancellationException): the model cannot tell which library exceptions this type catches; it maps Throwable, Exception, RuntimeException, Error, RejectedExecutionException and InterruptedException (DESIGN-E 3.5) @204:18
+    unsupported call of kotlinx.coroutines.launch: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @75:9
+    unsupported call of kotlinx.coroutines.withContext: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @111:21
+    unsupported call of kotlinx.coroutines.ensureActive: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @241:13
+    unsupported call of kotlin.coroutines.SuspendFunction0.invoke: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @242:13
+    unsupported call of kotlinx.coroutines.withContext: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @246:17
+    unsupported call of kotlinx.coroutines.launch: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @138:9
+    unsupported call of kotlin.also: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @168:21
+    unsupported catch (e: java.util.concurrent.CancellationException): the model cannot tell which library exceptions this type catches; it maps Throwable, Exception, RuntimeException, Error, RejectedExecutionException and InterruptedException (DESIGN-E 3.5) @170:26
+    unsupported catch (e: com.linecorp.cse.reqshield.support.exception.ClientException): the model cannot tell which library exceptions this type catches; it maps Throwable, Exception, RuntimeException, Error, RejectedExecutionException and InterruptedException (DESIGN-E 3.5) @172:26
+    unsupported call of kotlinx.coroutines.delay: the call is outside the model: no trusted declaration, helper or built-in model (DESIGN-E 6.4) @181:13
+ledger: 508 FIR nodes, 60 in the ledger, 448 translated
+  0-5 not-modeled property log                                    @38:1
+  6 structure client module class ReqShield                       @40:1
+  7-9 structure constructor of ReqShield                          @40:19
+  10-11 structure property reqShieldConfig of ReqShield           @41:5
+  416-463 not-modeled fun executeSetCacheFunction                 @210:5
+diagnostics
+  A180_13 ASSUMPTION Int unbounded: attempts++                    @180:13 fake=PostfixInc
+module INCOMPLETE (unsupported parts above); W1-W22: 0 violation(s)

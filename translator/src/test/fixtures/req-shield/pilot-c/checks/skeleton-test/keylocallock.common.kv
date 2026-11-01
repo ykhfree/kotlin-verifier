@@ -1,0 +1,93 @@
+// Skeleton of the KeyLocalLock specification. Format: kv-sidecar/0.
+// The binding part below (types, state, class, use, trusted fun, ghost record, witness, the free/result lines of
+// each operation) is fixed: the team's tooling derives it from the shape every implementation must follow.
+// Do not change, remove or reorder the fixed lines. Add your clauses only where a line says "DRAFT".
+
+// ---- Abstract types for String values ----
+type Key   = opaque                     // lock keys: one per (cache key, lock type)
+type Token = template "local-${Long}"   // a token "local-" + n is the number n >= 0; null is NULL
+
+// ---- Module state (one map shared by the whole JVM) ----
+state m:   Map<Key, LockInfo> = lockMap
+
+// ---- Classes reachable from the state ----
+class LockInfo = KeyLocalLock.LockInfo {
+  permits:   Semaphore     = semaphore   // free permits of the entry's semaphore (an Int)
+  isHeld:    AtomicBoolean = isHeld      // the entry's held flag (a Bool)
+  token:     Token?        = token       // the token the entry carries, or NULL
+  expiresAt: Long          = expiresAt   // the entry's expiry time in epoch milliseconds (an Int)
+}
+
+// ---- Trusted models (built into the tool) ----
+use jdk.ConcurrentHashMap.compute
+use jdk.ConcurrentHashMap.mappingCount
+use jdk.ConcurrentHashMap.racyRead
+use jdk.Semaphore
+use jdk.AtomicBoolean
+use jdk.AtomicLong
+use jdk.AtomicCell
+use jdk.System.currentTimeMillis
+use slf4j.Logger
+
+// ---- Trusted project functions (bodies read by a person) ----
+trusted fun com.linecorp.cse.reqshield.support.utils.nowToEpochTime() = clock
+  reviewed "ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()" sha256 "aa569e5b9740b13b"
+trusted fun com.linecorp.cse.reqshield.support.config.LocalLockLimit.rejectsNewEntry(kotlin.Long)
+  returns rej: Bool
+  ghost   limit: Int                    // the cap the call read
+  ensures rej ==> limit != 0
+  effects none                          // rejectionCount and logging are outside the model
+  reviewed "ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit" sha256 "c5bffa07e14e90b1"
+
+// ---- Ghost state: one record per token value ----
+ghost record tok(Token) {
+  gIssued: Bool set-once                // tryLock returned this token (the tool sets it)
+  gKey:    Key  frozen                  // the key the token was issued for (the issue rule sets it)
+  gBacked: Bool frozen                  // a map entry carried the token when it was issued (the issue rule sets it)
+  gHeld:   Bool ends                    // the acquisition has not ended (the tool sets and ends it)
+  gLease:  Int  frozen                  // the time the acquisition expires (the issue rule sets it)
+}
+witness LockInfo.token                  // a backed token is held while its key's entry carries it
+
+// ---- Operations: exactly one atomic action each ----
+operation tryLock = fun KeyLocalLock.tryLock {
+  free now        = local now           // the clock reading tryLock takes before its atomic step
+  free timeout    = this.lockTimeoutMillis
+  free rej, limit = call rejectsNewEntry
+  result res
+  // DRAFT: the issue rule, ensures clauses and allowance clauses of tryLock
+}
+
+operation unLock = fun KeyLocalLock.unLock {
+  free t: Token = param token
+  result res
+  // DRAFT: ensures clauses and allowance clauses of unLock
+}
+
+operation sweep = compute in KeyLocalLock.Companion {
+  free now = local now                  // the clock reading of one monitor pass
+  // DRAFT: ensures clauses and allowance clauses of sweep (one monitor step on one key)
+}
+
+// DRAFT: invariants and lemmas
+
+// ---- Inductive invariant: filled per implementation by a separate tool step. Do not edit. ----
+hole MI_INV """
+  // INV-E: every entry is held, has no free permit, and carries a token.
+  (forall qk: Key :: { S.m[qk] } has(S, qk) ==>
+     S.m[qk].permits == 0 && S.m[qk].isHeld && S.m[qk].token != NULL) &&
+  // The counter is never negative, and every issued token is between 0 and the counter.
+  0 <= S.seq &&
+  (forall qt: Int :: { tok(qt).gIssued } tok(qt).gIssued ==> 0 <= qt && qt <= S.seq) &&
+  // Each entry's token is a held backed token issued for this key, with the entry's lease.
+  (forall qk: Key :: { S.m[qk] } has(S, qk) ==>
+     tok(S.m[qk].token).gIssued && tok(S.m[qk].token).gKey == qk &&
+     tok(S.m[qk].token).gBacked && tok(S.m[qk].token).gHeld &&
+     tok(S.m[qk].token).gLease == S.m[qk].expiresAt) &&
+  // Each held backed token is the token of its key's entry.
+  (forall qt: Int :: { tok(qt).gHeld }
+     tok(qt).gIssued && tok(qt).gBacked && tok(qt).gHeld ==>
+       has(S, tok(qt).gKey) && S.m[tok(qt).gKey].token == qt)
+"""
+
+// DRAFT: one probe (a scenario from the empty module)

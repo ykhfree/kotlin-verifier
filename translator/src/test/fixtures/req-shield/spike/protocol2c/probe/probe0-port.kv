@@ -1,0 +1,42 @@
+// E5 probe 0: the core sidecar ported to the coroutine variant with no new syntax (DESIGN-E 8 prediction 1 style).
+module com.linecorp.cse.reqshield.kotlin.coroutine.ReqShield client
+source "core-kotlin-coroutine/src/main/kotlin"
+
+type Key   = opaque
+type Token = opaque
+enum LockType = LockType
+enum Mode = ReqShieldWorkMode
+class Data = ReqShieldData { value: Int = value }
+obligation Lease(Key, LockType, Token)
+
+trace {
+  first   = first getCacheFunction
+  recheck = getCacheFunction while holds(Lease(k, CREATE, _))
+  poll    = hit getCacheFunction where !first && !holds(Lease(k, CREATE, _))
+  npoll   = count getCacheFunction where !first && !holds(Lease(k, CREATE, _))
+  consec  = trailing failures of npoll
+  ntryC   = count KeyLock.tryLock where lt == CREATE
+  ntryU   = count KeyLock.tryLock where lt == UPDATE
+  derived PHASE   = first == HIT ? UPDATE : CREATE
+  derived GAVE_UP = npoll >= maxAttempt || consec >= 3
+}
+
+trusted fun KeyLock.tryLock(k: Key, lt: LockType) returns t: Token? creates Lease(k, lt, t) if t != null throws RTE
+trusted fun KeyLock.unLock(k: Key, lt: LockType, t: Token) returns released: Bool consumes Lease(k, lt, t) throws RTE
+trusted value ReqShieldConfiguration.getCacheFunction(k: Key) returns d: Data? throws RTE, CHK
+trusted value ReqShieldConfiguration.setCacheFunction(k: Key, d: Data, kotlin.Long) returns b: Bool throws RTE, CHK
+use slf4j.Logger
+trusted fun com.linecorp.cse.reqshield.support.utils.decideToUpdateCache(kotlin.Long, kotlin.Long, kotlin.Int) returns b: Bool
+
+assume A1: errors-are-fatal
+assume A3: accepted-tasks-run
+assume A4: throwing-release-ends-obligation
+assume A5: throwing-acquire-takes-nothing
+
+operation getAndSet = fun ReqShield.getAndSetReqShieldData {
+  free mode = this.reqShieldConfig.reqShieldWorkMode
+  free maxAttempt = this.reqShieldConfig.maxAttemptGetCache
+  result res
+  ensures MODE_create: mode == ONLY_UPDATE_CACHE ==> ntryC == 0
+  ensures RET_hit: first == HIT ==> exc == NONE && res == first.obj
+}

@@ -1,0 +1,7 @@
+cells: kv spec cells on the draft of d1 (the first that passed collection)
+  draft d1: mode a 52 DETERMINED, 13 OPEN, 0 INFEASIBLE; mode b 52 DETERMINED, 13 OPEN, 0 INFEASIBLE; 0 failing clause(s) on the code
+  reference /Users/ykhfree/AI/kotlin-verifier/pilot-c/specs-signed/keylocallock.coroutine.kv: mode a 64 DETERMINED, 1 OPEN, 0 INFEASIBLE; mode b 48 DETERMINED, 17 OPEN, 0 INFEASIBLE; 0 failing clause(s) on the code
+phase-2 box of d1: run/boxes/d1/phase2
+prompt (also in run/harness/d1/prompt-phase2.txt):
+Read TASK.md in the directory run/boxes/d1/phase2 and do the task it describes. Work only inside run/boxes/d1/phase2: do not read, list or search anything outside it.
+phase-2 box size: 65 cells (7 boundary), 65612 characters (SCENARIOS.md and ANSWERS.json: 27451); run/cells/cost.json

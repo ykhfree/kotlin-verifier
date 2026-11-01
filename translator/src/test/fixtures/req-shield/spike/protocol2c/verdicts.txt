@@ -1,0 +1,97 @@
+# DESIGN-E5 measured verdicts (2026-10-29), Silicon v.26.08-release, Z3 4.16.0.
+# Model: e5/target-coroutine.vpr (canonical: the coroutine ReqShield.kt at 2e792d2; A1, A3, A4, A5, A6 on, A2 off;
+# UE7 (a) escape `&& exc != CANCEL` in the RET clauses; UE8 (a) RET_cancel). fixed: the same with FIX of
+# tools/mutants_c.py (the Viper form of e5/fixed-coroutine.patch).
+# Produced by: bash e5/tools/run_c.sh e5/target-coroutine.vpr e5/run1 (wall clock 1400.65 s; 79 files and 2 probe
+# files once, then 79 x 16 isolation copies, 8 workers on an Apple M4 Pro).
+# Columns: base, entry, expectation, verdict, the full failing set (isolate_c.py: one copy per property ID), and
+# what the entry fails beyond its base original.
+# Expectations: base = the original; fail = DETECTED iff it fails an obligation its original does not; same = ACCEPTED
+# iff it fails exactly what its original fails; masked = the same, because the original already fails the entry's one
+# defect; pass = PROVEN; info = recorded only (decision and encoding probes).
+# Reachability: 29 refute probes per base, all reachable (0 "Refute holds").
+# Extra runs (e5/run2): K7 and K9 on the fixed base without the sixth hole conjunct fail RET_cancel (instead of HOLE);
+# the fixed original without it fails RET_cancel (a false alarm; the conjunct is needed).
+# Relabel after the run: K8 on the canonical base was `fail` and came out MISSED (its one defect, RET_cancel, is one
+# the canonical original already fails); it is now `masked`. K10 was limited to the fixed base before the run.
+# Extra runs (e5/run3), fixed base: K11 (the recheck release without NonCancellable, retried under NonCancellable
+# after a CANCEL) fails LD_own, RET_cancel; K11x (the same with the X1 encoding) fails RET_cancel only.
+canonical original                                   base   FAILED    RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical M1_no_release_on_supplier_failure          fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck   [beyond the original: LD_noleak]
+canonical M3_double_release                          fail   DETECTED  LD_own; LD_supplier; LD_transfer; RET_cancel; RET_hit; RET_recheck   [beyond the original: LD_own; LD_supplier; LD_transfer]
+canonical M4_write_without_lock_after_fallback       fail   DETECTED  LD_write; RET_cancel; RET_hit; RET_recheck; RET_supplier; RET_supplier_error   [beyond the original: LD_write; RET_supplier]
+canonical M5_unlock_with_stale_token                 fail   DETECTED  LD_own; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_own]
+canonical M6_unlock_wrong_lock_type                  fail   DETECTED  LD_own; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_own]
+canonical M7_refresh_without_lock                    fail   DETECTED  LD_supplier; LD_write; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_supplier; LD_write]
+canonical M8_create_lock_in_update_only_mode         fail   DETECTED  MODE_create; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: MODE_create]
+canonical M9_swallow_supplier_error                  fail   DETECTED  LD_own; LD_transfer; LD_write; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_own; LD_transfer; LD_write]
+canonical M10_retry_fallback_supplier                fail   DETECTED  RET_cancel; RET_hit; RET_recheck; RET_supplier_error; SUP_once   [beyond the original: SUP_once]
+canonical M11_only_failed_reads_count                fail   DETECTED  HOLE; RET_cancel; RET_hit; RET_recheck; RET_supplier_error; TERM   [beyond the original: HOLE; TERM]
+canonical M12_release_before_write                   fail   DETECTED  LD_transfer; RET_cancel; RET_hit; RET_recheck; RET_supplier; RET_supplier_error   [beyond the original: LD_transfer; RET_supplier]
+canonical C1_write_release_without_finally           same   ACCEPTED  RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical C2_recheck_release_without_flag            same   ACCEPTED  RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical C3_refresh_release_in_one_finally          same   ACCEPTED  RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical K1_recheck_release_cancellable             fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical K2_supplier_release_cancellable            fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical K3_write_release_cancellable               fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical K4_launch_not_atomic                       fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical K5_supplier_catch_ioexception              fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical K5b_supplier_catch_runtime                 fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical K6_write_release_outside_finally           fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical K7_get_wraps_cancel                        fail   DETECTED  HOLE; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: HOLE]
+canonical K8_supplier_wraps_cancel                   masked MASKED    RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical K9_poll_swallows_cancel                    fail   DETECTED  HOLE; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: HOLE]
+canonical KC1_poll_without_cancel_catch              same   ACCEPTED  RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical KC2_task_swallows_cancel                   same   ACCEPTED  RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical KC3_lock_calls_not_cancellable             same   ACCEPTED  RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical A1_off_errors_not_fatal                    fail   DETECTED  LD_noleak; RET_cancel; RET_get_error; RET_hit; RET_recheck; RET_supplier; RET_supplier_error   [beyond the original: LD_noleak; RET_get_error; RET_supplier]
+canonical A2_on_lock_calls_return                    pass   PROVEN    -
+canonical A3_off_accepted_task_may_be_dropped        fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical A4_off_throwing_unlock_keeps_obligation    fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical A5_off_throwing_trylock_may_take_lock      fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical A6_off_dispatch_may_throw                  fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier; RET_supplier_error   [beyond the original: LD_noleak; RET_supplier]
+canonical AF4_supplier_error_only                    fail   DETECTED  LD_noleak; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_noleak]
+canonical UE7b_no_cancel_escape                      info   FAILED    RET_cancel; RET_get_error; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: RET_get_error]
+canonical G1_no_early_return_fact                    info   FAILED    LD_supplier; LD_write; RET_cancel; RET_hit; RET_recheck; RET_supplier_error   [beyond the original: LD_supplier; LD_write]
+canonical K1x_recheck_cancellable_A4_covers_cancel   info   FAILED    RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+canonical X1_cancelled_release_always_keeps          info   FAILED    RET_cancel; RET_hit; RET_recheck; RET_supplier_error
+fixed     original                                   base   PROVEN    -
+fixed     M1_no_release_on_supplier_failure          fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     M3_double_release                          fail   DETECTED  LD_own; LD_supplier; LD_transfer   [beyond the original: LD_own; LD_supplier; LD_transfer]
+fixed     M4_write_without_lock_after_fallback       fail   DETECTED  LD_write; RET_supplier   [beyond the original: LD_write; RET_supplier]
+fixed     M5_unlock_with_stale_token                 fail   DETECTED  LD_own   [beyond the original: LD_own]
+fixed     M6_unlock_wrong_lock_type                  fail   DETECTED  LD_own   [beyond the original: LD_own]
+fixed     M7_refresh_without_lock                    fail   DETECTED  LD_supplier; LD_write   [beyond the original: LD_supplier; LD_write]
+fixed     M8_create_lock_in_update_only_mode         fail   DETECTED  MODE_create   [beyond the original: MODE_create]
+fixed     M9_swallow_supplier_error                  fail   DETECTED  LD_own; LD_transfer; LD_write; RET_supplier_error   [beyond the original: LD_own; LD_transfer; LD_write; RET_supplier_error]
+fixed     M10_retry_fallback_supplier                fail   DETECTED  SUP_once   [beyond the original: SUP_once]
+fixed     M11_only_failed_reads_count                fail   DETECTED  HOLE; TERM   [beyond the original: HOLE; TERM]
+fixed     M12_release_before_write                   fail   DETECTED  LD_transfer; RET_supplier   [beyond the original: LD_transfer; RET_supplier]
+fixed     C1_write_release_without_finally           same   ACCEPTED  -
+fixed     C2_recheck_release_without_flag            same   ACCEPTED  -
+fixed     C3_refresh_release_in_one_finally          same   ACCEPTED  -
+fixed     K1_recheck_release_cancellable             fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     K2_supplier_release_cancellable            fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     K3_write_release_cancellable               fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     K4_launch_not_atomic                       fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     K5_supplier_catch_ioexception              fail   DETECTED  LD_noleak; RET_supplier_error   [beyond the original: LD_noleak; RET_supplier_error]
+fixed     K5b_supplier_catch_runtime                 fail   DETECTED  LD_noleak; RET_supplier_error   [beyond the original: LD_noleak; RET_supplier_error]
+fixed     K6_write_release_outside_finally           fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     K7_get_wraps_cancel                        fail   DETECTED  HOLE; RET_cancel   [beyond the original: HOLE; RET_cancel]
+fixed     K8_supplier_wraps_cancel                   fail   DETECTED  RET_cancel   [beyond the original: RET_cancel]
+fixed     K9_poll_swallows_cancel                    fail   DETECTED  HOLE   [beyond the original: HOLE]
+fixed     K10_naive_fix_swallows_cancel              fail   DETECTED  RET_cancel   [beyond the original: RET_cancel]
+fixed     KC1_poll_without_cancel_catch              same   ACCEPTED  -
+fixed     KC2_task_swallows_cancel                   same   ACCEPTED  -
+fixed     KC3_lock_calls_not_cancellable             same   ACCEPTED  -
+fixed     A1_off_errors_not_fatal                    fail   DETECTED  LD_noleak; RET_cancel; RET_get_error; RET_hit; RET_recheck; RET_supplier; RET_supplier_error   [beyond the original: LD_noleak; RET_cancel; RET_get_error; RET_hit; RET_recheck; RET_supplier; RET_supplier_error]
+fixed     A2_on_lock_calls_return                    pass   PROVEN    -
+fixed     A3_off_accepted_task_may_be_dropped        fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     A4_off_throwing_unlock_keeps_obligation    fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     A5_off_throwing_trylock_may_take_lock      fail   DETECTED  LD_noleak   [beyond the original: LD_noleak]
+fixed     A6_off_dispatch_may_throw                  fail   DETECTED  LD_noleak; RET_hit; RET_supplier   [beyond the original: LD_noleak; RET_hit; RET_supplier]
+fixed     AF4_supplier_error_only                    fail   DETECTED  LD_noleak; RET_supplier_error   [beyond the original: LD_noleak; RET_supplier_error]
+fixed     UE7b_no_cancel_escape                      info   FAILED    RET_get_error; RET_hit; RET_supplier_error   [beyond the original: RET_get_error; RET_hit; RET_supplier_error]
+fixed     G1_no_early_return_fact                    info   FAILED    LD_supplier; LD_write   [beyond the original: LD_supplier; LD_write]
+fixed     K1x_recheck_cancellable_A4_covers_cancel   info   PROVEN    -
+fixed     X1_cancelled_release_always_keeps          info   PROVEN    -

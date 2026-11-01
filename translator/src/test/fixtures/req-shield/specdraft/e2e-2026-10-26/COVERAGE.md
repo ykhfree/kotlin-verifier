@@ -1,0 +1,32 @@
+# Coverage of SOURCES.md by DRAFT.kv
+
+One row per block that states required behavior of the local lock `KeyLocalLock` (tryLock, unLock, cleanup
+monitor, map size cap, tokens, keys). Clause IDs refer to DRAFT.kv. `issue(tryLock)` is the issue rule of tryLock
+(it has no ID). Probes are listed where they exercise the block.
+
+| Anchor | What the block requires | Clause IDs, or "not encoded" and the reason |
+|---|---|---|
+| KeyLock.kt(core)#KeyLock | Ownership is an opaque token. Only the acquiring holder can release. A holder whose lock expired and was taken over cannot release the new owner's lock. | ul_ends_only_own, ul_false_when_not_owner, ul_mismatch_keeps, tl_ends_only_expired, sw_ends_only_expired, issue(tryLock); probe pr_stale_holder. Token uniqueness ("opaque", never reused) is checked by ghost rule 1 of the tool. |
+| KeyLock.kt(core)#tryLock | Acquire the lock for key + lock type; return a token, or null when another holder owns the lock. | issue(tryLock), progress_tl_acquire_free, tl_null_when_owned, tl_entry_is_lock; probe pr_contend. Whether tryLock may take over an expired entry: see QUESTIONS Q1. |
+| KeyLock.kt(core)#unLock | Release only if the token matches the current owner; return false when not held or on mismatch. | progress_ul_release, ul_false_when_not_owner, ul_mismatch_keeps, ul_ends_only_own; probes pr_release_reacquire, pr_stale_holder. |
+| KeyLock.kt(reactor)#tryLock | Same as the core tryLock; "completes EMPTY" when another holder owns the lock. | Same clauses as KeyLock.kt(core)#tryLock. The model represents an empty completion as `NULL`. |
+| KeyLock.kt(reactor)#unLock | Same as the core unLock; a stale owner can never release an expired lock that was handed to another holder. | Same clauses as KeyLock.kt(core)#unLock; probe pr_stale_holder. |
+| KeyLock.kt(coroutine)#tryLock | Same as the core tryLock. | Same clauses as KeyLock.kt(core)#tryLock. |
+| KeyLock.kt(coroutine)#unLock | Same as the core unLock. | Same clauses as KeyLock.kt(core)#unLock. |
+| KeyLock.kt(coroutine)#lockKeyOf | Lock keys are prefixed so that a lock entry never collides with a cache entry. | Not encoded: out of the model. `Key` is opaque and the key is computed before the atomic step. |
+| README.md#global-lock-guidance/2 | Every acquisition carries an ownership token; only the acquiring holder can release; a slow, expired holder cannot release the next holder's lock. | ul_ends_only_own, ul_mismatch_keeps, ul_false_when_not_owner; probe pr_stale_holder. "Every acquisition carries a token": issue(tryLock) and ghost rule 1. |
+| README.md#cache-key-layout/2 | Lock keys are derived from the namespaced cache key with the prefix `reqshield:lock:`. | Not encoded: out of the model (key construction happens outside the lock's atomic step; `Key` is opaque). |
+| README.md#cache-key-layout/3 | Direct callers' keys are used as is. | Not encoded: out of the model (key construction, `Key` is opaque). |
+| README.md#local-lock-map-size/1 | One entry per (cache key, lock type) that is currently locked, in one JVM-wide map. | tl_entry_is_lock, ul_entry_is_lock, sw_entry_is_lock. The JVM-wide map and the (cache key, lock type) key are fixed in the skeleton (`state m`, `type Key`). Q9 covers "only while locked". |
+| README.md#local-lock-map-size/2 | An entry is dropped as soon as the lock is released. An unreleased entry is dropped by the cleanup monitor once `lockTimeoutMillis` has passed. The monitor runs every 1 s and can lag by up to 1 s. | progress_ul_release, progress_sw_drops_expired, sw_ends_only_expired, issue(tryLock) (gLease), tl_entry_is_lock. The 1 s interval and the lag: not encoded, cannot be stated (timing of the monitor is liveness). See Q2, Q3, Q8. |
+| README.md#local-lock-map-size/3 | The map is uncapped by default; `req-shield.lock.max-entries` sets the cap; `0` means uncapped. | Not encoded: configuration parsing is out of the model. The cap reaches the model only as the inputs `rej` and `limit`; "`0` means uncapped" is the trusted contract `rej ==> limit != 0`. |
+| README.md#local-lock-map-size/4 | When the map is full, a request for a new key gets a permit that no entry backs and runs as if it had the lock. Keys whose entry is already in the map are not subject to the cap. | progress_tl_capped_new_key, tl_capped_no_entry, tl_unbacked_only_capped_new_key, tl_null_when_owned (does not depend on `rej`), lem_mutual_exclusion_backed (backed tokens only); probes pr_cap_new_key, pr_cap_existing_key, pr_unbacked_unlock. "Calls the supplier and writes the cache": out of the model (ReqShield, not the lock). See Q5, Q6. |
+| README.md#local-lock-map-size/5 | The cap is soft: the size check is an estimate, not atomic with the insert, so the map can go slightly past the cap. | Not encoded on purpose: DRAFT.kv states no bound on the map size. `rej` is an arbitrary input, so the race is already allowed. See Q10. |
+| README.md#local-lock-map-size/6 | The first refusal and every 1000th after it are logged at WARN. | Not encoded: logging is out of the model (`effects none` on `rejectsNewEntry`). |
+| README.md#local-lock-map-size/7 | An unreadable cap value is logged and ignored; setting `LocalLockLimit.maxEntries = -1` in code fails fast. | Not encoded: configuration parsing and `LocalLockLimit` are out of the model. |
+| CLAUDE.md#key-components/2 | `tryLock` returns an ownership token; `unLock` releases only when the token matches. | issue(tryLock), progress_tl_acquire_free, progress_ul_release, ul_false_when_not_owner, ul_mismatch_keeps, ul_ends_only_own. |
+| CLAUDE.md#project-overview/1 | Only one request for the same cache key is processed at a time. | inv_held_backed_carried, lem_mutual_exclusion_backed (for backed tokens; README.md#local-lock-map-size/4 makes unbacked permits an explicit exception). Waiting of the other requests: out of the model (ReqShield). |
+| CLAUDE.md#reqshieldconfiguration-parameters/4 | `lockTimeoutMillis`: lock acquisition timeout, default 3000 ms. | issue(tryLock) (`gLease = now + timeout`), tl_ends_only_expired, sw_ends_only_expired, progress_sw_drops_expired, tl_null_when_owned. The default value 3000: not encoded (configuration; `timeout` is an arbitrary input). The meaning of "acquisition timeout": see Q4. |
+
+Blocks not listed are about other parts of the library (ReqShield polling, work modes, the global Redis lock, Spring
+adapters, build, tests). They do not state behavior of `KeyLocalLock`.

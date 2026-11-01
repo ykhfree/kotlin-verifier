@@ -1,0 +1,13 @@
+== R1_compute_elvis expect=pass -> ACCEPTED
+== R2_fast_path_get expect=pass -> ACCEPTED
+== M1_get_then_put expect=fail -> DETECTED
+== M2_unconditional_put expect=fail -> DETECTED
+== M3_getOrPut expect=fail -> DETECTED
+== M4_putIfAbsent_after_create expect=fail -> DETECTED
+== M5_shared_instance expect=fail -> DETECTED
+== M6_remove_on_failure expect=fail -> DETECTED
+== M7_putIfAbsent_ignore_result expect=fail -> DETECTED
+== ARB_R2_fast_path_get expect=pass -> UNEXPECTED(exit=1)
+== ARB_M3_getOrPut expect=fail -> DETECTED
+== EFF_M3_getOrPut expect=fail -> UNEXPECTED(exit=0)
+== EFF_M4_putIfAbsent_after_create expect=fail -> UNEXPECTED(exit=0)

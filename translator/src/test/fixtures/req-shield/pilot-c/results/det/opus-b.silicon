@@ -1,0 +1,59 @@
+Silicon 1.1-SNAPSHOT (6b540aa4@(detached))
+Parse warning: in macro `MI_INV_1`, the following parameters were defined but not used: S (opus-b.vpr@71.1--71.26)
+Parse warning: in macro `MI_INV_2`, the following parameters were defined but not used: S (opus-b.vpr@72.1--72.26)
+Parse warning: in macro `MI_INV_3`, the following parameters were defined but not used: S (opus-b.vpr@73.1--73.26)
+Parse warning: in macro `MI_INV_4`, the following parameters were defined but not used: S (opus-b.vpr@74.1--74.26)
+Parse warning: in macro `MI_INV_5`, the following parameters were defined but not used: S (opus-b.vpr@75.1--75.26)
+Silicon found 26 errors in 18.12s:
+  [ 0] Assert might fail. Assertion r == -1 might not hold. (opus-b.vpr@213.10--213.19)
+
+  [ 1] Assert might fail. Assertion !tok(r).gBacked might not hold. (opus-b.vpr@239.10--239.38)
+
+  [ 2] Assert might fail. Assertion r == -1 might not hold. (opus-b.vpr@265.10--265.19)
+
+  [ 3] Assert might fail. Assertion tok(r).gBacked might not hold. (opus-b.vpr@278.10--278.37)
+
+  [ 4] Assert might fail. Assertion r != -1 might not hold. (opus-b.vpr@334.10--334.19)
+
+  [ 5] Assert might fail. Assertion r == -1 might not hold. (opus-b.vpr@364.10--364.19)
+
+  [ 6] Assert might fail. Assertion r == -1 might not hold. (opus-b.vpr@409.10--409.19)
+
+  [ 7] Assert might fail. Assertion b might not hold. (opus-b.vpr@456.10--456.11)
+
+  [ 8] Assert might fail. Assertion !b might not hold. (opus-b.vpr@524.10--524.12)
+
+  [ 9] Assert might fail. Assertion !b might not hold. (opus-b.vpr@571.10--571.12)
+
+  [10] Assert might fail. Assertion b might not hold. (opus-b.vpr@603.10--603.11)
+
+  [11] Assert might fail. Assertion b might not hold. (opus-b.vpr@653.10--653.11)
+
+  [12] Assert might fail. Assertion b might not hold. (opus-b.vpr@700.10--700.11)
+
+  [13] Assert might fail. Assertion r == -1 might not hold. (opus-b.vpr@745.10--745.19)
+
+  [14] Assert might fail. Assertion tok(r).gBacked might not hold. (opus-b.vpr@760.10--760.37)
+
+  [15] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (opus-b.vpr@820.10--820.20)
+
+  [16] Assert might fail. Assertion (k in domain(S.m)) might not hold. (opus-b.vpr@850.10--850.27)
+
+  [17] Assert might fail. Assertion S.m[k] != null might not hold. (opus-b.vpr@850.10--850.27)
+
+  [18] Assert might fail. Assertion (k in domain(S.m)) might not hold. (opus-b.vpr@895.10--895.27)
+
+  [19] Assert might fail. Assertion S.m[k] != null might not hold. (opus-b.vpr@895.10--895.27)
+
+  [20] Assert might fail. Assertion b might not hold. (opus-b.vpr@942.10--942.11)
+
+  [21] Assert might fail. Assertion r == -1 might not hold. (opus-b.vpr@989.10--989.19)
+
+  [22] Assert might fail. Assertion !tok(r).gBacked might not hold. (opus-b.vpr@1015.10--1015.38)
+
+  [23] Assert might fail. Assertion r == -1 might not hold. (opus-b.vpr@1043.10--1043.19)
+
+  [24] Assert might fail. Assertion !tok(r).gBacked might not hold. (opus-b.vpr@1073.10--1073.38)
+
+  [25] Assert might fail. Assertion r == -1 might not hold. (opus-b.vpr@1104.10--1104.19)
+

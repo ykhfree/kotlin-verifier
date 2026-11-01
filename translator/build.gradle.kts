@@ -17,6 +17,10 @@ val kotlinCompilerVersion = "2.4.21"
 // the commit every test, gate and measurement was made on; the working branch moves on (PROTOCOL2.md 7).
 val reqShieldDir = providers.gradleProperty("reqShieldDir").getOrElse("/Users/ykhfree/IdeaProjects/req-shield-verifier-pin")
 
+// Test fixtures taken from the req-shield experiments: hand Viper models, pilot drafts, spec snapshots and AI-written
+// KeyLocalLock copies. NOTICE.md there names their origin and license.
+val fixtureDir = layout.projectDirectory.dir("src/test/fixtures/req-shield")
+
 // Compile classpath of req-shield's core, core-kotlin-coroutine and core-reactor modules, with the versions from
 // req-shield's libs.versions.toml. KeyLocalLock needs nothing else.
 val reqShieldClasspath: Configuration by configurations.creating
@@ -88,9 +92,11 @@ tasks.test {
     systemProperty("kv.aspectClasspath", aspectClasspath.asPath)
     systemProperty("kv.specDir", rootProject.layout.projectDirectory.dir("../specs").asFile.absolutePath)
     // The DESIGN-C pilot: the reference snapshot (packet/sources.json, tools/snapshot.py) and the drafts (frozen-final).
-    systemProperty("kv.pilotDir", rootProject.layout.projectDirectory.dir("../pilot-c").asFile.absolutePath)
+    systemProperty("kv.pilotDir", fixtureDir.dir("pilot-c").asFile.absolutePath)
     // The M5 gate (vpr_normalize.py) and the hand-written target models.
-    systemProperty("kv.spikeDir", rootProject.layout.projectDirectory.dir("../spike").asFile.absolutePath)
+    systemProperty("kv.spikeDir", fixtureDir.dir("spike").asFile.absolutePath)
+    // The req-shield fixtures that are not under pilot-c or spike (specdraft, aicode, AI-CODE-4.1.md).
+    systemProperty("kv.fixtureDir", fixtureDir.asFile.absolutePath)
     // The M8 mutant script (scripts/mutants.py), tested with a fake kv.
     systemProperty("kv.scriptsDir", layout.projectDirectory.dir("scripts").asFile.absolutePath)
     // The Kotlin compiler's own classpath: the sandbox compile.sh of scripts/aicode.py runs it as a plain kotlinc.
@@ -297,9 +303,9 @@ val mutantsAspect by tasks.registering(Exec::class) {
 }
 
 // `./gradlew mutantsClient`: DESIGN-E E4. The same script with `--suite client`: the Kotlin mutants M1-M12, the controls
-// C1-C3 and the assumption toggles of spike/protocol2/mutants.py on req-shield core ReqShield, on the original code and
-// on a copy with spike/protocol2/fixed-core.patch, checked against scripts/client-mutants-expected.txt (the full failing
-// sets of spike/protocol2/expected-verdicts.txt). Needs python3, patch and Silicon. Options: -PmutantJobs=N, -PmutantOnly=M1,C2.
+// C1-C3 and the assumption toggles of src/test/fixtures/req-shield/spike/protocol2/mutants.py on req-shield core ReqShield, on the original code and
+// on a copy with src/test/fixtures/req-shield/spike/protocol2/fixed-core.patch, checked against scripts/client-mutants-expected.txt (the full failing
+// sets of src/test/fixtures/req-shield/spike/protocol2/expected-verdicts.txt). Needs python3, patch and Silicon. Options: -PmutantJobs=N, -PmutantOnly=M1,C2.
 val mutantsClient by tasks.registering(Exec::class) {
     group = "kv"
     description = "Runs the E4 Kotlin mutant script on the client module ReqShield (original and fixed)."
@@ -308,7 +314,7 @@ val mutantsClient by tasks.registering(Exec::class) {
     val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
     val out = layout.buildDirectory.dir("kv/client-mutants").get().asFile.path
     val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
-    val patch = layout.projectDirectory.file("../spike/protocol2/fixed-core.patch").asFile.path
+    val patch = fixtureDir.file("spike/protocol2/fixed-core.patch").asFile.path
     val jobs = providers.gradleProperty("mutantJobs").getOrElse("2")
     val only = providers.gradleProperty("mutantOnly").orNull
     argumentProviders.add(
@@ -323,9 +329,9 @@ val mutantsClient by tasks.registering(Exec::class) {
 }
 
 // `./gradlew mutantsCoroutine`: DESIGN-E5 6.2 S9. The same script with `--suite coroutine`: the Kotlin mutants, controls
-// and assumption toggles of spike/protocol2c/tools/mutants_c.py on req-shield core-kotlin-coroutine ReqShield, on the
-// original code and on a copy with spike/protocol2c/fixed-coroutine.patch, checked against
-// scripts/coroutine-mutants-expected.txt (the full failing sets of spike/protocol2c/verdicts.txt). Needs python3, patch
+// and assumption toggles of src/test/fixtures/req-shield/spike/protocol2c/tools/mutants_c.py on req-shield core-kotlin-coroutine ReqShield, on the
+// original code and on a copy with src/test/fixtures/req-shield/spike/protocol2c/fixed-coroutine.patch, checked against
+// scripts/coroutine-mutants-expected.txt (the full failing sets of src/test/fixtures/req-shield/spike/protocol2c/verdicts.txt). Needs python3, patch
 // and Silicon. Options: -PmutantJobs=N, -PmutantOnly=M1,K4.
 val mutantsCoroutine by tasks.registering(Exec::class) {
     group = "kv"
@@ -335,7 +341,7 @@ val mutantsCoroutine by tasks.registering(Exec::class) {
     val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
     val out = layout.buildDirectory.dir("kv/coroutine-mutants").get().asFile.path
     val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
-    val patch = layout.projectDirectory.file("../spike/protocol2c/fixed-coroutine.patch").asFile.path
+    val patch = fixtureDir.file("spike/protocol2c/fixed-coroutine.patch").asFile.path
     val jobs = providers.gradleProperty("mutantJobs").getOrElse("2")
     val only = providers.gradleProperty("mutantOnly").orNull
     argumentProviders.add(
@@ -352,7 +358,7 @@ val mutantsCoroutine by tasks.registering(Exec::class) {
 // `./gradlew mechanicalMutants`: the mechanical mutation measurement of MUTATION.md. scripts/mechanical.py lists the
 // mutation sites of the six modules with `kv mutation-sites`, applies each to a temp copy, runs `kv emit`, and runs
 // `kv verify` (Silicon, with its budget) once per normalized model hash. It writes results.jsonl, summary.md and
-// judge/ to ../mutation; the copies, models and reports go to build/kv/mechanical. Needs python3 and Silicon.
+// judge/ to build/kv/mutation-results (-PmutantResults=DIR); the copies, models and reports go to build/kv/mechanical. Needs python3 and Silicon.
 // Options: -PmutantJobs=N (parallel runs, default 3), -PmutantModules=keylocallock.core,aspect.webflux (a subset),
 // -PmutantResults=DIR (another results directory, relative to this project, e.g. for a re-measurement).
 val mechanicalMutants by tasks.registering(Exec::class) {
@@ -362,9 +368,9 @@ val mechanicalMutants by tasks.registering(Exec::class) {
     executable = "python3"
     val kv = layout.buildDirectory.file("install/kv/bin/kv").get().asFile.path
     val work = layout.buildDirectory.dir("kv/mechanical").get().asFile.path
-    val results = layout.projectDirectory.dir(providers.gradleProperty("mutantResults").getOrElse("../mutation")).asFile.path
+    val results = layout.projectDirectory.dir(providers.gradleProperty("mutantResults").getOrElse(layout.buildDirectory.dir("kv/mutation-results").get().asFile.path)).asFile.path
     val specs = layout.projectDirectory.dir("../specs/reqshield").asFile.path
-    val normalizer = layout.projectDirectory.file("../spike/vpr_normalize.py").asFile.path
+    val normalizer = fixtureDir.file("spike/vpr_normalize.py").asFile.path
     val jobs = providers.gradleProperty("mutantJobs").getOrElse("3")
     val modules = providers.gradleProperty("mutantModules").orNull
     argumentProviders.add(
@@ -378,9 +384,9 @@ val mechanicalMutants by tasks.registering(Exec::class) {
     )
 }
 
-// `./gradlew aicodeEnv`: the AI-written-code measurement of ../AI-CODE.md. Writes build/kv/aicode-env.json, which
+// `./gradlew aicodeEnv`: the AI-written-code measurement of AI-CODE.md (kotlin-verifier-experiments). Writes build/kv/aicode-env.json, which
 // scripts/aicode.py reads (and scripts/spec.py, DESIGN-C.md C5, when it creates a run): the installed kv, the req-shield checkout, the KeyLocalLock compile classpath and flags, the
-// compiler's own classpath (for the sandbox compile.sh), the specs, AI-CODE.md, the results directory (../aicode) and
+// compiler's own classpath (for the sandbox compile.sh), the specs, the AI-CODE.md 4.1 excerpt, the results directory (-PaicodeResults=DIR) and
 // the work directory for sandboxes and copies (-PaicodeWork=DIR, default build/kv/aicode-work).
 val aicodeEnv by tasks.registering {
     group = "kv"
@@ -399,8 +405,8 @@ val aicodeEnv by tasks.registering {
                 "kotlinc" to reqShieldKotlincArgs,
                 "compilerClasspath" to configurations.runtimeClasspath.get().asPath,
                 "specs" to layout.projectDirectory.dir("../specs/reqshield").asFile.canonicalPath,
-                "aiCode" to layout.projectDirectory.file("../AI-CODE.md").asFile.canonicalPath,
-                "results" to layout.projectDirectory.dir("../aicode").asFile.canonicalPath,
+                "aiCode" to fixtureDir.file("AI-CODE-4.1.md").asFile.canonicalPath,
+                "results" to providers.gradleProperty("aicodeResults").getOrElse(layout.buildDirectory.dir("kv/aicode-results").get().asFile.path),
                 "work" to File(work).absolutePath,
             )
         env.get().asFile.apply {

@@ -1,0 +1,185 @@
+// Skeleton of the KeyLocalLock specification. Format: kv-sidecar/0.
+// The binding part below (types, state, class, use, trusted fun, ghost record, witness, the free/result lines of
+// each operation) is fixed: the team's tooling derives it from the shape every implementation must follow.
+// Do not change, remove or reorder the fixed lines. Add your clauses only where a line says "DRAFT".
+
+// ---- Abstract types for String values ----
+type Key   = opaque                     // lock keys: one per (cache key, lock type)
+type Token = template "local-${Long}"   // a token "local-" + n is the number n >= 0; null is NULL
+
+// ---- Module state (one map shared by the whole JVM) ----
+state m:   Map<Key, LockInfo> = lockMap
+
+// ---- Classes reachable from the state ----
+class LockInfo = KeyLocalLock.LockInfo {
+  permits:   Semaphore     = semaphore   // free permits of the entry's semaphore (an Int)
+  isHeld:    AtomicBoolean = isHeld      // the entry's held flag (a Bool)
+  token:     Token?        = token       // the token the entry carries, or NULL
+  expiresAt: Long          = expiresAt   // the entry's expiry time in epoch milliseconds (an Int)
+}
+
+// ---- Trusted models (built into the tool) ----
+use jdk.ConcurrentHashMap.compute
+use jdk.ConcurrentHashMap.mappingCount
+use jdk.ConcurrentHashMap.racyRead
+use jdk.Semaphore
+use jdk.AtomicBoolean
+use jdk.AtomicLong
+use jdk.AtomicCell
+use jdk.System.currentTimeMillis
+use slf4j.Logger
+
+// ---- Trusted project functions (bodies read by a person) ----
+trusted fun com.linecorp.cse.reqshield.support.utils.nowToEpochTime() = clock
+  reviewed "ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()" sha256 "aa569e5b9740b13b"
+trusted fun com.linecorp.cse.reqshield.support.config.LocalLockLimit.rejectsNewEntry(kotlin.Long)
+  returns rej: Bool
+  ghost   limit: Int                    // the cap the call read
+  ensures rej ==> limit != 0
+  effects none                          // rejectionCount and logging are outside the model
+  reviewed "ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit" sha256 "c5bffa07e14e90b1"
+
+// ---- Ghost state: one record per token value ----
+ghost record tok(Token) {
+  gIssued: Bool set-once                // tryLock returned this token (the tool sets it)
+  gKey:    Key  frozen                  // the key the token was issued for (the issue rule sets it)
+  gBacked: Bool frozen                  // a map entry carried the token when it was issued (the issue rule sets it)
+  gHeld:   Bool ends                    // the acquisition has not ended (the tool sets and ends it)
+  gLease:  Int  frozen                  // the time the acquisition expires (the issue rule sets it)
+}
+witness LockInfo.token                  // a backed token is held while its key's entry carries it
+
+// ---- Operations: exactly one atomic action each ----
+operation tryLock = fun KeyLocalLock.tryLock {
+  free now        = local now           // the clock reading tryLock takes before its atomic step
+  free timeout    = this.lockTimeoutMillis
+  free rej, limit = call rejectsNewEntry
+  result res
+  // DRAFT: the issue rule, ensures clauses and allowance clauses of tryLock
+
+  // source: [KeyLock.kt(core)#tryLock] "Acquires the lock for [key] + [lockType]."
+  // source: [README.md#local-lock-map-size/2] "once `lockTimeoutMillis` has passed"
+  // source: [README.md#local-lock-map-size/4] "Once the map is full, a request for a **new** key is handed a permit that no map entry backs."
+  issue res { gKey = k; gBacked = carried(S, k, res); gLease = now + timeout }
+
+  // source: [KeyLock.kt(core)#tryLock] "@return an opaque ownership token, or null when another holder owns the lock."
+  // source: [README.md#local-lock-map-size/4] "are not subject to the cap at all."
+  // source: [CLAUDE.md#project-overview/1] "ensuring only one request for the same cache key is processed at a time"
+  ensures tryLock_held_key_returns_null: old(has(S, k)) ==> res == NULL
+
+  // source: [KeyLock.kt(core)#tryLock] "@return an opaque ownership token, or null when another holder owns the lock."
+  // source: [KeyLock.kt(core)#KeyLock] "Ownership is represented by an opaque token"
+  ensures tryLock_held_key_unchanged: old(has(S, k)) ==>
+    has(S, k) && S.m[k].token == old(S.m[k].token) && S.m[k].expiresAt == old(S.m[k].expiresAt)
+
+  // source: [KeyLock.kt(core)#tryLock] "Acquires the lock for [key] + [lockType]."
+  // source: [README.md#local-lock-map-size/3] "The map is uncapped by default."
+  // source: [README.md#local-lock-map-size/1] "keeps one entry per `(cache key, lock type)` it is currently"
+  ensures progress_tryLock_free_key_acquires: !old(has(S, k)) && !rej ==>
+    res != NULL && carried(S, k, res)
+
+  // source: [README.md#local-lock-map-size/2] "once `lockTimeoutMillis` has passed"
+  // source: [CLAUDE.md#reqshieldconfiguration-parameters/4] "`lockTimeoutMillis`: Lock acquisition timeout (default: 3000ms)"
+  ensures tryLock_sets_lease: res != NULL && has(S, k) && carried(S, k, res) ==>
+    S.m[k].expiresAt == now + timeout
+
+  // source: [README.md#local-lock-map-size/4] "Once the map is full, a request for a **new** key is handed a permit that no map entry backs."
+  // source: [README.md#local-lock-map-size/4] "no added latency, and the cache still gets populated"
+  ensures progress_tryLock_cap_refusal_proceeds: !old(has(S, k)) && rej ==>
+    res != NULL && !has(S, k)
+
+  // source: [README.md#local-lock-map-size/4] "Once the map is full, a request for a **new** key is handed a permit that no map entry backs."
+  unbacked_only_if tryLock_unbacked_only_on_cap_refusal: rej
+}
+
+operation unLock = fun KeyLocalLock.unLock {
+  free t: Token = param token
+  result res
+  // DRAFT: ensures clauses and allowance clauses of unLock
+
+  // source: [KeyLock.kt(core)#unLock] "Releases the lock for [key] + [lockType] only if [token] matches the current owner."
+  // source: [KeyLock.kt(core)#unLock] "@return false when the lock is not held or the token does not match the current owner."
+  // source: [CLAUDE.md#key-components/2] "`unLock` only releases when the token matches"
+  ensures unLock_true_only_for_owner: res ==> old(carried(S, k, t))
+
+  // source: [README.md#local-lock-map-size/2] "An entry is dropped as soon as the lock is released"
+  // source: [KeyLock.kt(core)#unLock] "Releases the lock for [key] + [lockType] only if [token] matches the current owner."
+  ensures progress_unLock_owner_releases: old(carried(S, k, t)) ==> res && !has(S, k)
+
+  // source: [KeyLock.kt(core)#KeyLock] "cannot release the new owner's lock."
+  // source: [CLAUDE.md#key-components/2] "so a slow holder cannot release someone else's lock"
+  ensures unLock_failure_changes_nothing: !res ==>
+    (old(has(S, k)) == has(S, k)) &&
+    (old(has(S, k)) ==> (S.m[k].token == old(S.m[k].token) && S.m[k].expiresAt == old(S.m[k].expiresAt)))
+
+  // source: [KeyLock.kt(core)#KeyLock] "only the holder that acquired the lock can"
+  // source: [CLAUDE.md#key-components/2] "`unLock` only releases when the token matches"
+  ends_only_if unLock_ends_only_presented_token: qt == t && res
+}
+
+operation sweep = compute in KeyLocalLock.Companion {
+  free now = local now                  // the clock reading of one monitor pass
+  // DRAFT: ensures clauses and allowance clauses of sweep (one monitor step on one key)
+
+  // source: [README.md#local-lock-map-size/2] "an entry whose holder never released it"
+  // source: [README.md#local-lock-map-size/2] "cleanup monitor once `lockTimeoutMillis` has passed"
+  ensures sweep_never_adds_or_changes: has(S, k) ==>
+    old(has(S, k)) && S.m[k].token == old(S.m[k].token) && S.m[k].expiresAt == old(S.m[k].expiresAt)
+
+  // source: [README.md#local-lock-map-size/2] "an entry whose holder never released it"
+  // source: [README.md#local-lock-map-size/2] "cleanup monitor once `lockTimeoutMillis` has passed"
+  ensures progress_sweep_drops_expired: old(has(S, k)) && old(S.m[k].expiresAt) <= now ==> !has(S, k)
+
+  // source: [README.md#local-lock-map-size/2] "cleanup monitor once `lockTimeoutMillis` has passed"
+  ensures sweep_keeps_unexpired: old(has(S, k)) && now < old(S.m[k].expiresAt) ==> has(S, k)
+
+  // source: [README.md#local-lock-map-size/2] "an entry whose holder never released it"
+  // source: [README.md#local-lock-map-size/2] "cleanup monitor once `lockTimeoutMillis` has passed"
+  ends_only_if sweep_ends_only_expired: tok(qt).gLease <= now
+}
+
+// DRAFT: invariants and lemmas
+
+// source: none (consistency fact: restates the witness and ghost rule 2, so that the lemma below follows; a held backed token is carried by the entry of its own key)
+invariant inv_held_token_is_carried: forall x: Int :: { tok(x).gHeld }
+  tok(x).gIssued && tok(x).gBacked && tok(x).gHeld ==> carried(S, tok(x).gKey, x)
+
+// source: [README.md#local-lock-map-size/2] "cleanup monitor once `lockTimeoutMillis` has passed"
+invariant inv_entry_expiry_is_lease: forall x: Int :: { tok(x).gHeld }
+  tok(x).gIssued && tok(x).gBacked && tok(x).gHeld && has(S, tok(x).gKey) ==>
+    S.m[tok(x).gKey].expiresAt == tok(x).gLease
+
+// source: [README.md#local-lock-map-size/4] "a permit that no map entry backs"
+invariant inv_unbacked_token_not_carried: forall x: Int :: { tok(x).gIssued }
+  tok(x).gIssued && !tok(x).gBacked ==> !carried(S, tok(x).gKey, x)
+
+// source: [KeyLock.kt(core)#KeyLock] "Lock used to collapse concurrent requests for the same cache key."
+// source: [CLAUDE.md#project-overview/1] "ensuring only one request for the same cache key is processed at a time"
+lemma lem_one_backed_holder_per_key: forall a: Int :: { tok(a).gHeld }
+  forall b: Int :: { tok(b).gHeld }
+    tok(a).gIssued && tok(a).gBacked && tok(a).gHeld &&
+    tok(b).gIssued && tok(b).gBacked && tok(b).gHeld &&
+    tok(a).gKey == tok(b).gKey ==> a == b
+
+// ---- Inductive invariant: filled per implementation by a separate tool step. Do not edit. ----
+hole MI_INV """
+  true
+"""
+
+// DRAFT: one probe (a scenario from the empty module)
+
+// source: none (probe: shows that the ensures clauses are satisfiable and not vacuous; no sentence of the text describes this scenario)
+probe(pk: Key, a: Int, d: Int) requires d > 0 {
+  r := tryLock(pk, now = a, timeout = d, rej = true, limit = 1)
+  assert r != NULL
+  w := unLock(pk, t = r)
+  assert !w
+  x := tryLock(pk, now = a, timeout = d, rej = false, limit = 0)
+  assert x != NULL
+  y := tryLock(pk, now = a + 1, timeout = d, rej = false, limit = 0)
+  assert y == NULL
+  ok := unLock(pk, t = x)
+  assert ok
+  z := tryLock(pk, now = a + 2, timeout = d, rej = false, limit = 0)
+  assert z != NULL
+}

@@ -28,7 +28,7 @@ class ReserveVerifyTest {
 
     private companion object {
         /** The repository root: the parent of `specs/`. */
-        val repo: File = specDir.parentFile.parentFile
+        val repo = File(System.getProperty("kv.fixtureDir"))
 
         /** The text of the AI implementation [id] of round 2. */
         fun ai(id: String) = File(repo, "aicode/round2/impl/$id/KeyLocalLock.kt").readText()

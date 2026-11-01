@@ -4,7 +4,7 @@
 
 ## 테스트 준비
 
-테스트와 아래 Gradle 작업은 req-shield 코드를 시험 대상(fixture)으로 쓴다.
+테스트와 아래 Gradle 작업은 req-shield 코드를 시험 대상(fixture)으로 쓴다. req-shield 실험에서 가져온 테스트 입력은 `translator/src/test/fixtures/req-shield/`에 있다. 출처와 라이선스는 그 폴더의 `NOTICE.md`에 있다.
 
 1. `README.md`의 "설치" 1-2번 (JDK 21, Viper).
 2. req-shield의 `2e792d2` 커밋 checkout과 그 jar (`*/build/libs/*-1.0.0.jar`, req-shield에서 `./gradlew build`로 만든다).
@@ -38,12 +38,11 @@ cd translator
 | 경로 | 내용 |
 |---|---|
 | `translator/` | 도구 본체 (Kotlin, Gradle). `src/main/kotlin/kv/`, 스크립트는 `scripts/` |
-| `specs/reqshield/` | req-shield의 서명된 sidecar 명세 |
-| `spike/` | 손으로 쓴 Viper 기준 모델. 도구의 출력을 이것과 비교한다 |
-| `mutation/` | 변이 검사의 결과와 블라인드 판정 |
-| `aicode/` | AI가 쓴 구현의 수집, 판정, 도구 결과 |
-| `pilot-c/`, `specdraft/` | 자연어 명세에서 sidecar를 만드는 흐름의 파일럿과 원문 스냅숏 |
-| `frontend-probe/` | 초기 탐색: KeyLocalLock의 K2 FIR을 출력하는 플러그인 |
+| `specs/reqshield/` | req-shield의 서명된 sidecar 명세 (sidecar 예이자 테스트 입력) |
+| `translator/src/test/fixtures/req-shield/` | req-shield 실험에서 가져온 테스트 입력: 손 Viper 모델(`spike/`), 파일럿 초안(`pilot-c/`), 명세 스냅숏(`specdraft/`), AI가 쓴 구현(`aicode/`) |
 | `upstream/` | SnaKt 저장소의 기존 이슈에 남길 댓글 초안 (게시하지 않음) |
 
-작업 이력과 측정 결과의 요약은 `HISTORY.md`에 있다.
+실험 기록(변이 검사, AI가 쓴 코드, 파일럿, 손 모델 전체, 측정 보고서 `MUTATION.md`·`AI-CODE.md`·`PROTOCOL2.md`·`PHASE1.md`)은 비공개 저장소 `kotlin-verifier-experiments`에 있다.
+설계 문서가 `spike/`, `aicode/`, `mutation/`, `pilot-c/`, `specdraft/`, `frontend-probe/` 아래의 경로를 가리키면, 그 파일은 테스트 입력 폴더나 실험 저장소에 있다.
+
+작업 이력은 `HISTORY.md`에 있다.

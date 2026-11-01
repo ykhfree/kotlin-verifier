@@ -1,0 +1,693 @@
+// DESIGN-E5 hand model: req-shield ReqShield (core-kotlin-coroutine), lock discipline under cancellation.
+// Hand-written "expected emitter output" of the E5 lowering, in the layout of the tool's core output (kv emit of
+// specs/reqshield/reqshield.core.kv), not tool output.
+// Source: core-kotlin-coroutine/src/main/kotlin/com/linecorp/cse/reqshield/kotlin/coroutine/ReqShield.kt at 2e792d2.
+// `@<line>` in comments is a line of that file.
+//
+// What E5 adds to the core encoding (DESIGN-E5 2):
+// 1. Exception kind CANCEL (kotlinx.coroutines.CancellationException, an IllegalStateException): an Exception, so
+//    IS_EXCEPTION covers it; `catch (e: CancellationException)` takes only CANCEL; `catch (e: ClientException)` takes
+//    the kinds the module throws itself.
+// 2. Every cancellation point has a parameter cx (cancellable context): a suspend trusted call, ensureActive, delay.
+//    cx is true outside withContext(NonCancellable) and false inside it (kotlinx 1.8.1 Builders.common.kt:134-136).
+//    With cx a point may raise CANCEL; a cancelled call has no result and creates no obligation.
+// 3. A cancelled unLock may or may not have released: cancelKeeps(k, lt, t) is unknown. A4 covers only the lock
+//    store's own failures (RTE), not a cancellation (ReqShieldTest.kt:927 of the coroutine module: "Cancellation must
+//    release the lock before its TTL").
+// 4. scope.launch(start = CoroutineStart.ATOMIC) { ... } is a spawn (the block is a task). A6 (UE6 (a)): the
+//    dispatcher's dispatch does not throw, so launch does not throw. A3: a block the dispatcher accepted runs. With
+//    another start (atomic false) a cancelled scope may drop the block before it starts.
+// 5. The RET clauses do not apply to a call that ends with a cancellation (UE7 proposal); RET_cancel: a raised
+//    CANCEL is the call's exception (UE8 proposal). The trace field `cancelled` records a raised CANCEL.
+// Canonical assumptions: A1, A3, A4, A5, A6 on; A2 off (UE3), as the signed core sidecar plus UE6 (a).
+
+domain Key {}
+
+// A5 off: the token of a Lease the store took although the call threw. The caller never sees it.
+domain LostToken {
+  function lostToken(k: Key, lt: Int): Int
+}
+
+// A cancelled unLock: the obligation stays when the cancellation came before the release took effect (unknown).
+domain CancelledRelease {
+  function cancelKeeps(k: Key, lt: Int, t: Int): Bool
+}
+
+define NULL (-1)  // null of Token?
+
+// LockType (com.linecorp.cse.reqshield.kotlin.coroutine.LockType)
+define CREATE 0
+define UPDATE 1
+
+// Mode (com.linecorp.cse.reqshield.kotlin.coroutine.config.ReqShieldWorkMode)
+define CREATE_AND_UPDATE_CACHE 0
+define ONLY_CREATE_CACHE 1
+define ONLY_UPDATE_CACHE 2
+
+// Exception kinds (DESIGN-E 3.5); NONE = no exception
+define NONE 0
+define ClientException_GET_CACHE_ERROR 1
+define ClientException_SET_CACHE_ERROR 2
+define ClientException_SUPPLIER_ERROR 3
+define REE 4
+define RTE 5
+define CHK 6
+define INTR 7
+define CANCEL 8
+define ERR 9
+define IS_EXCEPTION(e) (ClientException_GET_CACHE_ERROR <= e && e <= CANCEL)  // catch (e: Exception)
+
+// Event outcomes in the trace record
+define HIT 1
+define MISS 2
+define THREW 3
+define OK 1
+
+// ---- Assumptions of the trusted models (DESIGN-E 4); 'assume' lines of the sidecar ----
+define ERRORS_ARE_FATAL true  // A1 assumed
+define LOCK_CALLS_THROW true  // A2 not assumed
+define ACCEPTED_TASKS_RUN true  // A3 assumed
+define THROWING_UNLOCK_RELEASES true  // A4 assumed
+define THROWING_TRYLOCK_TAKES_NOTHING true  // A5 assumed
+define DISPATCH_NEVER_THROWS true  // A6 assumed
+define MAY_ERR (!ERRORS_ARE_FATAL)
+
+// ---- Obligation (DESIGN-E 3.1) ----
+predicate Lease(k: Key, lt: Int, t: Int)
+define NO_LEASES [true, forperm qk: Key, qlt: Int, qt: Int [Lease(qk, qlt, qt)] :: false]  // LD_noleak: the thread holds no obligation
+define HOLDS(k, lt) (!(forperm qk: Key, qlt: Int, qt: Int [Lease(qk, qlt, qt)] :: !(qk == k && qlt == lt)))
+
+// LD_write: before each call of setCacheFunction (sidecar guard)
+define GUARD_LD_write(k, phase, mode) ((phase == CREATE && mode != ONLY_UPDATE_CACHE ==> HOLDS(k, CREATE)) && (phase == UPDATE && mode != ONLY_CREATE_CACHE ==> HOLDS(k, UPDATE)))
+// LD_supplier: before each call of callable (sidecar guard)
+define GUARD_LD_supplier(k, phase, mode, gaveUp) ((phase == CREATE && mode != ONLY_UPDATE_CACHE ==> HOLDS(k, CREATE) || gaveUp) && (phase == UPDATE && mode != ONLY_CREATE_CACHE ==> HOLDS(k, UPDATE)))
+
+// ---- Data (sidecar: class Data) ----
+field value: Int
+
+// ---- Trace record (DESIGN-E 3.2): one per thread run ----
+field first: Int
+field firstObj: Ref
+field recheck: Int
+field recheckObj: Ref
+field pollHit: Bool
+field pollObj: Ref
+field npoll: Int
+field consec: Int
+field sup: Int
+field supVal: Int
+field nsup: Int
+field ntryC: Int
+field ntryU: Int
+field nspawn: Int
+field cancelled: Bool
+
+define TR(tr) (acc(tr.first) && acc(tr.firstObj) && acc(tr.recheck) && acc(tr.recheckObj) && acc(tr.pollHit) && acc(tr.pollObj) && acc(tr.npoll) && acc(tr.consec) && acc(tr.sup) && acc(tr.supVal) && acc(tr.nsup) && acc(tr.ntryC) && acc(tr.ntryU) && acc(tr.nspawn) && acc(tr.cancelled))
+
+define TR_NEW(tr) {
+  tr := new(*)
+  tr.first := 0
+  tr.firstObj := null
+  tr.recheck := 0
+  tr.recheckObj := null
+  tr.pollHit := false
+  tr.pollObj := null
+  tr.npoll := 0
+  tr.consec := 0
+  tr.sup := 0
+  tr.supVal := 0
+  tr.nsup := 0
+  tr.ntryC := 0
+  tr.ntryU := 0
+  tr.nspawn := 0
+  tr.cancelled := false
+}
+
+define PHASE(tr) (tr.first == HIT ? UPDATE : CREATE)
+define GAVE_UP(tr, maxAttempt) (tr.npoll >= maxAttempt || tr.consec >= 3)
+
+// Event rules (DESIGN-E 3.2): after each call of a trusted model, the first group whose condition holds
+define EV_getCacheFunction(tr, k, e, d) {
+  if (tr.first == 0) {
+    tr.first := ((e) != NONE ? THREW : ((d) != null ? HIT : MISS))
+    tr.firstObj := d
+  } elseif (HOLDS(k, CREATE)) {
+    tr.recheck := ((e) != NONE ? THREW : ((d) != null ? HIT : MISS))
+    tr.recheckObj := d
+  } else {
+    tr.npoll := tr.npoll + 1
+    if ((e) == NONE) {
+      tr.consec := 0
+      if ((d) != null) {
+        tr.pollHit := true
+        tr.pollObj := d
+      }
+    } else {
+      tr.consec := tr.consec + 1
+    }
+  }
+}
+define EV_KeyLock_tryLock(tr, lt) {
+  if (lt == CREATE) {
+    tr.ntryC := tr.ntryC + 1
+  } else {
+    tr.ntryU := tr.ntryU + 1
+  }
+}
+define EV_callable(tr, e, v) {
+  tr.nsup := tr.nsup + 1
+  tr.sup := ((e) == NONE ? OK : THREW)
+  tr.supVal := v
+}
+// `cancelled = raised CANCEL` (E5): after each call of an entry that may raise CANCEL
+define EV_raised_CANCEL(tr, e) {
+  if ((e) == CANCEL) {
+    tr.cancelled := true
+  }
+}
+
+method KeyLock_tryLock(k: Key, lt: Int, cx: Bool) returns (exc: Int, t: Int)
+  ensures exc == NONE || (LOCK_CALLS_THROW && exc == RTE) || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)
+  ensures exc != NONE ==> t == NULL
+  ensures t != NULL ==> Lease(k, lt, t)
+  ensures exc != NONE && !THROWING_TRYLOCK_TAKES_NOTHING ==> Lease(k, lt, lostToken(k, lt))  // A5
+
+method KeyLock_unLock(k: Key, lt: Int, t: Int, cx: Bool) returns (exc: Int, released: Bool)
+  requires t != NULL && Lease(k, lt, t)  // LD_own: only the holder releases
+  ensures exc == NONE || (LOCK_CALLS_THROW && exc == RTE) || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)
+  ensures exc != NONE && exc != CANCEL && !THROWING_UNLOCK_RELEASES ==> Lease(k, lt, t)  // A4
+  ensures exc == CANCEL && cancelKeeps(k, lt, t) ==> Lease(k, lt, t)  // a cancelled release may not have run
+
+method getCacheFunction(k: Key, cx: Bool) returns (exc: Int, d: Ref)
+  ensures exc == NONE || exc == RTE || exc == CHK || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)
+  ensures exc != NONE ==> d == null
+
+method setCacheFunction(k: Key, d: Ref, cx: Bool) returns (exc: Int, b: Bool)
+  ensures exc == NONE || exc == RTE || exc == CHK || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)
+
+method callable(cx: Bool) returns (exc: Int, v: Int)
+  ensures exc == NONE || exc == RTE || exc == CHK || exc == INTR || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)
+
+// scope.launch(start) { block } (kotlinx 1.8.1 Builders.common.kt:43-54, CoroutineStart.kt:47-55, 86-92): ATOMIC starts
+// the block even in a cancelled scope; dispatch may throw only without A6. A3: an accepted block runs.
+method kotlinx_launch(atomic: Bool) returns (exc: Int, dropped: Bool)
+  ensures exc == NONE || (!DISPATCH_NEVER_THROWS && (exc == REE || exc == RTE)) || (MAY_ERR && exc == ERR)  // A6
+  ensures dropped ==> exc == NONE && (!atomic || !ACCEPTED_TASKS_RUN)  // A3
+
+// currentCoroutineContext().ensureActive() (Job.kt:575-577, 593-595): CANCEL if the job is cancelled.
+method kotlinx_ensureActive(cx: Bool) returns (exc: Int)
+  ensures exc == NONE || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)
+
+// delay(ms) (Delay.kt:105-129): cancellable, with a prompt cancellation guarantee.
+method kotlinx_delay(cx: Bool) returns (exc: Int)
+  ensures exc == NONE || (cx && exc == CANCEL) || (MAY_ERR && exc == ERR)
+
+method decideToUpdateCache() returns (b: Bool)
+
+// Task task_75: the lambda at 75:69 in updateReqShieldData (DESIGN-E 3.4)
+define TASK_75_PRE(k, mode, phase, lockType__68, token__71) (
+  (mode == CREATE_AND_UPDATE_CACHE || mode == ONLY_CREATE_CACHE || mode == ONLY_UPDATE_CACHE) && lockType__68 == UPDATE && phase == UPDATE && !(!(mode == ONLY_CREATE_CACHE) && token__71 == NULL) && (token__71 != NULL ==> Lease(k, lockType__68, token__71)))
+
+method task_75(k: Key, mode: Int, phase: Int, lockType__68: Int, token__71: Int) returns (exc: Int, tr: Ref)
+  requires TASK_75_PRE(k, mode, phase, lockType__68, token__71)
+  ensures TR(tr)
+  ensures NO_LEASES  // LD_noleak
+  ensures tr.nsup <= 1  // SUP_once
+{
+  exc := NONE
+  TR_NEW(tr)
+  // try @76
+  // executeCallable @79:25 (inlined)
+  var arg_79_25: Int
+  // try @240
+  var e_241_13_at79: Int
+  e_241_13_at79 := kotlinx_ensureActive(true)  // kotlinx.ensureActive @241
+  if (e_241_13_at79 == NONE) {
+    var e_242_13_at79: Int
+    var r_242_13_at79: Int
+    assert GUARD_LD_supplier(k, phase, mode, false)  // LD_supplier
+    e_242_13_at79, r_242_13_at79 := callable(true)  // callable @242
+    EV_callable(tr, e_242_13_at79, r_242_13_at79)
+    if (e_242_13_at79 == NONE) {
+      arg_79_25 := r_242_13_at79  // return
+    } elseif (IS_EXCEPTION(e_242_13_at79)) {
+      if (token__71 != NULL) {
+        // withContext(NonCancellable) @246:17
+        var e_247_21_at79: Int
+        var released_247_21_at79: Bool
+        e_247_21_at79, released_247_21_at79 := KeyLock_unLock(k, lockType__68, token__71, false)  // KeyLock.unLock @247
+        if (e_247_21_at79 != NONE) {
+          exc := e_247_21_at79
+        }
+      }
+      if (exc == NONE) {
+        if (e_242_13_at79 == CANCEL) {
+          exc := e_242_13_at79
+        } else {
+          exc := ClientException_SUPPLIER_ERROR
+        }
+      }
+    } else {
+      exc := e_242_13_at79
+    }
+  } elseif (IS_EXCEPTION(e_241_13_at79)) {
+    if (token__71 != NULL) {
+      // withContext(NonCancellable) @246:17
+      var e_247_21_at79b: Int
+      var released_247_21_at79b: Bool
+      e_247_21_at79b, released_247_21_at79b := KeyLock_unLock(k, lockType__68, token__71, false)  // KeyLock.unLock @247
+      if (e_247_21_at79b != NONE) {
+        exc := e_247_21_at79b
+      }
+    }
+    if (exc == NONE) {
+      if (e_241_13_at79 == CANCEL) {
+        exc := e_241_13_at79
+      } else {
+        exc := ClientException_SUPPLIER_ERROR
+      }
+    }
+  } else {
+    exc := e_241_13_at79
+  }
+  if (exc == NONE) {
+    // buildReqShieldData @78:21 (inlined)
+    var reqShieldData__77: Ref := new(value)
+    reqShieldData__77.value := arg_79_25
+    // executeSetCacheFunction @82:17 (inlined)
+    // try @217
+    var e_218_13_at82: Int
+    e_218_13_at82 := kotlinx_ensureActive(true)  // kotlinx.ensureActive @218
+    if (e_218_13_at82 == NONE) {
+      var e_219_13_at82: Int
+      var b_219_13_at82: Bool
+      assert GUARD_LD_write(k, phase, mode)  // LD_write
+      e_219_13_at82, b_219_13_at82 := setCacheFunction(k, reqShieldData__77, true)  // ReqShieldConfiguration.setCacheFunction @219
+      if (e_219_13_at82 != NONE) {
+        if (e_219_13_at82 == CANCEL) {
+          exc := e_219_13_at82
+        } elseif (IS_EXCEPTION(e_219_13_at82)) {
+          exc := ClientException_SET_CACHE_ERROR
+        } else {
+          exc := e_219_13_at82
+        }
+      }
+    } elseif (e_218_13_at82 == CANCEL) {
+      exc := e_218_13_at82
+    } else {
+      exc := e_218_13_at82
+    }
+    // finally
+    if (token__71 != NULL) {
+      // withContext(NonCancellable) @227:17
+      var e_228_21_at82: Int
+      var released_228_21_at82: Bool
+      e_228_21_at82, released_228_21_at82 := KeyLock_unLock(k, lockType__68, token__71, false)  // KeyLock.unLock @228
+      if (e_228_21_at82 != NONE) {
+        exc := e_228_21_at82
+      }
+    }
+  }
+  if (exc != NONE && exc == CANCEL) {
+    var caught_83_22: Int := exc
+    exc := NONE
+    exc := caught_83_22
+  } elseif (exc != NONE && IS_EXCEPTION(exc)) {
+    exc := NONE
+  }
+}
+
+// Task task_138: the lambda at 138:69 in createReqShieldData (DESIGN-E 3.4)
+define TASK_138_PRE(k, mode, phase, lockType__96, token__99) (
+  (mode == CREATE_AND_UPDATE_CACHE || mode == ONLY_CREATE_CACHE || mode == ONLY_UPDATE_CACHE) && lockType__96 == CREATE && phase == CREATE && (mode == ONLY_UPDATE_CACHE || token__99 != NULL) && (token__99 != NULL ==> Lease(k, lockType__96, token__99)))
+
+method task_138(k: Key, mode: Int, phase: Int, lockType__96: Int, token__99: Int, reqShieldData__133: Ref) returns (exc: Int)
+  requires TASK_138_PRE(k, mode, phase, lockType__96, token__99)
+  ensures NO_LEASES  // LD_noleak
+{
+  exc := NONE
+  // try @139
+  // executeSetCacheFunction @140:17 (inlined)
+  // try @217
+  var e_218_13_at140: Int
+  e_218_13_at140 := kotlinx_ensureActive(true)  // kotlinx.ensureActive @218
+  if (e_218_13_at140 == NONE) {
+    var e_219_13_at140: Int
+    var b_219_13_at140: Bool
+    assert GUARD_LD_write(k, phase, mode)  // LD_write
+    e_219_13_at140, b_219_13_at140 := setCacheFunction(k, reqShieldData__133, true)  // ReqShieldConfiguration.setCacheFunction @219
+    if (e_219_13_at140 != NONE) {
+      if (e_219_13_at140 == CANCEL) {
+        exc := e_219_13_at140
+      } elseif (IS_EXCEPTION(e_219_13_at140)) {
+        exc := ClientException_SET_CACHE_ERROR
+      } else {
+        exc := e_219_13_at140
+      }
+    }
+  } elseif (e_218_13_at140 == CANCEL) {
+    exc := e_218_13_at140
+  } else {
+    exc := e_218_13_at140
+  }
+  // finally
+  if (token__99 != NULL) {
+    // withContext(NonCancellable) @227:17
+    var e_228_21_at140: Int
+    var released_228_21_at140: Bool
+    e_228_21_at140, released_228_21_at140 := KeyLock_unLock(k, lockType__96, token__99, false)  // KeyLock.unLock @228
+    if (e_228_21_at140 != NONE) {
+      exc := e_228_21_at140
+    }
+  }
+  if (exc != NONE && exc == CANCEL) {
+    var caught_141_22: Int := exc
+    exc := NONE
+    exc := caught_141_22
+  } elseif (exc != NONE && IS_EXCEPTION(exc)) {
+    exc := NONE
+  }
+}
+
+method getAndSetReqShieldData(k: Key, mode: Int, maxAttempt: Int) returns (exc: Int, res: Ref, tr: Ref)
+  requires mode == CREATE_AND_UPDATE_CACHE || mode == ONLY_CREATE_CACHE || mode == ONLY_UPDATE_CACHE
+  ensures TR(tr)
+  ensures NO_LEASES  // LD_noleak
+  ensures mode == ONLY_UPDATE_CACHE ==> tr.ntryC == 0  // MODE_create
+  ensures mode == ONLY_CREATE_CACHE ==> tr.ntryU == 0  // MODE_update
+  ensures tr.nsup <= 1  // SUP_once
+  ensures tr.npoll <= (maxAttempt < 0 ? 0 : maxAttempt)  // POLL_bound
+  ensures tr.first == HIT && exc != CANCEL ==> exc == NONE && res == tr.firstObj  // RET_hit
+  ensures tr.first == THREW && exc != CANCEL ==> exc == ClientException_GET_CACHE_ERROR  // RET_get_error
+  ensures tr.recheck == HIT && exc != CANCEL ==> exc == NONE && res == tr.recheckObj && tr.nsup == 0 && tr.nspawn == 0  // RET_recheck
+  ensures tr.pollHit && exc != CANCEL ==> exc == NONE && res == tr.pollObj && tr.nsup == 0  // RET_poll
+  ensures tr.sup == OK && exc != CANCEL ==> exc == NONE && res != null && acc(res.value, wildcard) && res.value == tr.supVal  // RET_supplier
+  ensures tr.sup == THREW && exc != CANCEL ==> exc == ClientException_SUPPLIER_ERROR  // RET_supplier_error
+  ensures tr.cancelled ==> exc == CANCEL  // RET_cancel
+{
+  exc := NONE
+  res := null
+  TR_NEW(tr)
+  // executeGetCacheFunction @48:36 (inlined)
+  // try @202
+  var e_203_13_at48: Int
+  var currentReqShieldData__48: Ref
+  e_203_13_at48, currentReqShieldData__48 := getCacheFunction(k, true)  // ReqShieldConfiguration.getCacheFunction @203
+  EV_getCacheFunction(tr, k, e_203_13_at48, currentReqShieldData__48)
+  EV_raised_CANCEL(tr, e_203_13_at48)
+  if (e_203_13_at48 != NONE) {
+    if (e_203_13_at48 == CANCEL) {
+      exc := e_203_13_at48
+    } elseif (IS_EXCEPTION(e_203_13_at48)) {
+      exc := ClientException_GET_CACHE_ERROR
+    } else {
+      exc := e_203_13_at48
+    }
+  }
+  if (exc == NONE) {
+    if (currentReqShieldData__48 != null) {
+      // shouldUpdateCache @50:17 (inlined)
+      var r_50_17: Bool
+      r_50_17 := decideToUpdateCache()  // decideToUpdateCache @60
+      if (r_50_17) {
+        // updateReqShieldData @51:17 (inlined)
+        var lockType__68: Int := UPDATE
+        var onlyCreateCache__70: Bool := mode == ONLY_CREATE_CACHE
+        var token__71: Int := NULL
+        if (!onlyCreateCache__70) {
+          var e_71_52: Int
+          e_71_52, token__71 := KeyLock_tryLock(k, lockType__68, true)  // KeyLock.tryLock @71
+          EV_KeyLock_tryLock(tr, lockType__68)
+          EV_raised_CANCEL(tr, e_71_52)
+          if (e_71_52 != NONE) {
+            exc := e_71_52
+          }
+        }
+        if (exc == NONE) {
+          if (!onlyCreateCache__70 && token__71 == NULL) {
+            // return @73
+          } else {
+            var e_75_9: Int
+            var dropped_75_9: Bool
+            e_75_9, dropped_75_9 := kotlinx_launch(true)  // kotlinx.launch @75
+            if (e_75_9 == NONE) {
+              tr.nspawn := tr.nspawn + 1
+              if (!dropped_75_9) {
+                exhale TASK_75_PRE(k, mode, PHASE(tr), lockType__68, token__71)  // spawn task_75
+              }
+            } else {
+              exc := e_75_9
+            }
+          }
+        }
+      }
+      if (exc == NONE) {
+        res := currentReqShieldData__48  // return
+      }
+    } else {
+      // handleLockForCacheCreation @55:20 (inlined)
+      var lockType__96: Int := CREATE
+      var onlyUpdateCache__98: Bool := mode == ONLY_UPDATE_CACHE
+      var token__99: Int := NULL
+      if (!onlyUpdateCache__98) {
+        var e_99_52: Int
+        e_99_52, token__99 := KeyLock_tryLock(k, lockType__96, true)  // KeyLock.tryLock @99
+        EV_KeyLock_tryLock(tr, lockType__96)
+        EV_raised_CANCEL(tr, e_99_52)
+        if (e_99_52 != NONE) {
+          exc := e_99_52
+        }
+      }
+      var ret_55_20: Bool := false  // a pending return
+      if (exc == NONE) {
+        if (token__99 != NULL) {
+          var cacheCreationRequired__102: Bool := false
+          // try @103
+          // executeGetCacheFunction @105:34 (inlined)
+          // try @202
+          var e_203_13_at105: Int
+          var cachedData__105: Ref
+          e_203_13_at105, cachedData__105 := getCacheFunction(k, true)  // ReqShieldConfiguration.getCacheFunction @203
+          EV_getCacheFunction(tr, k, e_203_13_at105, cachedData__105)
+          EV_raised_CANCEL(tr, e_203_13_at105)
+          if (e_203_13_at105 != NONE) {
+            if (e_203_13_at105 == CANCEL) {
+              exc := e_203_13_at105
+            } elseif (IS_EXCEPTION(e_203_13_at105)) {
+              exc := ClientException_GET_CACHE_ERROR
+            } else {
+              exc := e_203_13_at105
+            }
+          }
+          if (exc == NONE) {
+            if (cachedData__105 != null) {
+              res := cachedData__105  // return
+              ret_55_20 := true
+            } else {
+              cacheCreationRequired__102 := true
+            }
+          }
+          // finally
+          if (!cacheCreationRequired__102) {
+            // withContext(NonCancellable) @111:21
+            var e_112_25: Int
+            var released_112_25: Bool
+            e_112_25, released_112_25 := KeyLock_unLock(k, lockType__96, token__99, false)  // KeyLock.unLock @112
+            if (e_112_25 != NONE) {
+              exc := e_112_25
+              ret_55_20 := false
+              res := null
+            }
+          }
+        }
+        if (exc == NONE && !ret_55_20) {
+          if (onlyUpdateCache__98 || token__99 != NULL) {
+            // createReqShieldData @119:13 (inlined)
+            // executeCallable @135:17 (inlined)
+            var arg_135_17: Int
+            // try @240
+            var e_241_13_at135: Int
+            e_241_13_at135 := kotlinx_ensureActive(true)  // kotlinx.ensureActive @241
+            EV_raised_CANCEL(tr, e_241_13_at135)
+            if (e_241_13_at135 == NONE) {
+              var e_242_13_at135: Int
+              var r_242_13_at135: Int
+              assert GUARD_LD_supplier(k, PHASE(tr), mode, GAVE_UP(tr, maxAttempt))  // LD_supplier
+              e_242_13_at135, r_242_13_at135 := callable(true)  // callable @242
+              EV_callable(tr, e_242_13_at135, r_242_13_at135)
+              EV_raised_CANCEL(tr, e_242_13_at135)
+              if (e_242_13_at135 == NONE) {
+                arg_135_17 := r_242_13_at135  // return
+              } elseif (IS_EXCEPTION(e_242_13_at135)) {
+                if (token__99 != NULL) {
+                  // withContext(NonCancellable) @246:17
+                  var e_247_21_at135: Int
+                  var released_247_21_at135: Bool
+                  e_247_21_at135, released_247_21_at135 := KeyLock_unLock(k, lockType__96, token__99, false)  // KeyLock.unLock @247
+                  if (e_247_21_at135 != NONE) {
+                    exc := e_247_21_at135
+                  }
+                }
+                if (exc == NONE) {
+                  if (e_242_13_at135 == CANCEL) {
+                    exc := e_242_13_at135
+                  } else {
+                    exc := ClientException_SUPPLIER_ERROR
+                  }
+                }
+              } else {
+                exc := e_242_13_at135
+              }
+            } elseif (IS_EXCEPTION(e_241_13_at135)) {
+              if (token__99 != NULL) {
+                // withContext(NonCancellable) @246:17
+                var e_247_21_at135b: Int
+                var released_247_21_at135b: Bool
+                e_247_21_at135b, released_247_21_at135b := KeyLock_unLock(k, lockType__96, token__99, false)  // KeyLock.unLock @247
+                if (e_247_21_at135b != NONE) {
+                  exc := e_247_21_at135b
+                }
+              }
+              if (exc == NONE) {
+                if (e_241_13_at135 == CANCEL) {
+                  exc := e_241_13_at135
+                } else {
+                  exc := ClientException_SUPPLIER_ERROR
+                }
+              }
+            } else {
+              exc := e_241_13_at135
+            }
+            if (exc == NONE) {
+              // buildReqShieldData @134:13 (inlined)
+              var reqShieldData__133: Ref := new(value)
+              reqShieldData__133.value := arg_135_17
+              var e_138_9: Int
+              var dropped_138_9: Bool
+              e_138_9, dropped_138_9 := kotlinx_launch(true)  // kotlinx.launch @138
+              if (e_138_9 == NONE) {
+                tr.nspawn := tr.nspawn + 1
+                if (!dropped_138_9) {
+                  exhale TASK_138_PRE(k, mode, PHASE(tr), lockType__96, token__99)  // spawn task_138
+                }
+              } else {
+                exc := e_138_9
+              }
+              if (exc == NONE) {
+                res := reqShieldData__133  // return
+              }
+            }
+          } else {
+            // handleLockFailure @121:13 (inlined)
+            var attempts__162: Int := 0
+            var consecutiveFailures__163: Int := 0
+            var ret_121_13: Bool := false  // a pending return
+            var brk_165_9: Bool := false  // a pending break
+            while (exc == NONE && !ret_121_13 && !brk_165_9 && attempts__162 < maxAttempt)
+              invariant acc(tr.first, 1/2) && tr.first == MISS  // read only: the first call came before the loop
+              invariant acc(tr.npoll) && acc(tr.consec) && acc(tr.pollHit) && acc(tr.pollObj) && acc(tr.cancelled)  // the trace fields the loop writes
+              invariant NO_LEASES  // LD_wait
+              invariant exc == NONE || exc == CANCEL || (MAY_ERR && exc == ERR)  // the exceptions the loop body raises
+              invariant 0 <= attempts__162 && (maxAttempt < 0 ? attempts__162 == 0 : attempts__162 <= maxAttempt)  // hole
+              invariant tr.npoll <= (maxAttempt < 0 ? 0 : maxAttempt) && (exc == NONE && !ret_121_13 && !brk_165_9 ==> tr.npoll == attempts__162)  // hole
+              invariant exc == NONE && !ret_121_13 ==> tr.consec == consecutiveFailures__163  // hole
+              invariant (brk_165_9 ==> consecutiveFailures__163 >= 3) && (!brk_165_9 ==> consecutiveFailures__163 < 3)  // hole
+              invariant ret_121_13 == tr.pollHit && (ret_121_13 ==> tr.pollObj == res && exc == NONE)  // hole
+              invariant tr.cancelled ==> exc == CANCEL  // hole
+              decreases maxAttempt - attempts__162  // TERM
+            {
+              var cachedData__166: Ref := null
+              // try @167
+              // executeGetCacheFunction @168:21 (inlined)
+              // try @202
+              var e_203_13_at168: Int
+              var r_168_21: Ref
+              e_203_13_at168, r_168_21 := getCacheFunction(k, true)  // ReqShieldConfiguration.getCacheFunction @203
+              EV_getCacheFunction(tr, k, e_203_13_at168, r_168_21)
+              EV_raised_CANCEL(tr, e_203_13_at168)
+              if (e_203_13_at168 != NONE) {
+                if (e_203_13_at168 == CANCEL) {
+                  exc := e_203_13_at168
+                } elseif (IS_EXCEPTION(e_203_13_at168)) {
+                  exc := ClientException_GET_CACHE_ERROR
+                } else {
+                  exc := e_203_13_at168
+                }
+              }
+              if (exc == NONE) {
+                consecutiveFailures__163 := 0  // .also { consecutiveFailures = 0 } @169
+                cachedData__166 := r_168_21
+              }
+              if (exc != NONE && exc == CANCEL) {
+                var caught_170_22: Int := exc
+                exc := NONE
+                exc := caught_170_22
+              } elseif (exc != NONE && exc == ClientException_GET_CACHE_ERROR) {
+                exc := NONE
+                consecutiveFailures__163 := consecutiveFailures__163 + 1
+                if (consecutiveFailures__163 >= 3) {
+                  brk_165_9 := true  // break
+                }
+              }
+              if (exc == NONE && !brk_165_9) {
+                if (cachedData__166 != null) {
+                  res := cachedData__166  // return
+                  ret_121_13 := true
+                } else {
+                  attempts__162 := attempts__162 + 1
+                  var e_181_13: Int
+                  e_181_13 := kotlinx_delay(true)  // kotlinx.delay @181
+                  EV_raised_CANCEL(tr, e_181_13)
+                  if (e_181_13 != NONE) {
+                    exc := e_181_13
+                  }
+                }
+              }
+            }
+            if (exc == NONE && !ret_121_13) {
+              // executeCallable @186:35 (inlined)
+              var arg_186_35: Int
+              // try @240
+              var e_241_13_at186: Int
+              e_241_13_at186 := kotlinx_ensureActive(true)  // kotlinx.ensureActive @241
+              EV_raised_CANCEL(tr, e_241_13_at186)
+              if (e_241_13_at186 == NONE) {
+                var e_242_13_at186: Int
+                var r_242_13_at186: Int
+                assert GUARD_LD_supplier(k, PHASE(tr), mode, GAVE_UP(tr, maxAttempt))  // LD_supplier
+                e_242_13_at186, r_242_13_at186 := callable(true)  // callable @242
+                EV_callable(tr, e_242_13_at186, r_242_13_at186)
+                EV_raised_CANCEL(tr, e_242_13_at186)
+                if (e_242_13_at186 == NONE) {
+                  arg_186_35 := r_242_13_at186  // return
+                } elseif (IS_EXCEPTION(e_242_13_at186)) {
+                  if (e_242_13_at186 == CANCEL) {
+                    exc := e_242_13_at186
+                  } else {
+                    exc := ClientException_SUPPLIER_ERROR
+                  }
+                } else {
+                  exc := e_242_13_at186
+                }
+              } elseif (IS_EXCEPTION(e_241_13_at186)) {
+                if (e_241_13_at186 == CANCEL) {
+                  exc := e_241_13_at186
+                } else {
+                  exc := ClientException_SUPPLIER_ERROR
+                }
+              } else {
+                exc := e_241_13_at186
+              }
+              if (exc == NONE) {
+                // buildReqShieldData @186:16 (inlined)
+                var new_193_9_at186: Ref := new(value)
+                new_193_9_at186.value := arg_186_35
+                res := new_193_9_at186  // return
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

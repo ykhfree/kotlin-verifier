@@ -1,0 +1,3 @@
+d1 phase 1: collected after 0 correction round(s), 1 check.sh call(s); run/drafts/d1
+  25 clause(s), 30 quoted source comment(s), 0 source note(s)
+  draft 1 of the run to pass (the cells come from it)

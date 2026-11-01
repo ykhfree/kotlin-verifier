@@ -1,0 +1,4 @@
+$ spec.py collect --run translator/build/kv/spec-replay/run --drafter opus
+opus phase 1: collected after 0 correction round(s), 0 check.sh call(s); run/drafts/opus
+  19 clause(s), 50 quoted source comment(s), 0 source note(s)
+  draft 1 of the run to pass (the cells come from it)

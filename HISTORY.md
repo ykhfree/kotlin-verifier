@@ -8,6 +8,12 @@
 3. 수치에는 측정인지 추정인지 적는다.
 4. 결정의 근거와 상세는 설계 문서(PHASE1.md, DESIGN-v0.md, DESIGN-B.md)에 두고, 여기에는 요약과 위치만 적는다.
 
+커밋 번호에 대해 (2026-11-01): 이 저장소의 이력은 2026-11-01에 다시 썼다 (아래 "실험 기록 분리" 항목).
+1. 그 전 항목의 커밋 번호는 옛 이력의 번호다.
+2. 옛 번호를 새 번호로 옮기는 표는 비공개 저장소 `kotlin-verifier-experiments`의 `kotlin-verifier-commit-map.txt`에 있다.
+3. 옛 이력 전체는 같은 저장소의 `archive/pre-split` 브랜치에 있다.
+4. 이 문서가 가리키는 `spike/`, `aicode/`, `mutation/`, `pilot-c/`, `specdraft/`, `frontend-probe/`, `PHASE1.md`, `MUTATION.md`, `AI-CODE.md`, `PROTOCOL2.md`는 그 저장소에 있다. 테스트가 읽는 일부는 `translator/src/test/fixtures/req-shield/`에도 있다.
+
 ## 목표
 
 사용자의 말: "나는 AI가 생성한 코드가 우리의 명세대로 작성이 된것인지 확인하고 싶은거야".
@@ -581,3 +587,16 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   2. 모듈 종류 표를 req-shield 예 대신 코드 모양의 설명으로 바꿨다. 사용법은 새 모듈에 적용하는 순서로 합쳤다.
   3. 테스트 준비(req-shield `2e792d2` fixture), Gradle 작업, 폴더 구조를 새 `DEVELOPMENT.md`로 옮겼다.
 - 확인: `./gradlew installDist -PreqShieldDir=/nonexistent-req-shield`가 통과한다 (CLI 빌드에 req-shield가 필요 없음, 측정).
+
+## 실험 기록 분리 (2026-11-01)
+
+- 사용자 지적: req-shield는 외부 라이브러리일 뿐이다. 도구 저장소(공개)에 req-shield 실험 기록이 있으면 안 된다.
+- 사용자 결정: 실험 기록은 별도 private 저장소로 옮긴다. git 이력에서도 지운다.
+- 한 일:
+  1. 비공개 저장소 `ykhfree/kotlin-verifier-experiments`를 만들었다. 분리 전 이력 전체를 `archive/pre-split` 브랜치에 올렸다. `main`은 실험 경로만 남긴 이력이다.
+  2. 이 저장소에서 `aicode/`, `mutation/`, `pilot-c/`, `spike/`, `specdraft/`, `frontend-probe/`, `PHASE1.md`, `MUTATION.md`, `AI-CODE.md`, `PROTOCOL2.md`를 지웠다.
+  3. 테스트가 읽는 파일(309개)은 `translator/src/test/fixtures/req-shield/`로 옮겼다. `AI-CODE.md`는 4.1절만 `AI-CODE-4.1.md`로 옮겼다. 그 폴더에 req-shield의 `LICENSE`(Apache 2.0)와 `NOTICE.md`를 두었다.
+  4. `build.gradle.kts`의 경로를 고쳤다. 새 테스트 속성은 `kv.fixtureDir`이다. `mechanicalMutants`와 `aicodeEnv`의 결과 폴더 기본값은 `build/kv/` 아래다 (`-PmutantResults`, `-PaicodeResults`).
+  5. git filter-repo로 지운 경로를 이력 전체에서 지웠다. 그리고 force push했다.
+- 확인 (측정, 실험 폴더가 없는 사본에서): 전체 테스트 837개 통과 (22분 22초). `mutantsClient` 42회, `mutantsCoroutine` 67회에서 불일치 0. `aicodeEnv`가 새 경로를 쓴다.
+

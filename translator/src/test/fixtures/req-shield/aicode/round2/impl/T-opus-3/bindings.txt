@@ -1,0 +1,2 @@
+# AI-CODE.md 11: LockInfo.semaphore is a kotlinx.coroutines.sync.Semaphore, whose model the sidecar must use
+use kotlinx.Semaphore

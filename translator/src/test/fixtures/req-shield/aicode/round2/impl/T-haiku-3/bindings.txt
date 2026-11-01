@@ -1,0 +1,2 @@
+# AI-CODE.md 6.1 and change log: the class placement is a binding name
+class LockInfo LockInfo

@@ -1,0 +1,24 @@
+com.linecorp.cse.reqshield.kotlin.coroutine.KeyLocalLock.Companion (keylocallock.coroutine.kv)    module: PROVEN (Silicon 12.65 s)
+  action tryLock  KeyLocalLock.kt:155:9   PROVEN
+  action unLock   KeyLocalLock.kt:209:9   PROVEN
+  action sweep    KeyLocalLock.kt:97:37   PROVEN
+  init PROVEN · lemma lem_one_backed_holder_per_key PROVEN · probe PROVEN
+Spec to review: ends_only_if tryLock tryLock_ends_only_expired, unLock unLock_ends_only_presented_token, sweep sweep_ends_only_expired; unbacked_only_if tryLock tryLock_unbacked_only_on_cap_refusal; issue tryLock
+Assumptions (not checked by Silicon):
+  Long unbounded: KeyLocalLock.kt:80:52, KeyLocalLock.kt:172:42, KeyLocalLock.kt:188:54
+  Free values:
+    tryLock: k <- completeKey 149:9 (action key), now <- now 150:9 (captured), timeout <- this.lockTimeoutMillis 172:48 (instance val lockTimeoutMillis), rej <- LocalLockLimit.rejectsNewEntry(...) 181:21 (trusted call LocalLockLimit.rejectsNewEntry), limit <- LocalLockLimit.rejectsNewEntry(...) 181:21 (trusted call LocalLockLimit.rejectsNewEntry)
+    unLock: k <- completeKey 203:9 (action key), t <- token 201:9 (captured)
+    sweep: k <- key 96:56 (action key), now <- now 90:33 (captured)
+  Trusted models: jdk.ConcurrentHashMap.compute, jdk.ConcurrentHashMap.mappingCount, jdk.ConcurrentHashMap.racyRead, jdk.Semaphore, jdk.AtomicBoolean, jdk.AtomicLong, jdk.AtomicCell, jdk.System.currentTimeMillis, slf4j.Logger
+  Trusted project functions: nowToEpochTime (reviewed: ykhfree 2026-10-23: support/.../utils/TimeUtils.kt:23: fun nowToEpochTime() = System.currentTimeMillis()), rejectsNewEntry (reviewed: ykhfree 2026-10-23: support/.../config/LocalLockLimit.kt:86-101: returns false when limit == UNLIMITED_LOCK_ENTRIES (0L) or currentSize < limit)
+  Init: the ghost records are allocated by an inhale with no record issued (trusted)
+Racy reads (modeled as arbitrary values): lockMap.keys 96:33
+Not modeled (no module-state access): property log 37:1, class KeyLocalLock 39:1, constructor of KeyLocalLock 39:19, constructor of Companion 68:5, property monitorJob 77:9, fun ensureMonitorStarted 82:9, fun stopMonitoring 129:9, property job 137:5, property coroutineContext 138:5, init 141:5, fun tryLock 145:5, fun unLock 198:5, fun cancel 230:5
+Unsupported: none
+Branch reachability (INFO, not part of any verdict; DESIGN-v0.md 5.4): 25 branch(es) probed, 3 unreachable
+  INFO unreachable branch: tryLock KeyLocalLock.kt:161:49 compareAndSet fails
+  INFO unreachable branch: unLock KeyLocalLock.kt:213:44 compareAndSet fails
+  INFO unreachable branch: sweep KeyLocalLock.kt:104:49 compareAndSet fails
+Note: init and probe do not check inductiveness; the action methods do (DESIGN-v0.md 5.4).
+Viper program: /private/tmp/claude-501/-Users-ykhfree-AI/9a7562f5-114a-4bd1-9a46-6cd88dafecdb/scratchpad/spec-design/checks/aligned-sonnet/check.vpr

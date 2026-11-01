@@ -1,0 +1,57 @@
+Silicon 1.1-SNAPSHOT (6b540aa4@(detached))
+Parse warning: in macro `MI_INV_1`, the following parameters were defined but not used: S (sonnet-b.vpr@77.1--77.26)
+Parse warning: in macro `MI_INV_2`, the following parameters were defined but not used: S (sonnet-b.vpr@78.1--78.26)
+Parse warning: in macro `MI_INV_3`, the following parameters were defined but not used: S (sonnet-b.vpr@79.1--79.26)
+Parse warning: in macro `MI_INV_4`, the following parameters were defined but not used: S (sonnet-b.vpr@80.1--80.26)
+Parse warning: in macro `MI_INV_5`, the following parameters were defined but not used: S (sonnet-b.vpr@81.1--81.26)
+Silicon found 26 errors in 16.38s:
+  [ 0] Assert might fail. Assertion r == -1 might not hold. (sonnet-b.vpr@222.10--222.19)
+
+  [ 1] Assert might fail. Assertion !tok(r).gBacked might not hold. (sonnet-b.vpr@248.10--248.38)
+
+  [ 2] Assert might fail. Assertion r == -1 might not hold. (sonnet-b.vpr@274.10--274.19)
+
+  [ 3] Assert might fail. Assertion tok(r).gBacked might not hold. (sonnet-b.vpr@287.10--287.37)
+
+  [ 4] Assert might fail. Assertion r != -1 might not hold. (sonnet-b.vpr@343.10--343.19)
+
+  [ 5] Assert might fail. Assertion r != -1 might not hold. (sonnet-b.vpr@388.10--388.19)
+
+  [ 6] Assert might fail. Assertion r != -1 might not hold. (sonnet-b.vpr@433.10--433.19)
+
+  [ 7] Assert might fail. Assertion !b might not hold. (sonnet-b.vpr@580.10--580.12)
+
+  [ 8] Assert might fail. Assertion b might not hold. (sonnet-b.vpr@612.10--612.11)
+
+  [ 9] Assert might fail. Assertion b might not hold. (sonnet-b.vpr@662.10--662.11)
+
+  [10] Assert might fail. Assertion b might not hold. (sonnet-b.vpr@709.10--709.11)
+
+  [11] Assert might fail. Assertion r == -1 might not hold. (sonnet-b.vpr@754.10--754.19)
+
+  [12] Assert might fail. Assertion tok(r).gBacked might not hold. (sonnet-b.vpr@769.10--769.37)
+
+  [13] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (sonnet-b.vpr@829.10--829.20)
+
+  [14] Assert might fail. Assertion (k in domain(S.m)) might not hold. (sonnet-b.vpr@859.10--859.27)
+
+  [15] Assert might fail. Assertion S.m[k] != null might not hold. (sonnet-b.vpr@859.10--859.27)
+
+  [16] Assert might fail. Assertion (k in domain(S.m)) might not hold. (sonnet-b.vpr@904.10--904.27)
+
+  [17] Assert might fail. Assertion S.m[k] != null might not hold. (sonnet-b.vpr@904.10--904.27)
+
+  [18] Assert might fail. Assertion b might not hold. (sonnet-b.vpr@951.10--951.11)
+
+  [19] Assert might fail. Assertion r == -1 might not hold. (sonnet-b.vpr@998.10--998.19)
+
+  [20] Assert might fail. Assertion !tok(r).gBacked might not hold. (sonnet-b.vpr@1024.10--1024.38)
+
+  [21] Assert might fail. Assertion r != -1 might not hold. (sonnet-b.vpr@1067.10--1067.37)
+
+  [22] Assert might fail. Assertion r != -1 might not hold. (sonnet-b.vpr@1082.10--1082.38)
+
+  [23] Assert might fail. Assertion r == -1 might not hold. (sonnet-b.vpr@1113.10--1113.19)
+
+  [24] Refute holds in all cases or could not be reached (e.g. see Silicon `numberOfErrorsToReport`). Assertion false definitely holds. (sonnet-b.vpr@499.10--499.15)
+  [25] Refute holds in all cases or could not be reached (e.g. see Silicon `numberOfErrorsToReport`). Assertion false definitely holds. (sonnet-b.vpr@550.10--550.15)

@@ -1,0 +1,54 @@
+Silicon 1.1-SNAPSHOT (6b540aa4@(detached))
+Silicon found 26 errors in 22.10s:
+  [ 0] Assert might fail. Assertion r == -1 might not hold. (opus-a.vpr@225.10--225.19)
+
+  [ 1] Assert might fail. Assertion !tok(r).gBacked might not hold. (opus-a.vpr@251.10--251.38)
+
+  [ 2] Assert might fail. Assertion r == -1 might not hold. (opus-a.vpr@277.10--277.19)
+
+  [ 3] Assert might fail. Assertion tok(r).gBacked might not hold. (opus-a.vpr@290.10--290.37)
+
+  [ 4] Assert might fail. Assertion r != -1 might not hold. (opus-a.vpr@346.10--346.19)
+
+  [ 5] Assert might fail. Assertion r == -1 might not hold. (opus-a.vpr@376.10--376.19)
+
+  [ 6] Assert might fail. Assertion r == -1 might not hold. (opus-a.vpr@421.10--421.19)
+
+  [ 7] Assert might fail. Assertion b might not hold. (opus-a.vpr@468.10--468.11)
+
+  [ 8] Assert might fail. Assertion !b might not hold. (opus-a.vpr@536.10--536.12)
+
+  [ 9] Assert might fail. Assertion !b might not hold. (opus-a.vpr@583.10--583.12)
+
+  [10] Assert might fail. Assertion b might not hold. (opus-a.vpr@615.10--615.11)
+
+  [11] Assert might fail. Assertion b might not hold. (opus-a.vpr@665.10--665.11)
+
+  [12] Assert might fail. Assertion b might not hold. (opus-a.vpr@712.10--712.11)
+
+  [13] Assert might fail. Assertion r == -1 might not hold. (opus-a.vpr@757.10--757.19)
+
+  [14] Assert might fail. Assertion tok(r).gBacked might not hold. (opus-a.vpr@772.10--772.37)
+
+  [15] Assert might fail. Assertion !((k in domain(S.m)) && S.m[k] != null) might not hold. (opus-a.vpr@832.10--832.20)
+
+  [16] Assert might fail. Assertion (k in domain(S.m)) might not hold. (opus-a.vpr@862.10--862.27)
+
+  [17] Assert might fail. Assertion S.m[k] != null might not hold. (opus-a.vpr@862.10--862.27)
+
+  [18] Assert might fail. Assertion (k in domain(S.m)) might not hold. (opus-a.vpr@907.10--907.27)
+
+  [19] Assert might fail. Assertion S.m[k] != null might not hold. (opus-a.vpr@907.10--907.27)
+
+  [20] Assert might fail. Assertion b might not hold. (opus-a.vpr@954.10--954.11)
+
+  [21] Assert might fail. Assertion r == -1 might not hold. (opus-a.vpr@1001.10--1001.19)
+
+  [22] Assert might fail. Assertion !tok(r).gBacked might not hold. (opus-a.vpr@1027.10--1027.38)
+
+  [23] Assert might fail. Assertion r == -1 might not hold. (opus-a.vpr@1055.10--1055.19)
+
+  [24] Assert might fail. Assertion !tok(r).gBacked might not hold. (opus-a.vpr@1085.10--1085.38)
+
+  [25] Assert might fail. Assertion r == -1 might not hold. (opus-a.vpr@1116.10--1116.19)
+

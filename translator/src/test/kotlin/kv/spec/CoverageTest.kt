@@ -128,7 +128,7 @@ class CoverageTest {
     /** The signed core sidecar. Since 2026-10-28 it has a scope and cites README block waiting.../2 (DESIGN-C.md 10.12). */
     private val core = File(System.getProperty("kv.specDir"), "reqshield/reqshield.core.kv")
 
-    private val coreSnapshot = File(System.getProperty("kv.specDir"), "../specdraft/reqshield-core/snapshot")
+    private val coreSnapshot = File(System.getProperty("kv.fixtureDir"), "specdraft/reqshield-core/snapshot")
 
     @Test
     fun `scope README_md on a copy of the signed core sidecar - 45 uncovered blocks, as counted by hand`() {

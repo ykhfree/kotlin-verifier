@@ -1,0 +1,61 @@
+{
+ "format": "kv-decision-mutants/1",
+ "from": "pilot-c/tools/mutset.py DECISION (DESIGN-C.md 3.6, 4.1): the reference implementation with the other option of one decision of pilot-c/PREREG.md 2",
+ "file": "the file that kv's mutant suite edits for the variant (KeyLocalLock.kt)",
+ "mutants": [
+  {
+   "name": "D1-both",
+   "decision": "D1: expired at now == expiresAt, in tryLock and in the monitor (what the 12 AI implementations did)",
+   "edits": [
+    [
+     "if (now > existing.expiresAt && existing.isHeld",
+     "if (now >= existing.expiresAt && existing.isHeld"
+    ],
+    [
+     "if (now > lockInfo.expiresAt) {",
+     "if (now >= lockInfo.expiresAt) {"
+    ]
+   ]
+  },
+  {
+   "name": "D2-expired-unlock-false",
+   "decision": "D2: the holder's unLock fails once its lease is over, even if nobody took the lock over",
+   "edits": [
+    [
+     "if (existing.token == token && existing.isHeld.compareAndSet(true, false)) {",
+     "if (existing.token == token && nowToEpochTime() <= existing.expiresAt && existing.isHeld.compareAndSet(true, false)) {"
+    ]
+   ]
+  },
+  {
+   "name": "D4-no-takeover",
+   "decision": "D4: tryLock never takes an expired entry over; the key waits for the monitor",
+   "edits": [
+    [
+     "if (now > existing.expiresAt && existing.isHeld.compareAndSet(true, false)) {",
+     "if (false) {"
+    ]
+   ]
+  },
+  {
+   "name": "D9-sweep-never",
+   "decision": "D9: the monitor never drops an entry",
+   "edits": [
+    [
+     "if (now > lockInfo.expiresAt) {",
+     "if (false) {"
+    ]
+   ]
+  },
+  {
+   "name": "D3-cap-null",
+   "decision": "D3: at the cap, a new key gets null instead of a token no entry backs",
+   "edits": [
+    [
+     "                    acquiredToken.set(nextToken())\n",
+     ""
+    ]
+   ]
+  }
+ ]
+}

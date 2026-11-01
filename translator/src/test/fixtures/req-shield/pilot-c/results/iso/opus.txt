@@ -1,0 +1,14 @@
+tryLock  PROVEN  // ends_only_if tryLock_ends_only_expired (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }
+tryLock  PROVEN  // unbacked_only_if tryLock_unbacked_only_for_refused_new_key (sidecar, reviewed) ensures res != NULL && !tok(res).gBacked ==> (rej && !old(has(S, k)))
+tryLock  PROVEN  ensures !old(has(S, k)) && !rej ==>
+tryLock  PROVEN  ensures !old(has(S, k)) && rej ==> res != NULL && !has(S, k)
+tryLock  PROVEN  ensures old(has(S, k)) && now < old(S.m[k].expiresAt) ==>
+tryLock  FAILED  ensures old(has(S, k)) && now >= old(S.m[k].expiresAt) ==>
+unLock   PROVEN  // ends_only_if unLock_ends_only_presented_token (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }
+unLock   PROVEN  ensures old(carried(S, k, t)) ==> res && !has(S, k)
+unLock   PROVEN  ensures !old(carried(S, k, t)) ==> !res
+unLock   PROVEN  ensures !old(carried(S, k, t)) ==>
+sweep    PROVEN  // ends_only_if sweep_ends_only_expired (sidecar, reviewed) ensures forall qt: Int :: { tok(qt).gHeld }
+sweep    FAILED  ensures old(has(S, k)) && now >= old(S.m[k].expiresAt) ==> !has(S, k)
+sweep    PROVEN  ensures old(has(S, k)) && now < old(S.m[k].expiresAt) ==>
+sweep    PROVEN  ensures !old(has(S, k)) ==> !has(S, k)

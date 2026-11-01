@@ -108,12 +108,12 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 
 ## 알려진 한계
 
-- 위의 세 가지 모양만 다룬다. Reactor(`Mono` 사슬)로 쓴 client 프로토콜은 아직 읽지 못한다 (설계: `spike/protocol2r/DESIGN-E6-v2.md`).
+- 위의 세 가지 모양만 다룬다. Reactor(`Mono` 사슬)로 쓴 client 프로토콜은 아직 읽지 못한다.
 - 묶인 Kotlin 지역 변수의 계산식을 바꿔도(예: `val now = nowToEpochTime() + lockTimeoutMillis`) PROVEN이 그대로다. 도구가 `free` 값의 계산을 번역하지 않기 때문이다 (`DESIGN-v0.md` 2.12 규칙 1, `DESIGN-C.md` 10.16). 그래서 묶인 지역 변수의 계산식은 사람이 읽어야 한다.
 - `free` 묶기는 서명이 덮지 않는다. `kv resolve`는 한 값을 두 번 묶는 것(`free-duplicate`)과, client에서 읽히지 않는 경로에 묶은 것(`free-unused`)을 잡는다 (`DESIGN-C.md` 10.16). 두 묶기를 맞바꾼 경우와 L1의 `param`·`local` 오묶기는 아직 잡지 못한다. 그런 sidecar는 FAILED나 ERROR가 된다.
 - Confluence 가져오기는 공식 API 스펙에 맞춰 만들었지만, 실제 Confluence 페이지로는 아직 확인하지 않았다 (`DESIGN-C.md` 10.8의 미확인 항목).
 
-판별력 측정(변이 검사, AI가 쓴 코드의 판정)은 `MUTATION.md`, `AI-CODE.md`, `PROTOCOL2.md`에 있다.
+판별력 측정(변이 검사, AI가 쓴 코드의 판정)의 기록은 비공개 저장소 `kotlin-verifier-experiments`에 있다.
 
 ## 문서
 
@@ -121,10 +121,8 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 |---|---|
 | `DEVELOPMENT.md` | 도구 개발: 테스트 실행, Gradle 작업, 폴더 구조 |
 | `HISTORY.md` | 작업 이력 |
-| `PHASE1.md` | 조사와 1단계 계획 |
 | `DESIGN-v0.md` | KVIR, sidecar 명세, ghost 상태 (L1 모듈) |
 | `DESIGN-B.md` | aspect 캐시 모듈 |
 | `DESIGN-C.md` | 자연어 명세 → sidecar 흐름, 서명 규칙 |
 | `DESIGN-D.md` | compute 밖의 예약 단계 |
 | `DESIGN-E.md` | L3 client 프로토콜 |
-| `MUTATION.md`, `AI-CODE.md`, `PROTOCOL2.md` | 측정 계획(결과 전 예측)과 결과 |

@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  * The deterministic parts of the AI-written-code harness (scripts/aicode.py, AI-CODE.md 3-6): the sandbox files, the
  * sandbox compile.sh (the real compiler), the token similarity, the binding adaptations and the hole task's verify.sh.
  * `kv verify` is a fake that prints a canned report; `kv hole check` is the real CLI. The real runs (Silicon, the
- * req-shield tests) are the dry run in ../aicode/dryrun.
+ * req-shield tests) are the dry run in aicode/dryrun of the kotlin-verifier-experiments repository.
  */
 class AicodeScriptTest {
     @TempDir
@@ -23,7 +23,7 @@ class AicodeScriptTest {
 
     private val script = File(System.getProperty("kv.scriptsDir"), "aicode.py")
     private val specDir = File(System.getProperty("kv.specDir"), "reqshield")
-    private val aiCode = File(File(System.getProperty("kv.specDir")).parentFile, "AI-CODE.md")
+    private val aiCode = File(System.getProperty("kv.fixtureDir"), "AI-CODE-4.1.md")
     private val original = File(ReqShield.coroutineDir, "KeyLocalLock.kt").readText()
     private val sb1 = original.replace("existing.token == token && ", "")
     private val work get() = File(dir, "work")
