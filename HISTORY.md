@@ -561,3 +561,13 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 사용자 결정: UE10 (a), UE11 (b), UE12 (b), UE13 예, UE14 예. 도구 확장은 미룬다. req-shield push.
 - 결과 (`DESIGN-E.md` 14-14.3): 원본은 LD_own, LD_transfer, LD_write, POLL_bound, RET_hit에서 FAILED이고, 고친 코드는 PROVEN이다 (손 모델 기준). req-shield `12d571e`는 fork에 push했다.
 - 커밋: `d87d6ac`(설계), `53d98bf`(critic), `fbb92b5`(결정), `55e6795`(설계 v2), 그리고 이 기록.
+
+## README 점검 (2026-11-01)
+
+- 사용자 요청: README가 현재 기준으로 잘 작성됐는지 확인하고 반영한다.
+- 확인한 것: 경로, Gradle 작업 11개, CLI 명령 13개, Viper와 req-shield 기본 경로는 코드와 같다. 테스트 837개는 `616fa9d` 뒤 `translator/` 변경이 없어서 유효하다 (다시 돌리지 않음).
+- 고친 것:
+  1. req-shield `2e792d2`는 원격의 어느 브랜치나 태그에도 없다. fork 기준 `5513126`과는 예제 모듈 3개만 다르다고 적었다.
+  2. req-shield 수정 세 개의 push 상태와 커밋 번호를 적었다.
+  3. AI 코드 결과에 주장의 범위(`AI-CODE.md` 1-2절)를 붙였다.
+  4. exit code, 판정 규칙, 신뢰 가정, "새 모듈에 적용하기" 절을 더했다.

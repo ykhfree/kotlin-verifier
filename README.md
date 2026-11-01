@@ -35,9 +35,11 @@ sidecar 명세 (.kv) ───────┘                                   
 
 - 변이 검사: KeyLocalLock 33회, aspect 30회, client(core) 42회, client(coroutine) 67회. 기대 판정과의 불일치는 0이다 (`MUTATION.md`, `PROTOCOL2.md`, `DESIGN-E.md` 13.3).
 - AI가 쓴 구현 24개 (action 72개): 72개 모두 판정했다. 블라인드 판정자와 비교한 결과, 놓친 결함 0, 잘못된 경보 0이다 (`AI-CODE.md` 16).
-- req-shield core `ReqShield`: 도구가 결함 3개(RET_hit, RET_recheck, RET_supplier_error)를 보고했다. 고친 코드는 PROVEN이다. 이 수정은 req-shield에 커밋했다 (`PROTOCOL2.md` 6-7절).
-- req-shield reactor `ReqShield`: 손 모델이 결함 5개(LD_own, LD_transfer, LD_write, POLL_bound, RET_hit)를 찾았다. 고친 코드는 손 모델에서 PROVEN이다. 이 수정은 req-shield 작업 브랜치에 커밋했다. 도구는 아직 reactor 코드를 읽지 못한다 (`DESIGN-E.md` 14).
-- req-shield coroutine `ReqShield`: 도구가 결함 4개(위 셋과 RET_cancel)를 보고했다. core 수정이 coroutine에 옮겨지지 않았기 때문이다. 고친 코드는 PROVEN이다. 이 수정은 req-shield 작업 브랜치에 커밋했다 (`DESIGN-E.md` 13.3).
+  주장의 범위: 대상은 coroutine `KeyLocalLock` 하나다. 본 실험의 12개는 AI에게 "검증 가능한 부분집합"의 모양 틀을 주고 논리만 채우게 했다. AI가 자유롭게 설계한 경우는 별도 실험(자유 구현 3개)으로만 봤다 (`AI-CODE.md` 1-2절).
+- req-shield core `ReqShield`: 도구가 결함 3개(RET_hit, RET_recheck, RET_supplier_error)를 보고했다. 고친 코드는 PROVEN이다 (`PROTOCOL2.md` 6-7절).
+- req-shield reactor `ReqShield`: 손 모델이 결함 5개(LD_own, LD_transfer, LD_write, POLL_bound, RET_hit)를 찾았다. 고친 코드는 손 모델에서 PROVEN이다. 도구는 아직 reactor 코드를 읽지 못한다 (`DESIGN-E.md` 14).
+- req-shield coroutine `ReqShield`: 도구가 결함 4개(위 셋과 RET_cancel)를 보고했다. core 수정이 coroutine에 옮겨지지 않았기 때문이다. 고친 코드는 PROVEN이다 (`DESIGN-E.md` 13.3).
+- 위 세 수정은 ykhfree fork의 `feature/NOISSUE/upgrade-kotlin2-and-deps` 브랜치에 push했다: core `c5aaea8`, coroutine `1120cd6`·`8efeeea`, reactor `12d571e` (`HISTORY.md`). 업스트림(`line/req-shield`)에는 push하지 않았다.
 - 테스트 837개가 통과한다 (2026-11-01).
 
 ## 필요한 것
@@ -45,10 +47,14 @@ sidecar 명세 (.kv) ───────┘                                   
 1. JDK 21.
 2. Viper 릴리스 v.26.08의 `tools` 디렉터리 (Silicon과 Z3). 환경 변수 `VIPER_HOME`으로 지정한다.
    지정하지 않으면 `~/.local/opt/viper/v.26.08-release/tools`를 쓴다.
-3. req-shield의 `2e792d2` 커밋 checkout과 그 jar (`*/build/libs/*-1.0.0.jar`, req-shield에서 `./gradlew build`로 만든다).
+3. 테스트와 Gradle 작업에만: req-shield의 `2e792d2` 커밋 checkout과 그 jar (`*/build/libs/*-1.0.0.jar`, req-shield에서 `./gradlew build`로 만든다).
    기본 경로는 worktree `/Users/ykhfree/IdeaProjects/req-shield-verifier-pin`이다.
    다른 경로는 Gradle 속성으로 준다: `./gradlew -PreqShieldDir=/path/to/req-shield test`.
    테스트와 변이 기대값은 이 커밋에 맞춰져 있다. 다른 커밋을 쓰면 테스트가 실패할 수 있다.
+   - `2e792d2`는 원격의 어느 브랜치나 태그에도 없다. 로컬 pin worktree에만 남아 있다 (2026-11-01 확인).
+   - fork 브랜치의 기준 커밋 `5513126`은 같은 업그레이드의 다른 판이다. 두 커밋은 예제 모듈 3개(`req-shield-spring-boot4-*example`)에서만 다르고, 검증 대상 라이브러리 모듈은 같다. `5513126`에서 테스트를 돌려 보지는 않았다.
+
+`kv` CLI 자체는 req-shield가 필요 없다. 대상 소스는 `--root DIR`로, 의존 jar는 `--classpath CP`로 준다 (아래 "새 모듈에 적용하기").
 
 ## 빌드와 실행
 
@@ -78,6 +84,34 @@ kv mutation-sites                                # 변이를 넣을 위치
 kv hole skeleton | check                         # LLM이 채우는 불변식 hole
 kv spec snapshot | stale | restamp | check | cells   # 자연어 명세 → sidecar 흐름 (DESIGN-C)
 ```
+
+`kv verify`의 exit code: 0 PROVEN, 1 FAILED, 2 사용법 오류, 3 INCOMPLETE, 4 ERROR (컴파일 오류, sidecar 오류, 규칙 위반, Silicon 없음, Silicon 비정상 실행).
+
+판정 규칙 (`DESIGN-v0.md` 5.8):
+
+| 대상 | 판정 |
+|---|---|
+| action | PROVEN: 그 메서드에 오류 없음. FAILED: 오류 1개 이상. UNSUPPORTED: 지원하지 않는 구문이 있어 출력하지 않음. ERROR: 실행 비정상 |
+| 모듈 | PROVEN: 모든 action, init, lemma, probe가 PROVEN. FAILED: 하나라도 FAILED. INCOMPLETE: FAILED는 없고 UNSUPPORTED가 있음. ERROR: 실행 비정상 |
+
+INCOMPLETE는 "일부만 증명됨"이 아니다. 모델링하지 않은 action이 불변식을 깰 수 있다. 그래서 다른 action의 증명은 "모델링한 action만 있을 때"의 증명이다.
+
+PROVEN은 모델 위의 증명이다. Silicon이 확인하지 않는 가정이 있다 (전체 목록은 `DESIGN-v0.md` 부록 B). 보고서의 `Assumptions` 줄이 해당 모듈의 가정을 싣는다.
+1. `ConcurrentHashMap.compute`는 key마다 원자적이고, 함수를 정확히 한 번 부른다.
+2. `Long`은 무한 정수다. 지점마다 진단만 낸다.
+3. action 밖에서 읽은 값(시계, 경쟁 읽기, 인스턴스 값)은 임의 값이다.
+4. `trusted fun`의 계약은 사람이 본문을 읽고 확인했다.
+5. 로그와 거부 카운터는 모델 상태에 영향이 없다.
+
+## 새 모듈에 적용하기
+
+도구 코드는 req-shield의 클래스나 함수 이름을 쓰지 않는다. 대상은 sidecar의 `module`과 `source` 줄이 정한다. 단, 코드가 위 표의 세 가지 모양 중 하나여야 한다. req-shield 밖의 코드로 잰 결과는 아직 없다.
+
+1. 후보를 찾는다: `kv discover --classpath CP FILE.kt|DIR...` (client 모듈은 `--client`를 붙인다).
+2. sidecar를 쓴다: 모듈, 상태, 신뢰 모델, 성질. 예는 `specs/reqshield/`에 있다.
+3. 내장 신뢰 모델에 없는 호출(예: DB, HTTP client)은 `trusted fun`으로 계약을 쓰고 사람이 서명한다.
+4. 지원하지 않는 구문을 확인한다: `kv lower --root DIR --classpath CP SIDECAR.kv`.
+5. 증명한다: `kv verify --root DIR --classpath CP SIDECAR.kv`.
 
 Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 
