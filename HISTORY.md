@@ -491,13 +491,13 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 
 ## 남은 일 (2026-11-01 기준, 메인 세션 의견)
 
-이 목록이 위의 2026-10-29 목록을 대신한다. E5는 끝났다 (아래 절).
+이 목록이 위의 2026-10-29 목록을 대신한다. E5와 E6(설계, 손 모델, req-shield 수정)는 끝났다 (아래 절).
 
 막혀 있는 것:
 1. C6 수락 2 (실제 Confluence 페이지로 확인): Confluence 연결(시험 페이지 id, API 토큰)이 필요하다.
 
-설계가 먼저 필요한 것:
-1. E6 reactor 변형: `DESIGN-E.md` 6.11 3번이 막힌 이유를 적었다 (게으른 `Mono` 사슬, Reactor API 22종, 아무 때나 오는 취소). 별도 설계가 필요하고, 추정은 10-20 인일(불확실성 큼)이다.
+미뤄 둔 것 (사용자 결정 2026-11-01):
+1. E6 도구 확장 (reactor 변형을 도구가 직접 증명): 설계 v2와 예측은 `spike/protocol2r/DESIGN-E6-v2.md`에 있다. 추정은 15-23 인일이다. 손 모델이 기준이고, req-shield 수정은 이미 들어갔다 (`DESIGN-E.md` 14.3).
 
 사용자가 정한 것 (2026-10-29, 메인 세션 권고대로, 바꾸지 않고 둠):
 1. `free` 묶기의 서명 (A안): 하지 않는다. 38회 측정에서 거짓 PROVEN이 없었고, JG4가 대부분의 오묶기를 resolve 단계에서 잡는다. 남는 것은 서명 뒤에 두 묶기를 맞바꾸는 편집이다.
@@ -549,3 +549,15 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
 - 원격 fork 브랜치(`ykhfree/feature/NOISSUE/upgrade-kotlin2-and-deps`)는 그사이 `c5aaea8`로 강제 갱신되어 있었다. `c5aaea8`은 `1739f01`(core 수정)을 다시 쓴 판이다. core 테스트 하나가 바로 실행하는 executor를 써서, 호출 0회 검사가 백그라운드 갱신과 경쟁하지 않게 했다. coroutine 파일 두 개는 두 판에서 같다.
 - E5의 req-shield 커밋 2개를 `c5aaea8` 위로 옮겼다 (rebase, 충돌 없음). 새 번호는 `1120cd6`(옛 `5bdc4d9`, 수정과 테스트 4개)와 `8efeeea`(옛 `0e2e48c`, 취소 예외를 다시 던지는 부분의 테스트)다. 강제 push는 하지 않았다.
 - req-shield 전체 빌드 통과 (테스트 367개, coroutine 모듈 62개). fork에 fast-forward로 push했다 (`c5aaea8..8efeeea`). 업스트림 `origin`(`line/req-shield`)에는 push하지 않았다.
+
+## E6: reactor 변형 (2026-11-01, 설계와 수정까지; 도구 확장은 미룸)
+
+- 진행 (orchestration-policy):
+  - 설계: deep-reasoner(규칙 3)가 했다. 타당성 판정은 통과했다. 손 모델로 원본의 결함을 쟀다.
+  - 번역의 건전성 판단: critic(JE19)이 O1-O8을 냈다. 이 파일의 판정을 바꾸는 것은 없었다. 그러나 도구가 기계적으로 적용할 규칙이 불완전했다.
+  - advisor 권고대로 순서를 정했다: 명세 결정을 먼저 묻고, 설계를 보완하고, 범위를 따로 묻는다. 설계 v2는 deep-reasoner가 critic 내용을 반영해서 만들었다.
+  - req-shield 수정은 feature-developer가 했다.
+  - 메인 세션이 소스에서 두 가지를 확인했다: 폴링이 한 번 더 일어나는 것(문서와 테스트가 어긋남), 그리고 `tryLock`이 `Mono.defer` 없이 불리는 것.
+- 사용자 결정: UE10 (a), UE11 (b), UE12 (b), UE13 예, UE14 예. 도구 확장은 미룬다. req-shield push.
+- 결과 (`DESIGN-E.md` 14-14.3): 원본은 LD_own, LD_transfer, LD_write, POLL_bound, RET_hit에서 FAILED이고, 고친 코드는 PROVEN이다 (손 모델 기준). req-shield `12d571e`는 fork에 push했다.
+- 커밋: `d87d6ac`(설계), `53d98bf`(critic), `fbb92b5`(결정), `55e6795`(설계 v2), 그리고 이 기록.

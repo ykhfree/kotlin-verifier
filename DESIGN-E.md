@@ -1405,3 +1405,10 @@ deep-reasoner가 `spike/protocol2r/CRITIC-E6.md`의 O1-O8을 설계에 넣고, �
 4. O5: UE11 (b)에서는 잘린 읽기가 사라진다. 그래서 RET_poll 메모가 쓰인 그대로 성립한다. LD_write를 강화해서, 캐시 쓰기를 넘기기 전에 넘기는 쪽에서 LD_write guard를 확인한다. 그러면 원본은 LD_write에서도 FAILED이고, 고친 코드는 PROVEN이다 (측정).
 5. 메인 세션 결정: JE23 위 LD_write 강화를 채택한다. reactor 모듈에서만 켜므로 core와 coroutine Viper는 그대로다. JE22 "사용자 Mono는 끝난다"는 서명 가정 A8로 두지 않고, 신뢰 환경 목록에 둔다.
 6. 수정된 추정: 15-23 인일 (처음 12-19 인일).
+
+### 14.3 사용자 결정: 도구 확장은 미룬다 (2026-11-01)
+
+1. E6는 손 모델과 req-shield 수정으로 마무리한다. 손 모델(`spike/protocol2r/target-reactor-v2.vpr`)이 reactor 변형의 기준(oracle)이다. 도구 확장(S0-S10, 추정 15-23 인일)은 필요해질 때 한다. 그때 쓸 설계는 `DESIGN-E6-v2.md`이고, 예측 P1-P10도 거기에 있다. 예측은 도구 작업을 시작할 때 다시 등록한다.
+2. 결과 (손 모델 측정과 소스 읽기. 도구로는 확인하지 않았다): 원본 reactor `ReqShield`(`2e792d2`)는 LD_own, LD_transfer, LD_write, POLL_bound, RET_hit에서 FAILED다. 고친 코드는 PROVEN이다.
+3. req-shield 수정 `12d571e` (UE14). 바꾼 것은 셋이다: compareAndSet으로만 바뀌는 owner 상태(취소 경쟁), 폴링을 정확히 `maxAttemptGetCache`번으로(UE11), 갱신용 `tryLock`을 `Mono.defer`로(UE12). 검토한 패치 그대로다. 테스트 6개는 수정 전에 실패하고 수정 뒤에 통과한다. 3번 돌려서 흔들림이 없었다. req-shield 전체 빌드 테스트 372개가 통과했다. fork에 push했다 (2026-11-01, `8efeeea..12d571e`).
+4. 한계: 수정 전 R3 테스트는 첫 단언(unLock 2회)에서 실패했다. 그래서 "캐시를 쓰지 않음" 단언이 수정 전에 실패하는지는 따로 재지 않았다. 경쟁 테스트는 시험용 `LateMono`를 쓴다.
