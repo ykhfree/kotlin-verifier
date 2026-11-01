@@ -1394,3 +1394,14 @@ JE9 `trusted param`을 새로 둔다. JE10 CANCEL은 `throws`에 적고 FIR과 �
 메인 세션 결정 (설계안대로): JE16 `MonoLowering`을 따로 둔다. JE17 releaseLock은 그 자리의 unLock으로 모델한다. JE18 늦은 신호는 모두 허용한다. JE19 critic 검토는 했다 (`spike/protocol2r/CRITIC-E6.md`). JE20 `acquired`를 쓴다.
 
 아직 하지 않은 것: 예측 등록과 범위 결정. critic이 찾은 규칙 보완(O1-O8)을 설계에 넣은 뒤에 한다 (advisor 권고).
+
+### 14.2 critic 반영 (설계 v2, 2026-11-01)
+
+deep-reasoner가 `spike/protocol2r/CRITIC-E6.md`의 O1-O8을 설계에 넣고, 손 모델을 다시 쟀다. 산출물은 `spike/protocol2r/DESIGN-E6-v2.md`, `target-reactor-v2.vpr`, `verdicts-v2.txt`, `reqshield.reactor.kv.draft-v2`, `tools-v2/`, `exp/`이다.
+
+1. 판정은 바뀌지 않았다. 원본은 FAILED이고, `12d571e`(req-shield 수정, 검토한 패치와 바이트 단위로 같음)는 PROVEN이다. 두 base에서 73개 파일을 쟀고, 예상 밖 행은 0개였다.
+2. 취소 지점 규칙(O2): A-normal KVIR의 문장마다 앞에, 그리고 블록마다 시작에 둔다. CAS가 조건식 안에 있는 예제로 확인했다: "Kotlin 문장 사이"에만 두면 거짓 PROVEN이고, 새 규칙에서는 FAILED다 (측정, `exp/o2-cas-fixture.vpr`).
+3. hook은 각각 따로 실행된다 (O1). 취소 hook은 공유 상태에 한 번만 접근한다 (W24). hook 안의 해제는 deferred여야 한다 (W24-r, O6). 중재 연산자가 바뀌면 Disarm한다 (O3). flatMap 안쪽 구독은 늦으면 취소를 놓칠 수 있다 (O4). 신뢰 환경에 세 가지를 더했다 (O7).
+4. O5: UE11 (b)에서는 잘린 읽기가 사라진다. 그래서 RET_poll 메모가 쓰인 그대로 성립한다. LD_write를 강화해서, 캐시 쓰기를 넘기기 전에 넘기는 쪽에서 LD_write guard를 확인한다. 그러면 원본은 LD_write에서도 FAILED이고, 고친 코드는 PROVEN이다 (측정).
+5. 메인 세션 결정: JE23 위 LD_write 강화를 채택한다. reactor 모듈에서만 켜므로 core와 coroutine Viper는 그대로다. JE22 "사용자 Mono는 끝난다"는 서명 가정 A8로 두지 않고, 신뢰 환경 목록에 둔다.
+6. 수정된 추정: 15-23 인일 (처음 12-19 인일).
