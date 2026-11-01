@@ -541,4 +541,5 @@ Microsoft Research의 PDD Kit("의도 → 형식 명세 → 생성한 코드가 
   - 핵심 주장 두 가지는 메인 세션이 따로 확인했다. 첫째, 소스를 비교해서 core 수정이 coroutine에 옮겨지지 않았음을 확인했다. 둘째, `kv lower`의 StackOverflowError를 재현했다.
   - 구현: feature-developer가 세 묶음(S1-S3, S4-S6, S7-S9)으로 했다. 메인 세션이 묶음마다 검토하고 가져왔다. 1묶음과 2묶음의 열린 질문은 메인 세션이 정했다.
 - 결과 (`DESIGN-E.md` 13.3): 원본 coroutine `ReqShield`는 RET_hit, RET_recheck, RET_supplier_error, RET_cancel에서 FAILED다. req-shield 수정(`5bdc4d9`, `0e2e48c`, 작업 브랜치, push 안 함)을 적용한 사본은 PROVEN이다. 예측 9개 중 6개가 맞았다. P3, P8은 틀렸고, P9는 재지 않았다. 전체 테스트 837개 통과, 변이 33/30/42/67회에서 불일치 0.
-- 커밋: `236b85f`(설계), `15841c4`(결정과 예측), `63840a7`, `3a2e14e`, `ea20ffd`(구현). 모두 push하지 않았다.
+- 커밋: `236b85f`(설계), `15841c4`(결정과 예측), `63840a7`, `3a2e14e`, `ea20ffd`(구현), `85f450e`(출처 줄 날짜), `616fa9d`(기록). 모두 push하지 않았다.
+- main HEAD(`616fa9d`)에서 다시 쟀다 (2026-11-01): 전체 테스트 837개 통과, 변이 33/30/42/67회에서 불일치 0.
