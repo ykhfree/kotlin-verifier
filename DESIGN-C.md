@@ -1188,3 +1188,4 @@ decl := ...
 5. 예측 5 일부 맞음: 변이 30, 42, 67회 불일치 0. `mutantsReqShield` 33회는 판정이 모두 같지만, SB6과 E4(3변형, 6행)의 실패 목록에 `progress_live`가 더해졌다. 두 변이는 살아 있는 entry를 넘겨받으므로 전에도 깨져 있었고, Silicon이 그 경로를 P3a에서 멈춰 보고하지 않았다. 기대값을 고친 뒤 불일치 0이다. `ReserveVerifyTest`의 AT1-AT3도 같은 이유로 고쳤다.
 6. 서명: 메모 3개의 문구를 바꾸고(`entry_lease`, `tryLock`과 `sweep`의 P3a) probe의 지문을 다시 찍었다. 문구는 메인 세션이 사용자 결정을 풀어 쓴 것이고, 사용자가 확인했다 (2026-11-03).
 7. 바꾼 것: `specs/reqshield/keylocallock.common.kv`, gate 목표 모델 `effect_ghost/target.vpr`, 테스트 기대값. 도구 코드는 바꾸지 않았다.
+8. 작성 규칙: 이 sidecar에 새 probe를 쓸 때는 시각 값에 `<= Long.MAX_VALUE` 전제를 단다. 그렇지 않으면 모든 action이 PROVEN이어도 probe가 FAILED다. 모델의 `now`가 무한 정수이기 때문이다. P3a의 `now > Long.MAX_VALUE` 쪽은 실제 시계에서 일어나지 않는다.
