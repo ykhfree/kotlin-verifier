@@ -52,7 +52,7 @@ class VerifyTest {
 
     @Test
     fun `3 - a false sidecar property is FAILED with its ID, sidecar position and the Kotlin action position`() {
-        val reviewed = "  reviewed \"ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed\" sha256 \"3c68af4c1e630a46\"\n"
+        val reviewed = "  reviewed \"ykhfree 2026-11-03: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed; a lease above Long.MAX_VALUE counts as Long.MAX_VALUE\" sha256 \"60e8b5d868e11039\"\n"
         // Under review intent the new clause is signed as a person would sign it (DESIGN-C.md 10.14).
         ws.editSpec("keylocallock.common.kv", reviewed, reviewed + "  ensures P_false: !has(S, k)\n    source none \"t\"\n  reviewed \"t\"\n")
         ws.rereview("keylocallock.common.kv")

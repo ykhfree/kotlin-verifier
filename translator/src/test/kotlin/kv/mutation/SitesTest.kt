@@ -290,7 +290,7 @@ class SitesTest {
         assertTrue("\"replacement\": \"val racy_1 = lockMap.containsKey(completeKey)\\n${" ".repeat(12)}\"" in json, json)
         assertTrue("\"file\": \"support/src/main/kotlin/com/linecorp/cse/reqshield/support/config/LocalLockLimit.kt\"" in json, json)
         // The judge reads the properties with their review notes (MUTATION.md 6).
-        assertTrue("{\"kind\": \"ends_only_if\", \"operation\": \"tryLock\", \"id\": \"P3a\", \"text\": \"now > old(tok(qt).gLease)\", \"reviewed\": \"ykhfree 2026-10-23: README: only an expired lock is taken over" in json, json)
+        assertTrue("{\"kind\": \"ends_only_if\", \"operation\": \"tryLock\", \"id\": \"P3a\", \"text\": \"now > old(tok(qt).gLease) || (old(tok(qt).gLease) > 9223372036854775807 && now > 9223372036854775807)\", \"reviewed\": \"ykhfree 2026-11-03: README: only an expired lock is taken over" in json, json)
         assertTrue("{\"kind\": \"lemma\", \"operation\": null, \"id\": \"P3c\"" in json, json)
     }
 

@@ -89,9 +89,10 @@ operation tryLock = fun KeyLocalLock.tryLock {
   ensures P1a_entry: res != NULL && tok(res).gBacked ==> has(S, k) && S.m[k].token == res
     source "README.md#local-lock-map-size/1" quote "keeps one entry per `(cache key, lock type)` it is currently locking" sha256 "4b545b75bf0b21e0"
   reviewed "ykhfree 2026-10-28: a backed token is the token that its key's map entry carries" sha256 "c31c25acde4a0c8e"
-  ends_only_if P3a: now > old(tok(qt).gLease)
+  ends_only_if P3a: now > old(tok(qt).gLease) || (old(tok(qt).gLease) > 9223372036854775807 && now > 9223372036854775807)
     source "README.md#global-lock-guidance/2" quote "a slow holder whose lock already expired" sha256 "ffd91c43c843b5f8"
-  reviewed "ykhfree 2026-10-23: README: only an expired lock is taken over (a slow holder whose lock already expired)" sha256 "3dd0a68bbaa68ef4"
+    source none "user decision 2026-11-03 (DESIGN-C 10.19): an expiry capped at Long.MAX_VALUE is allowed"
+  reviewed "ykhfree 2026-11-03: README: only an expired lock is taken over (a slow holder whose lock already expired); a lease above Long.MAX_VALUE counts as Long.MAX_VALUE" sha256 "0363510350a6fd90"
   unbacked_only_if P3b: !old(has(S, k)) && rej && limit != 0
     source "README.md#local-lock-map-size/4" quote "a request for a **new** key is handed a permit that no map entry backs." sha256 "22ecf436faddbfa1"
   reviewed "ykhfree 2026-10-23: README Local lock map size: at the cap a new key is handed a permit that no map entry backs" sha256 "a185c9abbb1779b1"
@@ -136,9 +137,10 @@ operation unLock = fun KeyLocalLock.unLock {
 
 operation sweep = compute in KeyLocalLock.Companion {
   free now = local now                  // System.currentTimeMillis(), once per sweep pass
-  ends_only_if P3a: now > old(tok(qt).gLease)
+  ends_only_if P3a: now > old(tok(qt).gLease) || (old(tok(qt).gLease) > 9223372036854775807 && now > 9223372036854775807)
     source "README.md#local-lock-map-size/2" quote "cleanup monitor once `lockTimeoutMillis` has passed" sha256 "a50a09d95953837f"
-  reviewed "ykhfree 2026-10-23: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed" sha256 "3c68af4c1e630a46"
+    source none "user decision 2026-11-03 (DESIGN-C 10.19): an expiry capped at Long.MAX_VALUE is allowed"
+  reviewed "ykhfree 2026-11-03: README: the cleanup monitor drops an entry once lockTimeoutMillis has passed; a lease above Long.MAX_VALUE counts as Long.MAX_VALUE" sha256 "60e8b5d868e11039"
   // DESIGN-C.md 10.4: a monitor pass never makes an entry for a key that had none.
   ensures no_entry_created: !old(has(S, k)) ==> !has(S, k)
     source none "user decision 2026-10-26 (DESIGN-C 10.4): no sentence states it; cell generation found it only in the hole"
@@ -151,11 +153,14 @@ invariant P2: forall qr: Ref :: { qr in S.created } qr in S.created ==> 0 <= qr.
 reviewed "ykhfree 2026-10-28: an entry's semaphore holds 0 or 1 permits" sha256 "e253d83565837981"
 // DESIGN-C.md 10 UC2: an entry expires at the lease of the token it carries (issue: gLease = now + timeout), so
 // progress_live and expired_takeover, which read expiresAt, keep their meaning whatever the hole says.
+// DESIGN-C.md 10.19: an entry may store Long.MAX_VALUE when the lease is above it. gLease stays the exact sum.
 invariant entry_lease: forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
-    S.m[qk].expiresAt == tok(S.m[qk].token).gLease
+    S.m[qk].expiresAt == tok(S.m[qk].token).gLease ||
+    (tok(S.m[qk].token).gLease > 9223372036854775807 && S.m[qk].expiresAt == 9223372036854775807)
   source "README.md#local-lock-map-size/2" quote "cleanup monitor once `lockTimeoutMillis` has passed" sha256 "a50a09d95953837f"
   source "CLAUDE.md#reqshieldconfiguration-parameters/4" quote "`lockTimeoutMillis`: Lock acquisition timeout" sha256 "96bb2ac381ef4f65"
-reviewed "ykhfree 2026-10-25: an unreleased lock expires lockTimeoutMillis after it was acquired" sha256 "c2ae43c5a13c3c35"
+  source none "user decision 2026-11-03 (DESIGN-C 10.19): an expiry capped at Long.MAX_VALUE is allowed"
+reviewed "ykhfree 2026-11-03: an unreleased lock expires lockTimeoutMillis after it was acquired; when that sum is above Long.MAX_VALUE, the entry may store Long.MAX_VALUE" sha256 "089c694d59e35e3f"
 // DESIGN-C.md 10.3: progress_live reads isHeld; this ties it to the ghost state, so its meaning does not live in the hole.
 invariant entry_held: forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
     S.m[qk].isHeld == tok(S.m[qk].token).gHeld
@@ -179,7 +184,8 @@ hole MI_INV """
   (forall qk: Key :: { S.m[qk] } has(S, qk) ==>
      tok(S.m[qk].token).gIssued && tok(S.m[qk].token).gKey == qk &&
      tok(S.m[qk].token).gBacked && tok(S.m[qk].token).gHeld &&
-     tok(S.m[qk].token).gLease == S.m[qk].expiresAt) &&
+     (tok(S.m[qk].token).gLease == S.m[qk].expiresAt ||
+      (tok(S.m[qk].token).gLease > 9223372036854775807 && S.m[qk].expiresAt == 9223372036854775807))) &&
   // Each held backed token is the token of its key's entry.
   (forall qt: Int :: { tok(qt).gHeld }
      tok(qt).gIssued && tok(qt).gBacked && tok(qt).gHeld ==>
@@ -187,7 +193,7 @@ hole MI_INV """
 """
 
 // ---- Non-vacuity probe: a scenario from init ----
-probe(k: Key, now: Int, timeout: Int) requires timeout > 0 {
+probe(k: Key, now: Int, timeout: Int) requires timeout > 0 && now <= 9223372036854775807 {
   t1 := tryLock(k, now = now, timeout = timeout, rej = false, limit = 0)
   assert t1 != NULL && tok(t1).gBacked
   t2 := tryLock(k, now = now, timeout = timeout, rej = false, limit = 0)   // live entry
@@ -198,4 +204,4 @@ probe(k: Key, now: Int, timeout: Int) requires timeout > 0 {
   assert !ok2
 }
   source none "a non-vacuity scenario, not a requirement"
-reviewed "ykhfree 2026-10-28: a first call gets a backed token, a second call for the live key gets none, the release succeeds, and a stale release fails" sha256 "6b996ce1ab3885c4"
+reviewed "ykhfree 2026-10-28: a first call gets a backed token, a second call for the live key gets none, the release succeeds, and a stale release fails" sha256 "b62496c0268e708a"

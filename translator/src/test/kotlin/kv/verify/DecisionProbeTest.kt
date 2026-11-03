@@ -32,7 +32,7 @@ class DecisionProbeTest {
         """
         |
         |// D1 (DESIGN-C.md 3.6): at exactly the lease end the lock is still held.
-        |probe expiry_boundary(k: Key, a: Int, d: Int) requires d > 0 {
+        |probe expiry_boundary(k: Key, a: Int, d: Int) requires d > 0 && a + d <= 9223372036854775807 {
         |  t1 := tryLock(k, now = a, timeout = d, rej = false, limit = 0)
         |  t2 := tryLock(k, now = a + d, timeout = d, rej = false, limit = 0)
         |  assert t2 == NULL
@@ -40,7 +40,7 @@ class DecisionProbeTest {
         |  source "README.md#local-lock-map-size/2" quote "once `lockTimeoutMillis` has passed" sha256 "a50a09d95953837f"
         |  reviewed "test fixture, not a signature: strict, the lease end is still held"
         |// D4: one ms after the lease end, tryLock takes the lock over at once and gets a backed token.
-        |probe expired_takeover_at_once(k: Key, a: Int, d: Int) requires d > 0 {
+        |probe expired_takeover_at_once(k: Key, a: Int, d: Int) requires d > 0 && a + d + 1 <= 9223372036854775807 {
         |  t1 := tryLock(k, now = a, timeout = d, rej = false, limit = 0)
         |  t2 := tryLock(k, now = a + d + 1, timeout = d, rej = false, limit = 0)
         |  assert t2 != NULL && tok(t2).gBacked
@@ -109,7 +109,7 @@ class DecisionProbeTest {
         // ends a token only after its lease. Drop the first and widen the second (re-signed, as a person would).
         val spec = File(ws.specs, common).readText()
         ws.editSpec(common, Regex("(?m)^  ensures progress_live:.*\n(    source .*\n)*  reviewed .*\n").find(spec)!!.value, "")
-        ws.editSpec(common, "ends_only_if P3a: now > old(tok(qt).gLease)\n    source \"README.md#global-lock-guidance/2\"", "ends_only_if P3a: now >= old(tok(qt).gLease)\n    source \"README.md#global-lock-guidance/2\"")
+        ws.editSpec(common, "ends_only_if P3a: now > old(tok(qt).gLease) || (old(tok(qt).gLease) > 9223372036854775807 && now > 9223372036854775807)\n    source \"README.md#global-lock-guidance/2\"", "ends_only_if P3a: now >= old(tok(qt).gLease) || (old(tok(qt).gLease) > 9223372036854775807 && now > 9223372036854775807)\n    source \"README.md#global-lock-guidance/2\"")
         ws.rereview(common)
         val r = ws.verify("coroutine")
         val text = r.render()
@@ -126,7 +126,7 @@ class DecisionProbeTest {
     private val sweeps =
         """
         |
-        |probe sweep_before_lease_end(key: Key, a: Int) requires a >= 0 {
+        |probe sweep_before_lease_end(key: Key, a: Int) requires a >= 0 && a + 3001 <= 9223372036854775807 {
         |  x := tryLock(key, now = a, timeout = 3000, rej = false, limit = 0)
         |  sweep(key, now = a + 3000)
         |  ok := unLock(key, t = x)
@@ -134,7 +134,7 @@ class DecisionProbeTest {
         |}
         |  source none "test fixture"
         |  reviewed "test fixture, not a signature"
-        |probe sweep_after_lease_end(key: Key, a: Int) requires a >= 0 {
+        |probe sweep_after_lease_end(key: Key, a: Int) requires a >= 0 && a + 3001 <= 9223372036854775807 {
         |  x := tryLock(key, now = a, timeout = 3000, rej = false, limit = 0)
         |  sweep(key, now = a + 3001)
         |  ok := unLock(key, t = x)

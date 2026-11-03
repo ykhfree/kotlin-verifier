@@ -56,7 +56,7 @@ class LibraryConstantTest {
     }
 
     @Test
-    fun `C6 the coroutine KeyLocalLock with a lease saturated at Long MAX_VALUE fails entry_lease`() {
+    fun `C6 the coroutine KeyLocalLock with an expiry capped at Long MAX_VALUE is PROVEN (DESIGN-C 10_19)`() {
         Silicon.check(Silicon.defaultHome())
         val ws = Workspace(dir)
         ws.editKotlin(
@@ -67,7 +67,33 @@ class LibraryConstantTest {
         val r = ws.verify("coroutine")
         val text = r.render()
         println("C6\n$text")
+        assertEquals(ModuleVerdict.PROVEN, r.verdict, text)
+    }
+
+    @Test
+    fun `C6b an expiry capped below Long MAX_VALUE fails entry_lease`() {
+        Silicon.check(Silicon.defaultHome())
+        val ws = Workspace(dir)
+        ws.editKotlin(
+            "coroutine",
+            "LockInfo(Semaphore(1), now + lockTimeoutMillis, token = token)",
+            "LockInfo(Semaphore(1), if (lockTimeoutMillis > Long.MAX_VALUE - now) Long.MAX_VALUE - 1 else now + lockTimeoutMillis, token = token)",
+        )
+        val r = ws.verify("coroutine")
+        val text = r.render()
         assertEquals(Verdict.FAILED, r.row("tryLock").verdict, text)
+        assertTrue("sidecar entry_lease" in text, text)
+    }
+
+    @Test
+    fun `C6c an expiry that is always Long MAX_VALUE fails entry_lease`() {
+        Silicon.check(Silicon.defaultHome())
+        val ws = Workspace(dir)
+        ws.editKotlin("coroutine", "LockInfo(Semaphore(1), now + lockTimeoutMillis, token = token)", "LockInfo(Semaphore(1), Long.MAX_VALUE, token = token)")
+        val r = ws.verify("coroutine")
+        val text = r.render()
+        assertEquals(Verdict.FAILED, r.row("tryLock").verdict, text)
+        assertTrue("sidecar entry_lease" in text, text)
     }
 
     @Test

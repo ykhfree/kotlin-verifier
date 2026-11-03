@@ -97,11 +97,15 @@ class ReserveVerifyTest {
         return ws.verify("coroutine")
     }
 
-    /** DESIGN-D.md 8 AT1-AT3: the tryLock and sweep of the original fail only P3a; the step, unLock and the probe hold. */
+    /**
+     * DESIGN-D.md 8 AT1-AT3: the tryLock and sweep of the original fail at the expiry boundary; the step, unLock and the
+     * probe hold. Taking over at now == expiresAt breaks P3a and progress_live. Silicon reports both since the P3a
+     * clause has two disjuncts (DESIGN-C.md 10.19); before it stopped that path at P3a.
+     */
     private fun assertBoundaryDefect(r: Report) {
         val text = r.render()
         assertEquals(ModuleVerdict.FAILED, r.verdict, text)
-        assertEquals(listOf("ends_only_if P3a"), r.row("tryLock").ids(), text)
+        assertEquals(listOf("ends_only_if P3a", "progress_live"), r.row("tryLock").ids(), text)
         assertEquals(SubStatus.PROPERTY, r.row("tryLock").sub, text)
         assertEquals(listOf("ends_only_if P3a"), r.row("sweep").ids(), text)
         assertEquals(Verdict.PROVEN to Verdict.PROVEN, r.row("reserve tryLock").verdict to r.row("unLock").verdict, text)

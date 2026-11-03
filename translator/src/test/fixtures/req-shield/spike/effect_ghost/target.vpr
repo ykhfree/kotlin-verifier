@@ -72,7 +72,8 @@ define P2(S) (
 // ---- Sidecar: state property entry_lease (DESIGN-C.md 10 UC2) ----
 define entry_lease(S) (
   forall qk: Key :: { S.m[qk] } has(S, qk) && S.m[qk].token != NULL ==>
-    S.m[qk].expiresAt == tok(S.m[qk].token).gLease
+    S.m[qk].expiresAt == tok(S.m[qk].token).gLease ||
+    (tok(S.m[qk].token).gLease > 9223372036854775807 && S.m[qk].expiresAt == 9223372036854775807)
 )
 
 // ---- Sidecar: state property entry_held (DESIGN-C.md 10.3) ----
@@ -92,7 +93,8 @@ define MI_INV_3(S) ((forall qt: Int :: { tok(qt).gIssued } tok(qt).gIssued ==> 0
 define MI_INV_4(S) ((forall qk: Key :: { S.m[qk] } has(S, qk) ==>
      tok(S.m[qk].token).gIssued && tok(S.m[qk].token).gKey == qk &&
      tok(S.m[qk].token).gBacked && tok(S.m[qk].token).gHeld &&
-     tok(S.m[qk].token).gLease == S.m[qk].expiresAt))
+     (tok(S.m[qk].token).gLease == S.m[qk].expiresAt ||
+      (tok(S.m[qk].token).gLease > 9223372036854775807 && S.m[qk].expiresAt == 9223372036854775807))))
 // Each held backed token is the token of its key's entry.
 define MI_INV_5(S) ((forall qt: Int :: { tok(qt).gHeld }
      tok(qt).gIssued && tok(qt).gBacked && tok(qt).gHeld ==>
@@ -159,7 +161,7 @@ method tryLock(S: Ref, k: Key, now: Int, timeout: Int, rej: Bool, limit: Int) re
   // ends_only_if P3a: only an expired token is taken over.
   ensures forall qt: Int :: { tok(qt).gHeld }
     old(tok(qt).gIssued) && old(tok(qt).gBacked) && old(tok(qt).gHeld) && !tok(qt).gHeld ==>
-      (now > old(tok(qt).gLease))
+      (now > old(tok(qt).gLease) || (old(tok(qt).gLease) > 9223372036854775807 && now > 9223372036854775807))
   // unbacked_only_if P3b: an unbacked token is issued only at the cap, for a key without an entry.
   ensures res != NULL && !tok(res).gBacked ==> (!old(has(S, k)) && rej && limit != 0)
   // P1a: every acquisition gets a token that was never issued before, recorded for this key.
@@ -340,7 +342,7 @@ method sweep(S: Ref, k: Key, now: Int)
   // ends_only_if P3a: the monitor ends only expired acquisitions.
   ensures forall qt: Int :: { tok(qt).gHeld }
     old(tok(qt).gIssued) && old(tok(qt).gBacked) && old(tok(qt).gHeld) && !tok(qt).gHeld ==>
-      (now > old(tok(qt).gLease))
+      (now > old(tok(qt).gLease) || (old(tok(qt).gLease) > 9223372036854775807 && now > 9223372036854775807))
   // no_entry_created (DESIGN-C.md 10.4): no entry for a key that had none.
   ensures !old(has(S, k)) ==> !has(S, k)
 {
@@ -379,7 +381,7 @@ method lemma_P3c(S: Ref)
 
 // Sidecar: probe scenario. MI is satisfiable from init, and the actions are reachable and not inert.
 method probe(k: Key, now: Int, timeout: Int)
-  requires timeout > 0
+  requires timeout > 0 && now <= 9223372036854775807
 {
   var S: Ref
   S := init()

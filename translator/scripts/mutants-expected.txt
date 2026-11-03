@@ -11,14 +11,17 @@
 # 2026-10-25 (DESIGN-C.md 10 UC2): the sidecar invariant entry_lease now names SB3's defect (a takeover keeps the
 # old expiresAt). Before, SB3 failed only at the hole conjunct MI_INV_4 (invariant only).
 #
+# 2026-11-03 (DESIGN-C.md 10.19): the P3a clause now has two disjuncts, so SB6 and E4 also report progress_live. Both
+# mutants take over a live entry, so progress_live was already broken; Silicon stopped that path at P3a before.
+#
 # variant   mutant    verdict  action   obligations
 coroutine   original  PROVEN   -        -
 coroutine   SB1       FAILED   unLock   ends_only_if P3a
 coroutine   SB2       FAILED   unLock   ends_only_if P3a; progress_owner
 coroutine   SB3       FAILED   tryLock  entry_lease
 coroutine   SB4       FAILED   tryLock  issue tryLock: set-once gIssued
-coroutine   SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
-coroutine   E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
+coroutine   SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a; progress_live
+coroutine   E4        FAILED   tryLock  ends_only_if P3a; progress_live; unbacked_only_if P3b
 coroutine   SB5       PROVEN   -        -
 coroutine   SB5b      PROVEN   -        -
 coroutine   R1        PROVEN   -        -
@@ -28,8 +31,8 @@ core        SB1       FAILED   unLock   ends_only_if P3a
 core        SB2       FAILED   unLock   ends_only_if P3a; progress_owner
 core        SB3       FAILED   tryLock  entry_lease
 core        SB4       FAILED   tryLock  issue tryLock: set-once gIssued
-core        SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
-core        E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
+core        SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a; progress_live
+core        E4        FAILED   tryLock  ends_only_if P3a; progress_live; unbacked_only_if P3b
 core        SB5       PROVEN   -        -
 core        SB5b      PROVEN   -        -
 core        R1        PROVEN   -        -
@@ -39,8 +42,8 @@ reactor     SB1       FAILED   unLock   ends_only_if P3a
 reactor     SB2       FAILED   unLock   ends_only_if P3a; progress_owner
 reactor     SB3       FAILED   tryLock  entry_lease
 reactor     SB4       FAILED   tryLock  issue tryLock: set-once gIssued
-reactor     SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a
-reactor     E4        FAILED   tryLock  ends_only_if P3a; unbacked_only_if P3b
+reactor     SB6       FAILED   tryLock  MI_INV_1; ends_only_if P3a; progress_live
+reactor     E4        FAILED   tryLock  ends_only_if P3a; progress_live; unbacked_only_if P3b
 reactor     SB5       PROVEN   -        -
 reactor     SB5b      PROVEN   -        -
 reactor     R1        PROVEN   -        -
