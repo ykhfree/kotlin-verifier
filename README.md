@@ -21,13 +21,20 @@ sidecar 명세 (.kv) ───────┘                                   
 
 ## 지원하는 코드 모양
 
-도구는 다음 세 가지 모양의 모듈을 다룬다. 다른 모양의 코드는 sidecar를 써도 증명할 수 없다.
+도구는 다음 세 가지 모양의 모듈을 다룬다. 범용 검증기가 아니다. 다른 모양의 코드는 sidecar를 써도 증명할 수 없다.
 
 | 모양 | 설명 | 설계 문서 |
 |---|---|---|
-| L1 상태 모듈 | 연산 하나가 `ConcurrentHashMap.compute` 하나다 | `DESIGN-v0.md` |
-| aspect 캐시 | `getOrCreate`와 생성 함수로 객체를 한 번만 만든다 | `DESIGN-B.md` |
+| L1 토큰 프로토콜 | `object`나 `companion object`의 맵 하나를 쓴다. 연산 하나가 `ConcurrentHashMap.compute` 하나이고, 획득이 토큰을 발급하고 해제가 그 토큰을 끝낸다. sidecar에 ghost record(set-once 필드 하나, ends 필드 하나)와 `witness` 필드가 필요하다 | `DESIGN-v0.md` |
+| aspect 캐시 | 클래스 인스턴스의 맵 하나를 쓴다. `getOrCreate`와 생성 함수로 객체를 한 번만 만든다 | `DESIGN-B.md` |
 | L3 client 프로토콜 | lock 의무, 사건 기록, 백그라운드 과제(`CompletableFuture.runAsync`, kotlinx `launch`)가 있다 | `DESIGN-E.md` |
+
+연산마다 `compute`가 하나여도 위 모양이 아니면 다루지 못한다. 예를 들어 토큰 없이 상태만 바꾸고 `Boolean`을 돌려주는 키별 rate limiter는 끝까지 판정되지 않는다. 이유는 다음과 같다.
+- `object` 모듈은 ghost record와 `witness`를 요구한다.
+- 인스턴스 모듈은 연산 결과를 담는 지역 `AtomicBoolean`을 받지 않고, 맵 값의 필드를 읽는 결과도 받지 않는다.
+- 맵 값 클래스의 필드 타입은 `Long`, `AtomicBoolean`, `Semaphore`, sidecar 타입만 된다. `Int`와 `Boolean` 필드는 안 된다.
+
+sidecar는 요구사항과 구현의 모양을 함께 담는다. 필드, 토큰 형식, 카운터가 다른 구현은 이름만 바꿔서 묶을 수 없고, sidecar의 어휘를 그 구현에 맞게 다시 써야 한다. 그래서 AI에게 코드를 맡길 때는 코드 모양을 규칙으로 함께 줘야 한다.
 
 ## 설치
 
@@ -109,6 +116,8 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 ## 알려진 한계
 
 - 위의 세 가지 모양만 다룬다. Reactor(`Mono` 사슬)로 쓴 client 프로토콜은 아직 읽지 못한다.
+- `compute` 앞의 지역 변수에서 계산한 값을 맵 값에 저장하면, 동작이 맞아도 FAILED일 수 있다. 도구가 그 계산을 번역하지 않아서 임의 값으로 보기 때문이다. `val expiresAt = now + timeout`을 `compute` 앞에 두는 코드가 그 예다. 그런 값은 `compute` 안에서 계산한다.
+- `compute` 안에서 모듈 상태가 아닌 `AtomicLong`을 증가시키면 UNSUPPORTED다. 통계용 카운터는 `compute` 밖에서 증가시킨다. 도구는 그런 카운터의 정확성을 증명하지 않는다.
 - 묶인 Kotlin 지역 변수의 계산식을 바꿔도(예: `val now = nowToEpochTime() + lockTimeoutMillis`) PROVEN이 그대로다. 도구가 `free` 값의 계산을 번역하지 않기 때문이다 (`DESIGN-v0.md` 2.12 규칙 1, `DESIGN-C.md` 10.16). 그래서 묶인 지역 변수의 계산식은 사람이 읽어야 한다.
 - `free` 묶기는 서명이 덮지 않는다. `kv resolve`는 한 값을 두 번 묶는 것(`free-duplicate`)과, client에서 읽히지 않는 경로에 묶은 것(`free-unused`)을 잡는다 (`DESIGN-C.md` 10.16). 두 묶기를 맞바꾼 경우와 L1의 `param`·`local` 오묶기는 아직 잡지 못한다. 그런 sidecar는 FAILED나 ERROR가 된다.
 - Confluence 가져오기는 공식 API 스펙에 맞춰 만들었지만, 실제 Confluence 페이지로는 아직 확인하지 않았다 (`DESIGN-C.md` 10.8의 미확인 항목).
