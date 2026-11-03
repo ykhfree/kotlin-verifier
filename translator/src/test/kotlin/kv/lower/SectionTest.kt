@@ -97,6 +97,23 @@ class SectionTest {
         assertUnsupportedOp(f.lowered(), "throw", f.at("throw IllegalStateException"))
     }
 
+    // ---- a result that reads a field (W10) ----
+
+    /** Found by a rate limiter probe on 2026-11-03: this shape gave module ERROR "a tool defect", not UNSUPPORTED. */
+    @Test
+    fun `a result that reads a field of the action value is unsupported`() {
+        val f =
+            AspectFixture(
+                op = "    fun getOrCreate(jp: Any): Long {\n        val s = shieldMap.computeIfAbsent(target(jp)) { create(jp) }\n        return s.n\n    }",
+                shieldKotlin = "class Shield(val name: String, val n: Long = 0L)",
+                shieldSidecar = "class Shield = Shield {\n  n: Long = n\n}",
+                operations = "operation getOrCreate = fun Aspect.getOrCreate {\n  free thrown = call create\n  result res\n}\n",
+            )
+        val m = f.lowered()
+        assertEquals(emptyList(), checkWellFormed(m).map { it.toString() })
+        assertUnsupportedOp(m, "operation result", f.at("s.n"))
+    }
+
     // ---- !! ----
 
     @Test

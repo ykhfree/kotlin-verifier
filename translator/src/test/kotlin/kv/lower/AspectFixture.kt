@@ -46,6 +46,10 @@ data class AspectFixture(
     val hole: String = "true",
     /** More jars on the compile classpath, e.g. slf4j for a logger. */
     val classpath: List<File> = emptyList(),
+    /** The Kotlin class of the map values. */
+    val shieldKotlin: String = "class Shield(val name: String)",
+    /** The sidecar class of the map values. */
+    val shieldSidecar: String = "class Shield = Shield { }",
 ) {
     val kotlin: String =
         """
@@ -55,7 +59,7 @@ data class AspectFixture(
         |import java.util.concurrent.ConcurrentHashMap
         |$imports
         |
-        |class Shield(val name: String)
+        |$shieldKotlin
         |
         |$topLevel
         |
@@ -91,7 +95,7 @@ data class AspectFixture(
         |type MethodKey = opaque java.lang.reflect.Method
         |state m: Map<MethodKey, Shield> = shieldMap
         |$setOnce
-        |class Shield = Shield { }
+        |$shieldSidecar
         |$uses
         |$stampedTrusted
         |$operations

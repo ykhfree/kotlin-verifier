@@ -2050,6 +2050,10 @@ internal class ActionLowering(
         section = false
         // A Unit function may end without a return: that path returns no value.
         if (!ends(normalize(body))) body = body + Return(null, ctx.posOf(fn.body ?: fn))
+        // W10: a result reads no field. This code is outside the subset, so it is unsupported and not a tool defect.
+        body.walk().filterIsInstance<Return>().firstNotNullOfOrNull { r -> r.e?.walk()?.firstOrNull { it is FieldRead } }?.let {
+            problems += Unsupported("operation result", "the result of an instance module reads no field of a map value (W10)", it.pos)
+        }
         seeds.filter { it is FirFunctionCall && it !== call && ctx.index.id(it) !in translated }.forEach {
             unsupported("call ${sourceText(it)}", "a fresh or throwing call where the operation section does not translate it (DESIGN-B.md 2.6 rule 4)", it, inAction = false)
         }
