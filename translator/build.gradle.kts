@@ -384,7 +384,7 @@ val mechanicalMutants by tasks.registering(Exec::class) {
     )
 }
 
-// `./gradlew aicodeEnv`: the AI-written-code measurement of AI-CODE.md (kotlin-verifier-experiments). Writes build/kv/aicode-env.json, which
+// `./gradlew aicodeEnv`: the AI-written-code measurement of AI-CODE.md. Writes build/kv/aicode-env.json, which
 // scripts/aicode.py reads (and scripts/spec.py, DESIGN-C.md C5, when it creates a run): the installed kv, the req-shield checkout, the KeyLocalLock compile classpath and flags, the
 // compiler's own classpath (for the sandbox compile.sh), the specs, the AI-CODE.md 4.1 excerpt, the results directory (-PaicodeResults=DIR) and
 // the work directory for sandboxes and copies (-PaicodeWork=DIR, default build/kv/aicode-work).

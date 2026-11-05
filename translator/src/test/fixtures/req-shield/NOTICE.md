@@ -16,4 +16,3 @@ Files that contain or change req-shield code:
 | `aicode/round2/impl/*/KeyLocalLock.kt` | AI-written implementations of the req-shield core-kotlin-coroutine `KeyLock` interface, in its package |
 
 The other files (Viper models, sidecar drafts, spec snapshots, scripts) quote or model req-shield code and documents.
-The full experiment records are in the private repository `kotlin-verifier-experiments`.

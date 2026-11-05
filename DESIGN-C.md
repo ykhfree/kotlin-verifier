@@ -1164,7 +1164,7 @@ decl := ...
 
 사용자 결정: 명세가 `Long.MAX_VALUE`로 자른 만료 시각을 허용한다. 2026-10-29의 결정("lease를 `Long.MAX_VALUE`로 포화시키는 구현은 명세 위반이다", `AI-CODE.md` 16)을 대신한다.
 
-근거 (측정, 실험 저장소 `REPAIR.md` 9.2, `REPAIR-CONTROL.md` 8.3): 자른 코드는 시나리오 판정을 모두 통과했지만 `entry_lease`에서 FAILED였다. AI agent는 도구 없이도 명세를 읽고 자르기를 지웠고, 그 결과 overflow 시나리오(S7)가 실패했다.
+근거 (측정): 자른 코드는 시나리오 판정을 모두 통과했지만 `entry_lease`에서 FAILED였다. AI agent는 도구 없이도 명세를 읽고 자르기를 지웠고, 그 결과 overflow 시나리오(S7)가 실패했다.
 
 설계:
 1. `gLease`는 그대로 수학적 합(`now + timeout`)이다. issue 규칙과 P1a는 바꾸지 않는다.
@@ -1183,7 +1183,7 @@ decl := ...
 결과 (2026-11-03, 측정):
 1. 예측 1은 처음에 틀렸다. 세 action은 PROVEN이지만 서명된 probe가 FAILED였다. probe의 "같은 시각의 두 번째 호출은 거부된다"가 `now > Long.MAX_VALUE`인 모델 상태에서 성립하지 않았다. probe의 전제에 `now <= Long.MAX_VALUE`를 더했고, 서명을 다시 찍었다. 그 뒤 원본 3종은 PROVEN이다.
 2. 예측 2 맞음: 경계만 고친 T-opus-2는 PROVEN이다.
-3. 예측 3 맞음: 경계만 고친 G-sonnet-2는 FAILED(`entry_lease`)다. compute 앞의 지역 변수 계산이 번역되지 않는 것이 원인이고, 자르지 않는 지역 변수에서도 같다 (실험 저장소 `REPAIR-CONTROL.md` 8.3). 이번 변경으로 고치지 않았다.
+3. 예측 3 맞음: 경계만 고친 G-sonnet-2는 FAILED(`entry_lease`)다. compute 앞의 지역 변수 계산이 번역되지 않는 것이 원인이고, 자르지 않는 지역 변수에서도 같다. 이번 변경으로 고치지 않았다.
 4. 예측 4 맞음: 사본 측정에서 변이 5개가 FAILED다: 항상 `Long.MAX_VALUE`, `Long.MAX_VALUE - 1`로 자름, 1000 ms로 짧게 자름, 넘칠 때 `now`를 저장 (모두 `entry_lease`), `Long.MAX_VALUE` 항목을 만료로 취급 (`ends_only_if P3a`). 앞의 두 경우는 `LibraryConstantTest` C6b, C6c로 고정했다. C6는 이제 자른 코드의 PROVEN을 고정한다.
 5. 예측 5 일부 맞음: 변이 30, 42, 67회 불일치 0. `mutantsReqShield` 33회는 판정이 모두 같지만, SB6과 E4(3변형, 6행)의 실패 목록에 `progress_live`가 더해졌다. 두 변이는 살아 있는 entry를 넘겨받으므로 전에도 깨져 있었고, Silicon이 그 경로를 P3a에서 멈춰 보고하지 않았다. 기대값을 고친 뒤 불일치 0이다. `ReserveVerifyTest`의 AT1-AT3도 같은 이유로 고쳤다.
 6. 서명: 메모 3개의 문구를 바꾸고(`entry_lease`, `tryLock`과 `sweep`의 P3a) probe의 지문을 다시 찍었다. 문구는 메인 세션이 사용자 결정을 풀어 쓴 것이고, 사용자가 확인했다 (2026-11-03).

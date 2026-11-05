@@ -42,5 +42,4 @@ cd translator
 | `translator/src/test/fixtures/req-shield/` | req-shield 실험에서 가져온 테스트 입력: 손 Viper 모델(`spike/`), 파일럿 초안(`pilot-c/`), 명세 스냅숏(`specdraft/`), AI가 쓴 구현(`aicode/`) |
 | `upstream/` | SnaKt 저장소의 기존 이슈에 남길 댓글 초안 (게시하지 않음) |
 
-실험 기록(변이 검사, AI가 쓴 코드, 파일럿, 손 모델 전체, 측정 보고서 `MUTATION.md`·`AI-CODE.md`·`PROTOCOL2.md`·`PHASE1.md`)은 비공개 저장소 `kotlin-verifier-experiments`에 있다.
-설계 문서가 `spike/`, `aicode/`, `mutation/`, `pilot-c/`, `specdraft/`, `frontend-probe/` 아래의 경로를 가리키면, 그 파일은 테스트 입력 폴더나 실험 저장소에 있다.
+설계 문서가 `spike/`, `aicode/`, `mutation/`, `pilot-c/`, `specdraft/`, `frontend-probe/` 아래의 경로를 가리키면, 그 파일은 테스트 입력 폴더에 있거나 이 저장소에 없다.

@@ -1,4 +1,4 @@
-<!-- Excerpt of AI-CODE.md section 4.1 (the generation prompt and RULES.md) for AicodeScriptTest and scripts/aicode.py. The full report lives in the kotlin-verifier-experiments repository. -->
+<!-- Excerpt of AI-CODE.md section 4.1 (the generation prompt and RULES.md) for AicodeScriptTest and scripts/aicode.py. -->
 
 ### 4.1 본 실험: 모양 틀이 있는 구현 12개
 

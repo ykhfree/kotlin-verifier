@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  * The deterministic parts of the AI-written-code harness (scripts/aicode.py, AI-CODE.md 3-6): the sandbox files, the
  * sandbox compile.sh (the real compiler), the token similarity, the binding adaptations and the hole task's verify.sh.
  * `kv verify` is a fake that prints a canned report; `kv hole check` is the real CLI. The real runs (Silicon, the
- * req-shield tests) are the dry run in aicode/dryrun of the kotlin-verifier-experiments repository.
+ * req-shield tests) ran outside this repository.
  */
 class AicodeScriptTest {
     @TempDir
