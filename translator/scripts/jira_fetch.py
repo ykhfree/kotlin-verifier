@@ -26,6 +26,7 @@ for them. Do not commit DIR. The script does not add --email to the file.
 Stdout never holds the summary, because that output can reach an LLM. It holds two lines per issue:
   fetched KV-7: id 10042, 14 comment(s), updated 2026-11-01T10:00:00.000+0900
   snapshot input: jira:10042=DIR/10042.jira.json
+The "updated" part is only for show: a response without it is no error, and the part is left out.
 
 The comment pages:
   S starts at 0 and grows by the number of comments received, because the server can return fewer than maxResults.
@@ -54,8 +55,6 @@ Exit codes:
      repeated comment id, or an unpaired surrogate in a response.
   3  the token cannot be read from the Keychain.
 """
-import argparse
-import base64
 import importlib.util
 import json
 import os
@@ -79,7 +78,6 @@ Failure = confluence.Failure
 field = confluence.field
 get_json = confluence.get_json
 
-PROGRAM = "jira_fetch.py"
 # The maxResults of a comment request.
 PAGE_SIZE = 100
 NOT_FOUND = "the issue was not found, or the account has no permission to view it"
@@ -145,10 +143,12 @@ def fetch_issue(site, credentials, out, issue):
     # The id goes into the next URLs and into the file name.
     if not isinstance(issue_id, str) or not re.fullmatch(NUMERIC_ID, issue_id):
         raise Failure("the id of the response is not a number")
-    for name in ("fields", "names", "schema"):
+    for name in ("names", "schema"):
         field(response, name)
+    fields = field(response, "fields")
+    if not isinstance(fields, dict):
+        raise Failure("fields is not an object")
     key = field(response, "key")
-    updated = field(response, "fields", "updated")
     # A numeric ISSUE is not a key, so a key in the response cannot differ from it.
     if not re.fullmatch(NUMERIC_ID, issue) and key != issue:
         print("%s: Jira returned key %s (id %s); the key differs in case or the issue moved; anchors use the id, so they stay" % (issue, key, issue_id), file=sys.stderr)
@@ -171,30 +171,14 @@ def fetch_issue(site, credentials, out, issue):
     path = os.path.join(out, issue_id + ".jira.json")
     with open(path, "wb") as f:
         f.write(data)
-    print("fetched %s: id %s, %d comment(s), updated %s" % (issue, issue_id, len(comments), updated))
+    updated = ", updated %s" % fields["updated"] if fields.get("updated") is not None else ""
+    print("fetched %s: id %s, %d comment(s)%s" % (issue, issue_id, len(comments), updated))
     print("snapshot input: jira:%s=%s" % (issue_id, path))
 
 
 def main(argv):
-    p = argparse.ArgumentParser(prog=PROGRAM, description="Fetch Jira Cloud issues (see the module docstring).")
-    p.add_argument("--site", required=True, help="https://SITE.atlassian.net")
-    p.add_argument("--email", required=True, help="the email of the Atlassian account")
-    p.add_argument("--keychain-service", required=True, help="the service name of the Keychain item that holds the API token")
-    p.add_argument("--out", required=True, help="the output directory")
-    p.add_argument("issues", nargs="+", metavar="ISSUE")
-    args = p.parse_args(argv)
-    try:
-        site = confluence.check_site(args.site)
-        bad = [x for x in args.issues if not re.fullmatch("%s|%s" % (ISSUE_KEY, NUMERIC_ID), x)]
-        if bad:
-            raise Failure("not an issue key or a numeric id: %s" % " ".join(bad))
-        token = confluence.read_token(args.keychain_service, args.email)
-        os.makedirs(args.out, exist_ok=True)
-    except Failure as e:
-        print("%s: %s" % (PROGRAM, e), file=sys.stderr)
-        return e.code
-    credentials = base64.b64encode(("%s:%s" % (args.email, token)).encode("utf-8")).decode("ascii")
-    return confluence.fetch_each(PROGRAM, "issue", args.issues, args.out, lambda issue: fetch_issue(site, credentials, args.out, issue))
+    return confluence.run_command(argv, "jira_fetch.py", "Fetch Jira Cloud issues (see the module docstring).", "issue", "ISSUE",
+                                  "%s|%s" % (ISSUE_KEY, NUMERIC_ID), "not an issue key or a numeric id", fetch_issue)
 
 
 if __name__ == "__main__":

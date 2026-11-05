@@ -130,7 +130,7 @@ class JiraSnapshotTest {
 
     @Test
     fun `a block's lines are the lines of its node in the fetched file`() {
-        // DESIGN-J.md prediction P6. The values come from reading the fixture, not from the tool.
+        // DESIGN-J.md prediction P6. These lines were checked by reading the fixture itself.
         val byAnchor = snapshot(fixture).first.associateBy { it.anchor.substringAfter('#') }
         fun lines(anchor: String) = byAnchor.getValue(anchor).let { it.first to it.last }
         assertEquals(53 to 53, lines("summary/67df719f"))

@@ -12,6 +12,15 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+/** [v] with each fraction as a whole number, because `jsonOf` writes no fractions. Its maps and lists can change. */
+internal fun withoutFractions(v: Any?): Any? =
+    when (v) {
+        is Double -> v.toLong()
+        is Map<*, *> -> LinkedHashMap(v.entries.associate { (k, x) -> k as String to withoutFractions(x) })
+        is List<*> -> v.mapTo(mutableListOf(), ::withoutFractions)
+        else -> v
+    }
+
 /**
  * DESIGN-J.md 9.3, prediction P12: one change to a copy of the free-form fixture, then `kv spec snapshot` and
  * `kv spec stale` against a sidecar made from the unchanged fixture. The sidecar has `scope "jira:10042"`, 16 quotes and
@@ -46,16 +55,8 @@ class JiraEndToEndTest {
             "comment/10073/89c81a24" to "해제 실패는 예외를 던진다",
         )
 
-    /** The tree of the fetched file. Its maps and lists can change. [plain] drops fractions, which `jsonOf` does not write. */
-    private fun tree(): MutableMap<String, Any?> = plain(parseJson(fixture.readText())) as MutableMap<String, Any?>
-
-    private fun plain(v: Any?): Any? =
-        when (v) {
-            is Double -> v.toLong()
-            is Map<*, *> -> LinkedHashMap(v.entries.associate { (k, x) -> k as String to plain(x) })
-            is List<*> -> v.mapTo(mutableListOf(), ::plain)
-            else -> v
-        }
+    /** The tree of the fetched file. Its maps and lists can change. */
+    private fun tree(): MutableMap<String, Any?> = withoutFractions(parseJson(fixture.readText())) as MutableMap<String, Any?>
 
     private fun MutableMap<String, Any?>.map(key: String) = this[key] as MutableMap<String, Any?>
 

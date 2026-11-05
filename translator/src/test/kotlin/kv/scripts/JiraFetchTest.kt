@@ -3,6 +3,9 @@ package kv.scripts
 import kv.json.json
 import kv.json.jsonOf
 import kv.json.parseJson
+import kv.spec.SnapshotInput
+import kv.spec.withoutFractions
+import kv.spec.writeSnapshot
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -16,8 +19,7 @@ import kotlin.test.assertTrue
 /**
  * DESIGN-J.md 9.4: scripts/jira_fetch.py end to end, against a fake Jira Cloud and a fake `security` first on PATH
  * ([FakeAtlassian]). Every run checks that the fixture token and base64(email:token) are in no output and in no file,
- * and that the fixture's personal values and summary are not on stdout or stderr (P8, P9). F22 needs the snapshot side
- * and lives with it.
+ * and that the fixture's personal values and summary are not on stdout or stderr (P8, P9).
  */
 class JiraFetchTest {
     @TempDir
@@ -615,12 +617,70 @@ class JiraFetchTest {
     }
 
     @Test
-    fun `other malformed responses - exit 2 and no file, never a Python traceback`() {
+    fun `an issue without updated is fetched, because the script only shows the value`() {
+        // DESIGN-J.md U6: the real value is unconfirmed, so it must not stop a fetch.
         val noUpdated = issue().mapValues { (k, v) -> if (k == "fields") (v as Map<*, *>) - "updated" else v }
+        val (site, _) =
+            serve(
+                issueTarget("KV-7") to listOf(ok(noUpdated)),
+                linksTarget() to listOf(ok(links)),
+                commentsTarget(0) to listOf(commentsPage(emptyList(), total = 0)),
+            )
+        val run = fetch(site, "KV-7")
+        assertEquals(0, run.exit, run.stderr)
+        assertEquals("fetched KV-7: id 10042, 0 comment(s)\nsnapshot input: jira:10042=${out.path}/10042.jira.json\n", run.stdout)
+    }
+
+    @Test
+    fun `F22 the fixture fetched through the script gives the same blocks, lines, warnings and SOURCES_md, with no token`() {
+        // DESIGN-J.md F22 and P8. The same text in and out: this finds any drift between the hand-made fixture and what
+        // the script really writes, line numbers too. The server sends the fixture's parts in pages of 4.
+        val fixture = File(javaClass.getResource("/jira/10042.jira.json")!!.toURI())
+        val root = withoutFractions(parseJson(fixture.readText())) as Map<*, *>
+        val comments = (root["comments"] as List<*>).map { it as Map<String, Any?> }
+        val first = comments.take(4)
+        val rest = comments.drop(4)
+        val (site, seen) =
+            serve(
+                issueTarget("KV-7") to listOf(ok(root["issue"])),
+                linksTarget() to listOf(ok(root["remoteLinks"])),
+                commentsTarget(0) to listOf(commentsPage(first, total = comments.size)),
+                commentsTarget(4) to listOf(commentsPage(rest, total = comments.size, startAt = 4)),
+                commentsTarget(comments.size) to listOf(commentsPage(emptyList(), total = comments.size, startAt = comments.size)),
+            )
+        val run = fetch(site, "KV-7")
+        assertEquals(0, run.exit, run.stderr)
+        assertEquals(5, seen.size)
+        for (value in listOf("Fixture Person Alpha", "fixture.alpha@example.com", "010-0000-0000", "fixture-account-0001", "잠금 만료 규칙 변경")) {
+            assertFalse(value in run.stdout + run.stderr, "$value is on stdout or stderr")
+        }
+
+        fun snapshot(
+            file: File,
+            name: String,
+        ): Triple<List<List<Any>>, List<String>, String> {
+            val warnings = mutableListOf<String>()
+            val snap = File(dir, name)
+            val blocks = writeSnapshot(snap, listOf(SnapshotInput("jira:10042", file.path))) { warnings += it }
+            val sources = File(snap, "sources.json").readText()
+            val md = File(snap, "SOURCES.md").readText()
+            assertFalse(token in sources + md + warnings, "the snapshot holds the token")
+            assertFalse(fake.basic in sources + md + warnings, "the snapshot holds base64(email:token)")
+            return Triple(blocks.map { listOf(it.anchor, it.text, it.sha256, it.first, it.last) }, warnings, md)
+        }
+        val fetched = snapshot(File(out, "10042.jira.json"), "fetched")
+        val direct = snapshot(fixture, "direct")
+        assertEquals(43, fetched.first.size)
+        assertEquals(direct.first, fetched.first)
+        assertEquals(direct.second, fetched.second)
+        assertEquals(direct.third, fetched.third)
+    }
+
+    @Test
+    fun `other malformed responses - exit 2 and no file, never a Python traceback`() {
         val cases =
             listOf(
-                "the response has no fields.updated" to ok(noUpdated),
-                "the response has no fields.updated" to ok(issue() + ("fields" to "not an object")),
+                "fields is not an object" to ok(issue() + ("fields" to "not an object")),
                 "the response is not JSON" to Reply(200, "<html>a login page</html>"),
                 "the response has no id" to ok(listOf(issue())),
             )

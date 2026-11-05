@@ -216,49 +216,53 @@ def utc_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def fetch_each(program, noun, items, out, fetch_one):
-    """Calls FETCH_ONE on each of ITEMS in order. Stops at the first Failure and returns its exit code.
+def run_command(argv, program, description, noun, metavar, valid, invalid, fetch_one):
+    """The command line of a fetch script; returns its exit code. jira_fetch.py uses it too, so the token has one path.
 
-    PROGRAM and NOUN ("page" or "issue") go into the messages on stderr. The earlier items keep their files in OUT.
+    It checks --site and the items before it reads the token. VALID is the pattern of an item. INVALID starts the message
+    about an item that does not match. FETCH_ONE(site, credentials, out, item) fetches one item. The run stops at the
+    first Failure, and the earlier items keep their files. PROGRAM and NOUN ("page" or "issue") go into the messages.
     """
-    for n, item in enumerate(items):
-        try:
-            fetch_one(item)
-        except Failure as e:
-            print("%s: %s %s: %s" % (program, noun, item, e), file=sys.stderr)
-            if len(items) > 1:
-                print("%s: stopped; %d of %d %s(s) fetched (their files stay in %s); not fetched: %s"
-                      % (program, n, len(items), noun, out, " ".join(items[n:])), file=sys.stderr)
-            return e.code
-    return 0
-
-
-def main(argv):
-    p = argparse.ArgumentParser(prog="confluence_fetch.py", description="Fetch Confluence Cloud pages in storage format (see the module docstring).")
+    p = argparse.ArgumentParser(prog=program, description=description)
     p.add_argument("--site", required=True, help="https://SITE.atlassian.net")
     p.add_argument("--email", required=True, help="the email of the Atlassian account")
     p.add_argument("--keychain-service", required=True, help="the service name of the Keychain item that holds the API token")
     p.add_argument("--out", required=True, help="the output directory")
-    p.add_argument("pages", nargs="+", metavar="PAGE_ID")
+    p.add_argument("items", nargs="+", metavar=metavar)
     args = p.parse_args(argv)
     try:
         site = check_site(args.site)
-        bad = [x for x in args.pages if not re.fullmatch(r"[0-9]+", x)]
+        bad = [x for x in args.items if not re.fullmatch(valid, x)]
         if bad:
-            raise Failure("not a page ID (a page ID is a number): %s" % " ".join(bad))
+            raise Failure("%s: %s" % (invalid, " ".join(bad)))
         token = read_token(args.keychain_service, args.email)
         os.makedirs(args.out, exist_ok=True)
     except Failure as e:
-        print("confluence_fetch.py: %s" % e, file=sys.stderr)
+        print("%s: %s" % (program, e), file=sys.stderr)
         return e.code
     credentials = base64.b64encode(("%s:%s" % (args.email, token)).encode("utf-8")).decode("ascii")
+    for n, item in enumerate(args.items):
+        try:
+            fetch_one(site, credentials, args.out, item)
+        except Failure as e:
+            print("%s: %s %s: %s" % (program, noun, item, e), file=sys.stderr)
+            if len(args.items) > 1:
+                print("%s: stopped; %d of %d %s(s) fetched (their files stay in %s); not fetched: %s"
+                      % (program, n, len(args.items), noun, args.out, " ".join(args.items[n:])), file=sys.stderr)
+            return e.code
+    return 0
 
-    def fetch_page(page_id):
-        page = get_page(site, page_id, credentials)
-        meta = write_page(args.out, site, page_id, page, utc_now())
-        print("fetched %s: %s (version %s, %s)" % (page_id, meta["title"], meta["version"], meta["status"]))
 
-    return fetch_each("confluence_fetch.py", "page", args.pages, args.out, fetch_page)
+def fetch_page(site, credentials, out, page_id):
+    """Fetches one page, writes its two files and prints one line."""
+    page = get_page(site, page_id, credentials)
+    meta = write_page(out, site, page_id, page, utc_now())
+    print("fetched %s: %s (version %s, %s)" % (page_id, meta["title"], meta["version"], meta["status"]))
+
+
+def main(argv):
+    return run_command(argv, "confluence_fetch.py", "Fetch Confluence Cloud pages in storage format (see the module docstring).", "page", "PAGE_ID",
+                       r"[0-9]+", "not a page ID (a page ID is a number)", fetch_page)
 
 
 if __name__ == "__main__":
