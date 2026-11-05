@@ -650,6 +650,8 @@ snapshot input: jira:10042=DIR/10042.jira.json
 | 2 | 사용법 오류, 401, 404, 재시도 뒤의 429와 503, 다른 HTTP 상태, 리다이렉트, 네트워크 오류, 빠진 필드, `total` 불일치, 반복된 댓글 id |
 | 3 | Keychain에서 토큰을 읽지 못함 |
 
+`fields.updated`는 빠진 필드로 보지 않는다. 표시에만 쓰고, 실제 값이 미확인이기 때문이다 (U6). 없으면 표준 출력에서 그 부분을 뺀다.
+
 원격 링크가 403이면 `remoteLinks`를 null로 쓰고, 표준 오류에 한 줄 쓰고 계속한다. 문서에 "issue linking is disabled"일 때라고 적혀 있다. 스냅숏은 not-read 블록 대신 경고 하나를 낸다.
 
 `failFast=true`로 실패한 경우의 상태 코드는 문서에 없다. 다른 HTTP 상태로 처리한다. 메시지에 필드 하나가 실패했을 수 있다고 적는다.
@@ -660,11 +662,12 @@ snapshot input: jira:10042=DIR/10042.jira.json
 
 측정: `-I` 아래에서 `import confluence_fetch`는 실패하고, `importlib.util.spec_from_file_location`은 된다. `sys.dont_write_bytecode = True`를 두면 `__pycache__`가 늘지 않는다.
 
-`jira_fetch.py`가 `confluence_fetch.py`를 불러서 다음을 쓴다: `Failure`, `check_site`, `read_token`, `field`, `utc_now`, 그리고 아래 1번의 `get_json`. `get_json`이 안에서 `wait_seconds`와 `OPENER`를 쓴다.
+`jira_fetch.py`가 `confluence_fetch.py`를 불러서 다음을 쓴다: `Failure`, `field`, `utc_now`, 그리고 아래의 `get_json`과 `run_command`. `get_json`이 안에서 `wait_seconds`와 `OPENER`를 쓴다.
 
-`confluence_fetch.py`에 작은 분리 두 개가 필요하다.
-1. `get_page`의 재시도 고리를 `get_json(site, url, credentials, not_found)`로 뺀다 (`confluence_fetch.py:146-167`). `http_failure`의 404 메시지를 인자로 받는다 (`confluence_fetch.py:137-138`).
-2. `main`의 이슈별 고리와 멈춤 메시지를 프로그램 이름과 명사("page", "issue")를 받는 함수로 뺀다 (`confluence_fetch.py:227-238`).
+`confluence_fetch.py`에 작은 변경 세 개가 필요하다.
+1. `get_page`의 재시도 고리를 `get_json(site, url, credentials, not_found)`로 뺀다. `http_failure`의 404 메시지를 인자로 받는다.
+2. `main`의 인자 처리, 토큰 읽기, 항목별 고리, 멈춤 메시지를 `run_command`로 뺀다. 프로그램 이름, 명사("page", "issue"), 항목의 모양을 인자로 받는다. 그래서 토큰을 읽고 인증 값을 만드는 곳은 한 곳이다.
+3. `Failure`에 HTTP 상태 `status`를 더한다. 원격 링크의 403을 메시지 글자로 알아보지 않기 위해서다.
 
 `ConfluenceFetchTest`는 메시지를 글자 그대로 검사한다. 이 시험을 한 줄도 고치지 않고 통과해야 한다 (P7).
 
@@ -999,6 +1002,41 @@ DESIGN-C.md:880과 `Ast.kt:652`는 출처 줄의 블록 지문이 서명 단위 
 6. USAGE, README, DESIGN-C 새 절, HISTORY.md.
 7. 고의 고장. P16.
 8. 전체 테스트와 스냅숏 비교. P1, P2.
+
+## 13. 결과 (2026-11-05, 구현 뒤 기록)
+
+구현: 스냅숏 쪽은 메인 세션, 받기 쪽은 feature-developer(별도 worktree)가 했다.
+
+| 예측 | 결과 (측정) |
+|---|---|
+| P1 기존 스냅숏이 바이트 단위로 같다 | 맞음. 저장된 6벌(파일럿 2, core 2, reactor, coroutine)의 `sources.json`과 `SOURCES.md`를 새 도구로 다시 만들었다. 12개 파일이 모두 같고, 경고는 0개다 |
+| P2 기존 테스트가 고치지 않고 통과한다 | 맞음. 전체 918건, 실패 0 (22분 53초). `ConfluenceFetchTest`의 도우미는 옮겼지만 단언은 바꾸지 않았다. `SpecPipelineScriptTest.newRun`에는 인자 하나를 더했다 |
+| P3, P4 43블록의 글자와 anchor | 맞음. 첫 실행에서 부록 A와 모두 같았다 |
+| P5 경고 19개 | 맞음. 사용자 결정(내부 메모)을 반영해 등록을 18개에서 19개로 고친 뒤 구현했다 |
+| P6 줄 번호 | 맞음. 단, 도구의 출력을 먼저 봤고, 그 뒤 fixture의 줄을 읽어 확인했다. 그래서 이 값은 결과 전 등록이 아니다 |
+| P7 `ConfluenceFetchTest`를 고치지 않고 통과 | 맞음. 분리 뒤 12건 통과. `run_command`로 합친 뒤에도 12건 통과 |
+| P8 토큰과 base64의 출현 0번 | 맞음. `JiraFetchTest` 35건의 모든 실행과 F22의 스냅숏에서 0번 |
+| P9, P10, P11 개인정보, 비밀, 지문 | 맞음 |
+| P12 끝까지 가는 시험 21건 | 맞음. 첫 실행에서 손으로 잰 표와 모두 같았다 |
+| P13, P14, P15, P17 | 맞음 |
+| P16 고의 고장 | 맞음. 스냅숏 쪽 30개(표의 18개 행, 내부 메모를 나눈 1개, 추가 11개)를 그 시험이 모두 잡았다. 받기 쪽은 표의 6개 행, 누출 1개, 추가 11개를 모두 잡았다. 받은 파일의 들여쓰기를 뺀 고장은 F22와 F1이 잡았다 |
+
+구현 중에 정한 것:
+
+1. F22를 등록보다 강하게 만들었다. fixture를 가짜 서버로 내보내고 실제 스크립트로 받는다. 그 스냅숏의 블록, 줄 번호, 경고, SOURCES.md는 fixture를 직접 읽은 스냅숏과 같아야 한다. 이 시험은 손으로 만든 fixture와 실제 출력의 차이를 잡는다.
+2. 받기 스크립트의 응답 검사: `key`는 필수다. 댓글 `id`는 문자열, `total`은 정수, `comments`는 배열이어야 한다. 어긋나면 traceback이 아니라 exit 2다. 숫자로 요청한 이슈에는 키 알림을 내지 않는다. 파일 끝에 줄바꿈을 붙인다.
+3. 첫 요청이 401, 404, 429, 503 밖의 오류로 실패하면, 메시지에 `failFast=true`의 필드 실패일 수 있다고 적는다.
+
+측정하지 않은 것:
+
+1. 실제 Jira 이슈 (9.6절 A1-A8, 11절 U1-U33). 연결이 없다.
+2. LLM이 안내 문단을 따르는가 (U22, A8).
+3. `mutants*` 작업. 번역기와 Viper 출력은 바꾸지 않았다.
+
+남은 일:
+
+1. A1-A8. 이 일이 끝나기 전에는 Jira anchor를 서명하지 않는다.
+2. 같은 제목의 anchor 겹침 (10.1절). 사용자 결정으로 이번에 고치지 않았다.
 
 ## 부록 A. fixture의 블록 (등록값)
 

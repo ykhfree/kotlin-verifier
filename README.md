@@ -90,7 +90,7 @@ PROVEN은 모델 위의 증명이다. Silicon이 확인하지 않는 가정이 �
 
 ## 자연어 명세에서 sidecar 만들기
 
-명세가 Markdown이나 Confluence 페이지에 있을 때 쓴다 (`DESIGN-C.md`).
+명세가 Markdown, Confluence 페이지, Jira 이슈에 있을 때 쓴다 (`DESIGN-C.md`, `DESIGN-J.md`).
 
 1. 원문을 블록으로 나눈다: `kv spec snapshot --out SNAP NAME=FILE...`. 블록마다 앵커와 지문이 붙는다.
 2. sidecar의 의도 절마다 원문을 인용한다: `source "<anchor>" quote "<인용>"`.
@@ -110,8 +110,35 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 
 1. API 토큰을 Keychain에 한 번 저장한다. 토큰은 프롬프트에서 입력한다 (명령줄에 쓰지 않는다): `security add-generic-password -s SERVICE -a EMAIL -w`
 2. 페이지를 받는다: `python3 -I translator/scripts/confluence_fetch.py --site https://SITE.atlassian.net --email EMAIL --keychain-service SERVICE --out DIR PAGE_ID...`
-3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 한국어 이름(`비밀번호: ...`, `토큰 = ...`)도 잡는다. 단, `비밀번호는 ...`처럼 조사 뒤의 값은 ASCII 글자와 숫자를 모두 담을 때만 가린다 (`DESIGN-C.md` 10.13).
+3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 한국어 이름(`비밀번호: ...`, `토큰 = ...`)도 잡는다. 단, `비밀번호는 ...`처럼 조사 뒤의 값은 ASCII 글자와 숫자를 모두 담을 때만 가린다 (`DESIGN-C.md` 10.13). 붙여 넣은 로그와 명령의 모양(`curl -u`, `Authorization`, `Bearer`, `Cookie`, `DB_PASSWORD=`, 주소 안의 자격 증명)도 가린다. 이메일과 휴대폰 번호 모양은 어느 입력에서든 `[email]`, `[phone]`으로 바뀐다 (`DESIGN-J.md` 6.1, 8.2).
 4. 받은 폴더(DIR)는 원문 그대로라서 커밋하지 않는다.
+
+Jira Cloud 이슈를 명세로 쓰는 방법 (`DESIGN-J.md`). 이슈는 자유 양식이어도 된다. 제목, 양식, 정해진 필드가 없어도 된다.
+
+1. API 토큰을 Keychain에 한 번 저장한다 (위의 Confluence 1번과 같다).
+2. 이슈를 받는다: `python3 -I translator/scripts/jira_fetch.py --site https://SITE.atlassian.net --email EMAIL --keychain-service SERVICE --out DIR ISSUE...`. `ISSUE`는 키(`KV-7`)나 숫자 id다. 스크립트가 다음 단계의 입력을 출력한다.
+3. 스냅숏을 만든다: `kv spec snapshot --out SNAP jira:ID=DIR/ID.jira.json`. 원본 이름은 키가 아니라 이슈 id다. 그래서 이슈를 옮겨도 anchor가 그대로다.
+4. 스냅숏의 경고를 읽는다. 경고에는 이슈의 글이 없고 anchor만 있다.
+5. sidecar에 `scope "jira:ID"`를 적는다. 그러면 새 문단과 새 댓글이 `uncovered-block` 오류로 드러난다. 인용하지 않는 블록은 이유를 적어 `exclude`한다.
+6. 받은 폴더(DIR)는 원문 그대로라서 커밋하지 않는다.
+
+**실제 이슈로 확인(`DESIGN-J.md` 9.6의 A1-A8)을 마치기 전에는 Jira anchor가 든 sidecar를 서명하지 않는다.** 블록 글자 규칙이 곧 anchor 규칙이기 때문이다. 서명 뒤에 규칙을 바꾸면 그 블록을 모두 다시 서명해야 한다.
+
+무엇이 스냅숏에 들어가는가:
+
+| 항목 | 결과 |
+|---|---|
+| 요약, ADF 값인 모든 필드(본문, 환경, 사용자 필드), `textfield`와 `textarea` 필드 | 블록 |
+| 댓글 | 블록. 필드 뒤에 오래된 순서로 둔다. 어느 글이 이기는지는 도구가 정하지 않는다 |
+| 첨부, 이미지, 스마트 카드, 상위 이슈, 하위 이슈, 이슈 링크, 원격 링크 | `[not read: ...]` 블록과 경고. 내용은 읽지 않는다 |
+| `visibility`가 있는 댓글, `jsdPublic`이 false인 댓글 | `[not read: restricted comment ID]` 블록과 경고. 본문을 읽지 않는다 |
+| 작성자, 멘션의 이름 | 들어가지 않는다. 멘션은 `@mention`이다 |
+| 취소선 | `~~글자~~`로 남는다 |
+
+anchor는 `jira:10042#description/23025083`처럼 생겼다. 뒤의 8자리는 블록 지문의 앞부분이고, 위치가 아니다. `#` 뒤의 부분은 `summary`, `description`, `customfield_N`, `comment/<id>`, `attachment`, `parent`, `subtask`, `link`, `remotelink`다.
+
+1. 문단을 끼우거나 순서를 바꿔도 다른 블록의 anchor는 그대로다. 새 글만 `uncovered-block`이 된다.
+2. 블록의 글자를 고치면 anchor가 바뀐다. 사람이 다시 읽고, 출처 줄을 고치고, 다시 서명한다. `exclude`한 블록도 같다. 그래서 뺀 문단에 나중에 붙은 요구사항이 옛 `exclude` 아래에 숨지 않는다.
 
 ## 알려진 한계
 
@@ -121,6 +148,10 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 - 묶인 Kotlin 지역 변수의 계산식을 바꿔도(예: `val now = nowToEpochTime() + lockTimeoutMillis`) PROVEN이 그대로다. 도구가 `free` 값의 계산을 번역하지 않기 때문이다 (`DESIGN-v0.md` 2.12 규칙 1, `DESIGN-C.md` 10.16). 그래서 묶인 지역 변수의 계산식은 사람이 읽어야 한다.
 - `free` 묶기는 서명이 덮지 않는다. `kv resolve`는 한 값을 두 번 묶는 것(`free-duplicate`)과, client에서 읽히지 않는 경로에 묶은 것(`free-unused`)을 잡는다 (`DESIGN-C.md` 10.16). 두 묶기를 맞바꾼 경우와 L1의 `param`·`local` 오묶기는 아직 잡지 못한다. 그런 sidecar는 FAILED나 ERROR가 된다.
 - Confluence 가져오기는 공식 API 스펙에 맞춰 만들었지만, 실제 Confluence 페이지로는 아직 확인하지 않았다 (`DESIGN-C.md` 10.8의 미확인 항목).
+- Jira 가져오기도 공식 API 스펙에 맞춰 만들었고, 실제 이슈로는 아직 확인하지 않았다 (`DESIGN-J.md` 11절의 미확인 항목).
+- Jira 이슈에서 블록의 순서만 바꾸면 도구가 찾지 못한다. anchor와 글자가 그대로이기 때문이다.
+- `scope`를 `jira:ID#description`으로 좁히면, 나중 댓글이 본문을 뒤집어도 도구가 찾지 못한다. 그래서 `scope "jira:ID"`를 쓴다.
+- 손으로 친 이름, 로그의 IP, 고객 식별자는 스냅숏에 그대로 남는다. 도구는 이메일과 휴대폰 번호 모양만 바꾼다.
 
 ## 문서
 
@@ -132,6 +163,7 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 | `DESIGN-C.md` | 자연어 명세 → sidecar 흐름, 서명 규칙 |
 | `DESIGN-D.md` | compute 밖의 예약 단계 |
 | `DESIGN-E.md` | L3 client 프로토콜 |
+| `DESIGN-J.md` | Jira 이슈를 명세 원본으로 받기 |
 
 ## 라이선스
 
