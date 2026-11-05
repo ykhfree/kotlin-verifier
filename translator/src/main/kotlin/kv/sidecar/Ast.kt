@@ -650,7 +650,7 @@ fun spans(
 /**
  * `exclude "ANCHOR" because "REASON" [sha256 "BLOCK"]` (DESIGN-C.md 10.10, C7): a block in scope that no clause encodes,
  * on purpose. [blockSha256] is the block's fingerprint at review, state outside the note's [unit]
- * (`exclude "ANCHOR" because "REASON"`), like a source line's block fingerprint.
+ * (`exclude "ANCHOR" because "REASON"`). A source line's block fingerprint differs: the clause's note covers it.
  */
 data class ExcludeDecl(
     val anchor: String,

@@ -359,6 +359,8 @@ A를 고를 때의 결과 (측정): 위 두 AI 구현은 sweep의 P3a로 FAILED�
 3. `kv spec snapshot`이 storage XHTML을 블록으로 나눈다. 제목, 문단, 목록 항목, 표 행, code 매크로, info 패널, expand 매크로를 다룬다. 모르는 매크로는 원문 그대로 블록 하나로 두고 경고한다.
 4. anchor의 원본 이름은 `conf:<페이지 id>`다. 페이지 버전은 스냅숏 머리에 적는다.
 
+Jira 이슈를 명세로 받는 설계는 `DESIGN-J.md`에 있다.
+
 ### 6.3 비밀과 외부 서비스
 
 1. 토큰은 Confluence 호스트로만 간다. 그 밖의 서비스로는 보내지 않는다.
@@ -877,7 +879,7 @@ decl := ...
 
 1. `scope "S"`: 이 sidecar가 책임지는 스냅숏 범위다. 블록 B가 범위 안에 있는 조건은 셋 중 하나다: B의 anchor가 S와 같다; B의 anchor가 `S/`로 시작한다 (S는 절, 예: `README.md#waiting`); B의 원본 이름이 S와 같다 (S는 원본 전체, 예: `conf:123`).
 2. `exclude "ANCHOR" because "REASON"`: 범위 안의 블록 하나를 일부러 담지 않는다. REASON은 5.4의 이유(모델 밖, 언어로 쓸 수 없음, 정보용 예시 등)를 글로 쓴다. `sha256`은 서명할 때 그 블록의 지문이다 (출처 줄의 블록 지문과 같은 뜻). 7.2 스케치의 두 문자열 사이에 `because`를 넣어, 어느 문자열이 이유인지 읽을 수 있게 했다.
-3. `reviewed`: 서명 메모다. `scope`의 지문은 `scope "S"`를 덮는다. `exclude`의 지문은 `exclude "ANCHOR" because "REASON"`만 덮는다. 블록 지문 `sha256`은 서명 단위 밖이다: 출처 줄의 블록 지문처럼 상태이기 때문이다. 그래서 `exclude-context-changed` 뒤에 블록을 다시 읽고 블록 지문만 고치면, 다시 서명할 필요가 없다.
+3. `reviewed`: 서명 메모다. `scope`의 지문은 `scope "S"`를 덮는다. `exclude`의 지문은 `exclude "ANCHOR" because "REASON"`만 덮는다. 블록 지문 `sha256`은 서명 단위 밖이다: 상태이기 때문이다. 출처 줄의 블록 지문과는 다르다. 출처 줄의 글자 전체가 절 서명에 들어가므로, 그 지문은 서명 단위 안이다. 그래서 `exclude-context-changed` 뒤에 블록을 다시 읽고 블록 지문만 고치면, 다시 서명할 필요가 없다.
 
 **검사 (`checkSidecar`, 스냅숏 없이)**
 
