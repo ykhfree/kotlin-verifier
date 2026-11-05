@@ -71,11 +71,15 @@ TIMEOUT = 60
 
 
 class Failure(Exception):
-    """A failure with its exit code. Its message goes to stderr, so it never holds the token."""
+    """A failure with its exit code. Its message goes to stderr, so it never holds the token.
 
-    def __init__(self, message, code=2):
+    STATUS is the HTTP status of the failed response, or None if the failure has no such response.
+    """
+
+    def __init__(self, message, code=2, status=None):
         super().__init__(message)
         self.code = code
+        self.status = status
 
 
 def check_site(site):
@@ -130,23 +134,24 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 OPENER = urllib.request.build_opener(NoRedirect)
 
 
-def http_failure(status, reason):
-    """The Failure of an HTTP error response that gets no more retries."""
+def http_failure(status, reason, not_found):
+    """The Failure of an HTTP error response that gets no more retries. NOT_FOUND is the text of a 404."""
     if status == 401:
-        return Failure("HTTP 401: authentication failed; check --email and the API token in the Keychain")
-    if status == 404:
-        return Failure("HTTP 404: the page was not found, or the account has no permission to view it")
-    if status in (429, 503):
-        return Failure("HTTP %d %s after %d retries" % (status, reason, RETRIES))
-    if 300 <= status < 400:
-        return Failure("HTTP %d %s: the script does not follow redirects; check --site" % (status, reason))
-    return Failure("HTTP %d %s" % (status, reason))
+        message = "HTTP 401: authentication failed; check --email and the API token in the Keychain"
+    elif status == 404:
+        message = "HTTP 404: %s" % not_found
+    elif status in (429, 503):
+        message = "HTTP %d %s after %d retries" % (status, reason, RETRIES)
+    elif 300 <= status < 400:
+        message = "HTTP %d %s: the script does not follow redirects; check --site" % (status, reason)
+    else:
+        message = "HTTP %d %s" % (status, reason)
+    return Failure(message, status=status)
 
 
-def get_page(site, page_id, credentials):
-    """Returns the JSON of GET /wiki/api/v2/pages/PAGE_ID?body-format=storage. Retries 429 and 503."""
-    url = "%s/wiki/api/v2/pages/%s?body-format=storage" % (site, page_id)
-    # Confluence sends no authentication challenge, so the header goes with the first request.
+def get_json(site, url, credentials, not_found):
+    """Returns the JSON of GET URL. Retries 429 and 503. NOT_FOUND is the text of a 404."""
+    # Atlassian sends no authentication challenge, so the header goes with the first request.
     request = urllib.request.Request(url, headers={"Authorization": "Basic " + credentials, "Accept": "application/json"})
     for attempt in range(RETRIES + 1):
         try:
@@ -157,7 +162,7 @@ def get_page(site, page_id, credentials):
             retry_after = e.headers.get("Retry-After")
             e.close()
             if e.code not in (429, 503) or attempt == RETRIES:
-                raise http_failure(e.code, e.reason)
+                raise http_failure(e.code, e.reason, not_found)
             time.sleep(wait_seconds(retry_after, attempt))
         except (OSError, http.client.HTTPException) as e:
             raise Failure("cannot reach %s: %s" % (site, getattr(e, "reason", e)))
@@ -165,6 +170,12 @@ def get_page(site, page_id, credentials):
         return json.loads(data)
     except ValueError:
         raise Failure("the response is not JSON")
+
+
+def get_page(site, page_id, credentials):
+    """Returns the JSON of GET /wiki/api/v2/pages/PAGE_ID?body-format=storage."""
+    url = "%s/wiki/api/v2/pages/%s?body-format=storage" % (site, page_id)
+    return get_json(site, url, credentials, "the page was not found, or the account has no permission to view it")
 
 
 def field(page, *path):
@@ -205,6 +216,23 @@ def utc_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def fetch_each(program, noun, items, out, fetch_one):
+    """Calls FETCH_ONE on each of ITEMS in order. Stops at the first Failure and returns its exit code.
+
+    PROGRAM and NOUN ("page" or "issue") go into the messages on stderr. The earlier items keep their files in OUT.
+    """
+    for n, item in enumerate(items):
+        try:
+            fetch_one(item)
+        except Failure as e:
+            print("%s: %s %s: %s" % (program, noun, item, e), file=sys.stderr)
+            if len(items) > 1:
+                print("%s: stopped; %d of %d %s(s) fetched (their files stay in %s); not fetched: %s"
+                      % (program, n, len(items), noun, out, " ".join(items[n:])), file=sys.stderr)
+            return e.code
+    return 0
+
+
 def main(argv):
     p = argparse.ArgumentParser(prog="confluence_fetch.py", description="Fetch Confluence Cloud pages in storage format (see the module docstring).")
     p.add_argument("--site", required=True, help="https://SITE.atlassian.net")
@@ -224,18 +252,13 @@ def main(argv):
         print("confluence_fetch.py: %s" % e, file=sys.stderr)
         return e.code
     credentials = base64.b64encode(("%s:%s" % (args.email, token)).encode("utf-8")).decode("ascii")
-    for n, page_id in enumerate(args.pages):
-        try:
-            page = get_page(site, page_id, credentials)
-            meta = write_page(args.out, site, page_id, page, utc_now())
-        except Failure as e:
-            print("confluence_fetch.py: page %s: %s" % (page_id, e), file=sys.stderr)
-            if len(args.pages) > 1:
-                print("confluence_fetch.py: stopped; %d of %d page(s) fetched (their files stay in %s); not fetched: %s"
-                      % (n, len(args.pages), args.out, " ".join(args.pages[n:])), file=sys.stderr)
-            return e.code
+
+    def fetch_page(page_id):
+        page = get_page(site, page_id, credentials)
+        meta = write_page(args.out, site, page_id, page, utc_now())
         print("fetched %s: %s (version %s, %s)" % (page_id, meta["title"], meta["version"], meta["status"]))
-    return 0
+
+    return fetch_each("confluence_fetch.py", "page", args.pages, args.out, fetch_page)
 
 
 if __name__ == "__main__":

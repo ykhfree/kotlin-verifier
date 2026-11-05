@@ -1,6 +1,5 @@
 package kv.scripts
 
-import com.sun.net.httpserver.HttpServer
 import kv.emit.python
 import kv.json.jsonOf
 import kv.spec.SnapshotInput
@@ -8,13 +7,8 @@ import kv.spec.writeSnapshot
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
-import java.net.InetAddress
-import java.net.InetSocketAddress
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.Base64
-import java.util.concurrent.CopyOnWriteArrayList
-import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -37,37 +31,16 @@ class ConfluenceFetchTest {
 
     // A throwaway fixture in the shape of an Atlassian API token.
     private val token = "ATATT3xFfGF0kvFixtureToken0123456789abcdefABCDEF=4C2A1B0D"
-    private val basic = Base64.getEncoder().encodeToString("$email:$token".toByteArray())
-    private val out get() = File(dir, "out")
-    private val securityCalls get() = File(dir, "security-calls.txt")
-    private var server: HttpServer? = null
+    private val fake by lazy { FakeAtlassian(dir, script, email, service, token) }
+    private val basic get() = fake.basic
+    private val out get() = fake.out
+    private val securityCalls get() = fake.securityCalls
 
     /** A storage value with non-ASCII text, a literal NBSP, entities, CDATA, quotes, a backslash and both line ends. */
     private val storage =
         "<h1>C6 받기</h1>\n<p>NBSP\u00a0literal, entity&nbsp;and &mdash; \"quotes\" \\ back</p>\r\n" +
             "<ac:structured-macro ac:name=\"code\"><ac:plain-text-body><![CDATA[if (a < b) { x = \"y\" }]]></ac:plain-text-body></ac:structured-macro>\n" +
             "<p>emoji \ud83d\ude00</p>"
-
-    /** One reply of the fake server. */
-    private data class Reply(
-        val status: Int,
-        val body: String = "",
-        val headers: Map<String, String> = emptyMap(),
-    )
-
-    /** A request that the fake server saw: method and target, two headers, and the time in milliseconds. */
-    private data class Seen(
-        val request: String,
-        val authorization: String?,
-        val accept: String?,
-        val millis: Long,
-    )
-
-    private data class Run(
-        val exit: Int,
-        val stdout: String,
-        val stderr: String,
-    )
 
     /**
      * A v2 `GET /pages/{id}` 200 body with the fields of PageSingle (SPEC.md A3). The page's own `createdAt` differs from
@@ -98,93 +71,31 @@ class ConfluenceFetchTest {
     /**
      * Starts the fake server; returns its site and the requests it sees. [pages] maps a page ID to its replies, in
      * order. A request with another path, another query or another Authorization header gets 404, 400 or 401, and a
-     * request beyond the replies gets 500. Every reply that is not 200 echoes the request's Authorization header in its
-     * body, so a script that printed an error body would fail the leak check.
+     * request beyond the replies gets 500.
      */
     private fun serve(vararg pages: Pair<String, List<Reply>>): Pair<String, List<Seen>> {
         val replies = pages.associate { (id, rs) -> id to ArrayDeque(rs) }
-        val seen = CopyOnWriteArrayList<Seen>()
-        val s = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
-        s.createContext("/") { exchange ->
-            val uri = exchange.requestURI
-            val authorization = exchange.requestHeaders.getFirst("Authorization")
-            seen += Seen("${exchange.requestMethod} $uri", authorization, exchange.requestHeaders.getFirst("Accept"), System.nanoTime() / 1_000_000)
+        return fake.serve { uri, authorization ->
             val queue = Regex("""/wiki/api/v2/pages/(\d+)""").matchEntire(uri.rawPath)?.let { replies[it.groupValues[1]] }
-            val reply =
-                when {
-                    queue == null -> Reply(404)
-                    uri.rawQuery != "body-format=storage" -> Reply(400)
-                    authorization != "Basic $basic" -> Reply(401)
-                    else -> queue.removeFirstOrNull() ?: Reply(500)
-                }
-            val body = (if (reply.status == 200) reply.body else "${reply.body} echo: $authorization").toByteArray()
-            reply.headers.forEach { (k, v) -> exchange.responseHeaders.add(k, v) }
-            exchange.responseHeaders.add("Content-Type", if (reply.status == 200) "application/json; charset=utf-8" else "text/plain")
-            exchange.sendResponseHeaders(reply.status, body.size.toLong())
-            exchange.responseBody.use { it.write(body) }
+            when {
+                queue == null -> Reply(404)
+                uri.rawQuery != "body-format=storage" -> Reply(400)
+                authorization != "Basic $basic" -> Reply(401)
+                else -> queue.removeFirstOrNull() ?: Reply(500)
+            }
         }
-        s.start()
-        server = s
-        return "http://127.0.0.1:${s.address.port}" to seen
     }
 
     @AfterEach
     fun stop() {
-        server?.stop(0)
+        fake.stop()
     }
 
-    /**
-     * Runs the script with a fake `security` first on PATH. The fake prints [token] for the item ([service], [email])
-     * and fails for any other; it logs its arguments to [securityCalls]. Checks the leak rule on the result.
-     */
     private fun fetch(
         site: String,
         vararg pages: String,
         keychainService: String = service,
-    ): Run {
-        val bin = File(dir, "bin").apply { mkdirs() }
-        File(bin, "security").apply {
-            writeText(
-                """
-                |#!/bin/sh
-                |echo "${'$'}*" >> '${securityCalls.path}'
-                |if [ "${'$'}#" -eq 6 ] && [ "${'$'}1" = find-generic-password ] && [ "${'$'}2" = -s ] && [ "${'$'}3" = '$service' ] && [ "${'$'}4" = -a ] && [ "${'$'}5" = '$email' ] && [ "${'$'}6" = -w ]; then
-                |  echo '$token'
-                |  exit 0
-                |fi
-                |echo 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.' >&2
-                |exit 44
-                |
-                """.trimMargin(),
-            )
-            setExecutable(true)
-        }
-        val cwd = File(dir, "cwd").apply { mkdirs() }
-        val stdout = File(dir, "stdout.txt")
-        val stderr = File(dir, "stderr.txt")
-        val pb =
-            ProcessBuilder("python3", "-I", script.path, "--site", site, "--email", email, "--keychain-service", keychainService, "--out", out.path, *pages)
-                .directory(cwd)
-                .redirectOutput(stdout)
-                .redirectError(stderr)
-        val env = pb.environment()
-        env["PATH"] = bin.path + File.pathSeparator + env["PATH"]
-        // The fake server is on 127.0.0.1: no proxy of the environment or of the system may take the request.
-        for (name in listOf("http_proxy", "https_proxy", "all_proxy")) {
-            env.remove(name)
-            env.remove(name.uppercase())
-        }
-        env["no_proxy"] = "*"
-        val p = pb.start()
-        check(p.waitFor(120, TimeUnit.SECONDS)) { "confluence_fetch.py did not finish" }
-        val run = Run(p.exitValue(), stdout.readText(), stderr.readText())
-        val texts = listOf("stdout" to run.stdout, "stderr" to run.stderr) + listOf(out, cwd).flatMap { d -> d.walkTopDown().filter { it.isFile }.map { it.path to it.readText() } }
-        for ((name, text) in texts) {
-            assertFalse(token in text, "$name holds the token")
-            assertFalse(basic in text, "$name holds base64(email:token)")
-        }
-        return run
-    }
+    ): Run = fake.run(site, pages.toList(), keychainService)
 
     /** The fake server saw exactly one well-formed request per entry of [ids], in that order. */
     private fun assertRequests(
