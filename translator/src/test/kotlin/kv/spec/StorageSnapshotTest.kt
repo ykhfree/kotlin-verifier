@@ -170,6 +170,13 @@ class StorageSnapshotTest {
                 "ps -u root",
                 "See https://example.com:8080/path for details",
                 "API_TOKEN=required",
+                // Review findings: code names that end in a credential word, uid:gid, prose after "bearer".
+                "nextPageToken: page_2_of_10",
+                "val sessionToken = tokens[10]",
+                "docker run -u 1000:1000 my-image",
+                "docker run --user www-data:www-data my-image",
+                "Clients use bearer authentication/authorization headers",
+                "Authorization: Token required for every call",
             )
         for ((kind, text) in pasted) assertEquals(kind, secretKind(text), text)
         for (text in plain) assertEquals(null, secretKind(text), text)
@@ -179,11 +186,19 @@ class StorageSnapshotTest {
     fun `an email and a mobile number become constants in every input, after the secret check`() {
         // DESIGN-J.md 6.1 rules 1, 3 and 4.
         val warnings = mutableListOf<String>()
-        val md = file("p.md", "Ask a.b+c@example.co.kr or 010-1234-5678 or 01012345678.\n\nmongodb://app:hunter22x@db.example.com:27017/app\n\nCall 02-555-0100, not 0101234567890. v1.2@3 stays.\n")
+        val md = file("p.md", "Ask a.b+c@example.co.kr or 010-1234-5678 or 01012345678.\n\nmongodb://app:hunter22x@db.example.com\n\nCall 02-555-0100, not 0101234567890. v1.2@3 stays.\n")
         val blocks = snapshotBlocks(listOf(SnapshotInput("p", md.path))) { warnings += it }
         assertEquals(listOf("Ask [email] or [phone] or [phone].", "[redacted by kv spec snapshot: url-credential]", "Call 02-555-0100, not 0101234567890. v1.2@3 stays."), blocks.map { it.text })
         assertEquals(listOf(reviewFingerprint(blocks[0].text)), listOf(blocks[0].sha256))
         assertEquals(listOf("p#top/1: replaced 3 email or phone shape(s) (DESIGN-J.md 6.1)", "p#top/2: redacted, it holds a url-credential (DESIGN-C.md 6.3)"), warnings)
+    }
+
+    @Test
+    fun `a git remote and a URL with a user are no email`() {
+        // Review finding: `git@github.com:org/repo.git` is common in a README, and it holds no address.
+        val md = file("g.md", "Clone git@github.com:org/repo.git first.\n\nOpen https://user@example.com/path now.\n\nWrite to a@example.com.\n")
+        val texts = snapshotBlocks(listOf(SnapshotInput("g", md.path))).map { it.text }
+        assertEquals(listOf("Clone git@github.com:org/repo.git first.", "Open https://user@example.com/path now.", "Write to [email]."), texts)
     }
 
     @Test

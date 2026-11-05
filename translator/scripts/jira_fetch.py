@@ -52,7 +52,7 @@ Exit codes:
   0  every issue was fetched.
   2  a usage error, or an issue failed: HTTP 401 or 404, 429 or 503 after 3 retries, another HTTP status (a redirect
      too), a network error, a missing field, an "id" that is not a number, a "total" above the comments received, a
-     repeated comment id, or an unpaired surrogate in a response.
+     repeated comment id, an unpaired surrogate in a response, or a failed write.
   3  the token cannot be read from the Keychain.
 """
 import importlib.util
@@ -169,8 +169,16 @@ def fetch_issue(site, credentials, out, issue):
     except UnicodeEncodeError:
         raise Failure("a response holds an unpaired surrogate, so it cannot be written in UTF-8")
     path = os.path.join(out, issue_id + ".jira.json")
-    with open(path, "wb") as f:
-        f.write(data)
+    # Write a new file, then rename it over the old one, so a failed write leaves the file of an earlier run as it was.
+    part = path + ".part"
+    try:
+        with open(part, "wb") as f:
+            f.write(data)
+        os.replace(part, path)
+    except OSError as e:
+        if os.path.exists(part):
+            os.remove(part)
+        raise Failure("cannot write %s: %s" % (path, e.strerror))
     updated = ", updated %s" % fields["updated"] if fields.get("updated") is not None else ""
     print("fetched %s: id %s, %d comment(s)%s" % (issue, issue_id, len(comments), updated))
     print("snapshot input: jira:%s=%s" % (issue_id, path))

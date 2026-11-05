@@ -677,6 +677,31 @@ class JiraFetchTest {
     }
 
     @Test
+    fun `a failed write - exit 2 with a message, no traceback, and the file of an earlier run stays`() {
+        // Review finding: the file of an earlier run must survive a failed write (module docstring, "Errors").
+        out.mkdirs()
+        val earlier = File(out, "10042.jira.json").apply { writeText("earlier run\n") }
+        val (site, _) =
+            serve(
+                issueTarget("KV-7") to listOf(ok(issue())),
+                linksTarget() to listOf(ok(links)),
+                commentsTarget(0) to listOf(commentsPage(emptyList(), total = 0)),
+            )
+        out.setWritable(false)
+        val run =
+            try {
+                fetch(site, "KV-7")
+            } finally {
+                out.setWritable(true)
+            }
+        assertEquals(2, run.exit, run.stderr)
+        assertTrue(run.stderr.startsWith("jira_fetch.py: issue KV-7: cannot write ${out.path}/10042.jira.json: "), run.stderr)
+        assertFalse("Traceback" in run.stderr, run.stderr)
+        assertEquals("earlier run\n", earlier.readText())
+        assertEquals(listOf("10042.jira.json"), outFiles())
+    }
+
+    @Test
     fun `other malformed responses - exit 2 and no file, never a Python traceback`() {
         val cases =
             listOf(

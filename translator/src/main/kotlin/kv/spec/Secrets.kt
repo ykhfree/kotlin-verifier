@@ -15,17 +15,20 @@ private val SECRET_SHAPES =
         "anthropic-key" to Regex("""\bsk-ant-[A-Za-z0-9_\-]{20,}"""),
         "openai-key" to Regex("""\bsk-[A-Za-z0-9_\-]{20,}"""),
         "jwt" to Regex("""\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"""),
-        // Shapes of pasted logs and commands (DESIGN-J.md 8.2).
-        "auth-header" to Regex("""(?i)\bauthorization["']?\s*[:=]\s*["']?(?:bearer|basic|token)\s+[A-Za-z0-9._~+/=-]{8,}"""),
-        "bearer-token" to Regex("""(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"""),
-        "cli-credential" to Regex("""(?:^|\s)(?:-u|--user)\s+["']?[^\s:"']+:[^\s"']{4,}"""),
+        // Shapes of pasted logs and commands (DESIGN-J.md 8.2). As for a named credential below, the value must hold a
+        // digit, so that prose (`bearer authentication/authorization`) and `-u 1000:1000` or `--user www-data:www-data`
+        // stay.
+        "auth-header" to Regex("""(?i)\bauthorization["']?\s*[:=]\s*["']?(?:bearer|basic|token)\s+(?=[A-Za-z0-9._~+/=-]*\d)[A-Za-z0-9._~+/=-]{8,}"""),
+        "bearer-token" to Regex("""(?i)\bbearer\s+(?=[A-Za-z0-9._~+/=-]*\d)[A-Za-z0-9._~+/=-]{16,}"""),
+        "cli-credential" to Regex("""(?:^|\s)(?:-u|--user)\s+["']?[^\s:"']+:(?=[^\s"']*\d)[^\s"']{8,}"""),
         "url-credential" to Regex("""(?i)\b[a-z][a-z0-9+.-]*://[^\s/:@"']+:[^\s/@"']{3,}@"""),
         "cookie" to Regex("""(?i)\b(?:set-)?cookie\s*:\s*[^\s=;]+=[^\s;]{8,}"""),
         // A named credential with a value of 8 or more characters that holds a digit: `password: hunter22`. The digit
-        // keeps code such as `token = nextToken()` in KDoc out. The name may have a prefix (`DB_PASSWORD`, `client_secret`)
-        // and a closing quote (`"password": "..."`).
+        // keeps code such as `token = nextToken()` in KDoc out. The name may have a prefix that ends in `_` or `-`
+        // (`DB_PASSWORD`, `client_secret`) and a closing quote (`"password": "..."`). A code name such as `nextPageToken`
+        // has no such prefix, so it stays.
         "assigned-credential" to
-            Regex("""(?i)(?<![A-Za-z0-9])[A-Za-z0-9_-]*?(?:password|passwd|pwd|secret|api[_ -]?key|access[_ -]?(?:key|token)|auth[_ -]?token|token)["']?\s*[:=]\s*["']?(?=[^\s"'`<>]*\d)[^\s"'`<>]{8,}"""),
+            Regex("""(?i)(?<![A-Za-z0-9])(?:[A-Za-z0-9_-]*[_-])?(?:password|passwd|pwd|secret|api[_ -]?key|access[_ -]?(?:key|token)|auth[_ -]?token|token)["']?\s*[:=]\s*["']?(?=[^\s"'`<>]*\d)[^\s"'`<>]{8,}"""),
         // The same with a Korean name (DESIGN-C.md 10.13). Korean joins words (`관리자비밀번호`), so no left boundary.
         "assigned-credential" to Regex("""(?i)$KOREAN_CREDENTIAL\s*[:=：]\s*["']?(?=[^\s"'`<>]*\d)[^\s"'`<>]{8,}"""),
         // After a particle (`비밀번호는 ...`) only an ASCII value with a letter and a digit counts, so that a rule such as
@@ -42,7 +45,8 @@ fun secretKind(text: String): String? = SECRET_SHAPES.firstOrNull { (_, shape) -
 /** The text that replaces a block that holds a secret of [kind]. The original text is written nowhere. */
 fun redacted(kind: String) = "[redacted by kv spec snapshot: $kind]"
 
-private val EMAIL = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}""")
+// An address must not go on with `:` or `/`: `git@github.com:org/repo.git` and `https://user@example.com/path` hold none.
+private val EMAIL = Regex("""[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![A-Za-z0-9:/-])""")
 
 private val MOBILE = Regex("""(?<!\d)01[016789][- .]?\d{3,4}[- .]?\d{4}(?!\d)""")
 
@@ -53,7 +57,7 @@ internal data class Gated(
 )
 
 /**
- * [text] after the gate. The secret check comes first: a mail address inside `mongodb://app:pw@db.example.com` would
+ * [text] after the gate. The secret check comes first: a mail address inside `mongodb://app:hunter22x@db.example.com` would
  * otherwise lose the `@` that the URL shape needs (DESIGN-J.md 6.1 rule 3). The gate of its own result does nothing.
  */
 internal fun gated(text: String): Gated {

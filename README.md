@@ -110,7 +110,7 @@ Confluence Cloud 페이지를 명세로 쓰는 방법 (`DESIGN-C.md` 10.8):
 
 1. API 토큰을 Keychain에 한 번 저장한다. 토큰은 프롬프트에서 입력한다 (명령줄에 쓰지 않는다): `security add-generic-password -s SERVICE -a EMAIL -w`
 2. 페이지를 받는다: `python3 -I translator/scripts/confluence_fetch.py --site https://SITE.atlassian.net --email EMAIL --keychain-service SERVICE --out DIR PAGE_ID...`
-3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 한국어 이름(`비밀번호: ...`, `토큰 = ...`)도 잡는다. 단, `비밀번호는 ...`처럼 조사 뒤의 값은 ASCII 글자와 숫자를 모두 담을 때만 가린다 (`DESIGN-C.md` 10.13). 붙여 넣은 로그와 명령의 모양(`curl -u`, `Authorization`, `Bearer`, `Cookie`, `DB_PASSWORD=`, 주소 안의 자격 증명)도 가린다. 이메일과 휴대폰 번호 모양은 어느 입력에서든 `[email]`, `[phone]`으로 바뀐다 (`DESIGN-J.md` 6.1, 8.2).
+3. 스냅숏을 만든다: `kv spec snapshot --out SNAP conf:PAGE_ID=DIR/PAGE_ID.xhtml`. 비밀 모양의 문자열이 든 블록은 가려진다. 한국어 이름(`비밀번호: ...`, `토큰 = ...`)도 잡는다. 단, `비밀번호는 ...`처럼 조사 뒤의 값은 ASCII 글자와 숫자를 모두 담을 때만 가린다 (`DESIGN-C.md` 10.13). 붙여 넣은 로그와 명령의 모양(`curl -u`, `Authorization`, `Bearer`, `Cookie`, `DB_PASSWORD=`, 주소 안의 자격 증명)도 가린다. 이메일과 휴대폰 번호 모양은 어느 입력에서든 `[email]`, `[phone]`으로 바뀐다 (`DESIGN-J.md` 6.1, 8.2). 이 규칙은 이미 서명한 sidecar에도 영향이 있다. 인용한 블록이 새로 가려지거나 바뀌면, 다음 `kv spec stale`이 그 출처 줄을 오류나 경고로 낸다. 사람이 블록을 다시 읽고 서명한다.
 4. 받은 폴더(DIR)는 원문 그대로라서 커밋하지 않는다.
 
 Jira Cloud 이슈를 명세로 쓰는 방법 (`DESIGN-J.md`). 이슈는 자유 양식이어도 된다. 제목, 양식, 정해진 필드가 없어도 된다.
@@ -137,7 +137,7 @@ Jira Cloud 이슈를 명세로 쓰는 방법 (`DESIGN-J.md`). 이슈는 자유 �
 
 anchor는 `jira:10042#description/23025083`처럼 생겼다. 뒤의 8자리는 블록 지문의 앞부분이고, 위치가 아니다. `#` 뒤의 부분은 `summary`, `description`, `customfield_N`, `comment/<id>`, `attachment`, `parent`, `subtask`, `link`, `remotelink`다.
 
-1. 문단을 끼우거나 순서를 바꿔도 다른 블록의 anchor는 그대로다. 새 글만 `uncovered-block`이 된다.
+1. 문단을 끼우거나 순서를 바꿔도 다른 블록의 anchor는 그대로다. 새 글만 `uncovered-block`이 된다. 예외가 하나 있다. 한 부분에 같은 글자의 블록이 여럿이면 두 번째부터 `-2`, `-3`이 붙는다. 같은 글자의 블록을 그 앞에 끼우면 이 번호가 밀린다.
 2. 블록의 글자를 고치면 anchor가 바뀐다. 사람이 다시 읽고, 출처 줄을 고치고, 다시 서명한다. `exclude`한 블록도 같다. 그래서 뺀 문단에 나중에 붙은 요구사항이 옛 `exclude` 아래에 숨지 않는다.
 
 ## 알려진 한계

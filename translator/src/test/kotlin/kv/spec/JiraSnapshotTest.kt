@@ -200,6 +200,8 @@ class JiraSnapshotTest {
                 Triple("""{"type": "mediaGroup", "content": [{"type": "media", "attrs": {"id": "m1"}}, {"type": "media", "attrs": {"id": "m2"}}]}""", listOf("[not read: media m1]", "[not read: media m2]"), listOf(notRead, notRead)),
                 Triple("""{"type": "mediaSingle", "content": [{"type": "media", "attrs": {"url": "https://i"}}]}""", listOf("[not read: media https://i]"), listOf(notRead)),
                 Triple("""{"type": "embedCard", "attrs": {"layout": "wide"}}""", listOf("[not read: card]"), listOf(notRead)),
+                // Review finding: a redacted item that was not read keeps the warning that a person must check it.
+                Triple("""{"type": "blockCard", "attrs": {"url": "https://admin:s3cretpass99@wiki.example.com/spec"}}""", listOf("[redacted by kv spec snapshot: url-credential]"), listOf("redacted", notRead)),
                 Triple("""{"type": "rule"}""", emptyList(), emptyList()),
                 Triple("""{"type": "codeBlock", "content": [{"type": "text", "text": "  a\n    b\n"}]}""", listOf("  a\n    b"), emptyList()),
                 Triple("""{"type": "codeBlock", "content": []}""", emptyList(), emptyList()),
@@ -302,6 +304,8 @@ class JiraSnapshotTest {
         val text = File(out, "SOURCES.md").readText()
         assertTrue("## jira:10042 (KV-7, status In Progress, updated 2026-11-01T10:00:00.000+0900)\n" in text, text)
         assertEquals(1, Regex("This source is a Jira issue in free form").findAll(text).count())
+        // Review finding: a tool note can follow a prefix such as `- ` or `info: `, so the guidance must not say "starts".
+        assertTrue("Text in the form [not read: ...] is a note of the tool" in text, text)
         assertTrue(text.indexOf("This source is a Jira issue") < text.indexOf("### summary") && text.indexOf("## doc") > text.indexOf("### remotelink"), text)
         for (head in listOf("### summary", "### description", "### customfield_10050 (\"수용 기준\")", "### customfield_10060 (\"요약 메모\")", "### comment 10071 (created 2026-10-20T09:00:00.000+0900)", "### comment 10072 (created 2026-10-20T10:00:00.000+0900, edited 2026-10-21T09:00:00.000+0900)", "### attachment", "### parent", "### subtask", "### link", "### remotelink")) {
             assertTrue("\n$head\n" in text, "no line $head")

@@ -21,8 +21,8 @@ internal val JIRA_GUIDANCE =
     requirements with discussion. No block is a requirement only because it is here. Comments follow the fields, oldest
     first. A later comment may change earlier text. If blocks conflict, or a block may or may not be a requirement, treat
     the point as open: do not choose silently. ~~text~~ is struck-out text. @mention is a person. [email] and [phone] are
-    removed values. A block that starts with "[not read:" is a note of the tool about an item it did not read, not the
-    team's text: do not cite it. If required behavior may be in that item, treat the point as open.
+    removed values. Text in the form [not read: ...] is a note of the tool about an item it did not read, not the team's
+    text: do not cite it. If required behavior may be in that item, treat the point as open.
     """.trimIndent()
 
 /** One block of an issue: [heading] is the line SOURCES.md shows above it, [first] and [last] its lines in the file. */
@@ -351,6 +351,7 @@ private fun itemParts(
 /**
  * The blocks of [part] after the gate, with their anchors. The fingerprint comes from the text after the gate: the
  * original of a redacted block is written nowhere, not even as a hash (DESIGN-J.md 4.2 rule 3). A warning holds no text.
+ * The not-read warning looks at the text before the gate, so a redacted item that was not read keeps it.
  */
 private fun anchored(
     source: String,
@@ -364,7 +365,7 @@ private fun anchored(
         val n = seen.merge(hash, 1, Int::plus)!!
         val anchor = "$source#${part.name}/$hash${if (n > 1) "-$n" else ""}"
         note?.let { warn("$anchor: $it") }
-        if ("[not read:" in text) {
+        if ("[not read:" in raw.text) {
             warn("$anchor: the tool did not read this item; a person must check it (DESIGN-J.md 3.4)")
         } else if (raw.linked) {
             warn("$anchor: holds a link the tool does not follow (DESIGN-J.md 3.4)")
