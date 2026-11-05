@@ -1,0 +1,838 @@
+{
+ "format": "kv-jira-issue/1",
+ "requested": "KV-7",
+ "site": "https://kv-test.atlassian.net",
+ "fetchedAt": "2026-11-05T01:02:03.456Z",
+ "issue": {
+  "expand": "names,schema",
+  "id": "10042",
+  "self": "https://kv-test.atlassian.net/rest/api/3/issue/10042",
+  "key": "KV-7",
+  "names": {
+   "summary": "Summary",
+   "description": "Description",
+   "customfield_10050": "수용 기준",
+   "customfield_10060": "요약 메모",
+   "customfield_10070": "Rank",
+   "customfield_10080": "Development",
+   "customfield_10090": "Story Points",
+   "customfield_10100": "Reviewer",
+   "worklog": "Log Work"
+  },
+  "schema": {
+   "summary": {
+    "type": "string",
+    "system": "summary"
+   },
+   "description": {
+    "type": "string",
+    "system": "description"
+   },
+   "customfield_10050": {
+    "type": "string",
+    "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textarea",
+    "customId": 10050
+   },
+   "customfield_10060": {
+    "type": "string",
+    "custom": "com.atlassian.jira.plugin.system.customfieldtypes:textfield",
+    "customId": 10060
+   },
+   "customfield_10070": {
+    "type": "any",
+    "custom": "com.pyxis.greenhopper.jira:gh-lexo-rank",
+    "customId": 10070
+   },
+   "customfield_10080": {
+    "type": "any",
+    "custom": "com.atlassian.jira.plugins.jira-development-integration-plugin:devsummarycf",
+    "customId": 10080
+   }
+  },
+  "fields": {
+   "summary": "잠금 만료 규칙 변경",
+   "status": {
+    "name": "In Progress",
+    "id": "3"
+   },
+   "created": "2026-10-19T09:00:00.000+0900",
+   "updated": "2026-11-01T10:00:00.000+0900",
+   "reporter": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "assignee": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "labels": [
+    "lock"
+   ],
+   "environment": null,
+   "description": {
+    "version": 1,
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "잠금은 획득 후 30초가 지나면 만료된다."
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "재시도는 3회까지 한다."
+       },
+       {
+        "type": "hardBreak"
+       },
+       {
+        "type": "text",
+        "text": "그 다음에는 실패를 돌려준다."
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "대기 간격은 "
+       },
+       {
+        "type": "text",
+        "text": "100ms",
+        "marks": [
+         {
+          "type": "strike"
+         }
+        ]
+       },
+       {
+        "type": "text",
+        "text": " 50ms 이다."
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "mention",
+        "attrs": {
+         "id": "fixture-account-0001",
+         "text": "@Fixture Person Alpha"
+        }
+       },
+       {
+        "type": "text",
+        "text": " 님 확인 부탁드립니다 "
+       },
+       {
+        "type": "emoji",
+        "attrs": {
+         "shortName": ":smile:",
+         "id": "1f604"
+        }
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "배경은 "
+       },
+       {
+        "type": "text",
+        "text": "설계 문서",
+        "marks": [
+         {
+          "type": "link",
+          "attrs": {
+           "href": "https://kv-test.atlassian.net/wiki/x/AbC"
+          }
+         }
+        ]
+       },
+       {
+        "type": "text",
+        "text": " 참고. 관련 이슈: "
+       },
+       {
+        "type": "inlineCard",
+        "attrs": {
+         "url": "https://kv-test.atlassian.net/browse/KV-9"
+        }
+       }
+      ]
+     },
+     {
+      "type": "bulletList",
+      "content": [
+       {
+        "type": "listItem",
+        "content": [
+         {
+          "type": "paragraph",
+          "content": [
+           {
+            "type": "text",
+            "text": "키마다 잠금은 하나다."
+           }
+          ]
+         },
+         {
+          "type": "bulletList",
+          "content": [
+           {
+            "type": "listItem",
+            "content": [
+             {
+              "type": "paragraph",
+              "content": [
+               {
+                "type": "text",
+                "text": "같은 키의 두 번째 요청은 기다린다."
+               }
+              ]
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "orderedList",
+      "attrs": {
+       "order": 1
+      },
+      "content": [
+       {
+        "type": "listItem",
+        "content": [
+         {
+          "type": "paragraph",
+          "content": [
+           {
+            "type": "text",
+            "text": "먼저 온 요청이 잠금을 얻는다."
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "type": "listItem",
+        "content": [
+         {
+          "type": "paragraph",
+          "content": [
+           {
+            "type": "text",
+            "text": "나머지 요청은 줄을 선다."
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "table",
+      "attrs": {
+       "layout": "default"
+      },
+      "content": [
+       {
+        "type": "tableRow",
+        "content": [
+         {
+          "type": "tableHeader",
+          "attrs": {},
+          "content": [
+           {
+            "type": "paragraph",
+            "content": [
+             {
+              "type": "text",
+              "text": "모드"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "type": "tableHeader",
+          "attrs": {},
+          "content": [
+           {
+            "type": "paragraph",
+            "content": [
+             {
+              "type": "text",
+              "text": "잠금"
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "type": "tableRow",
+        "content": [
+         {
+          "type": "tableCell",
+          "attrs": {},
+          "content": [
+           {
+            "type": "paragraph",
+            "content": [
+             {
+              "type": "text",
+              "text": "CREATE"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "type": "tableCell",
+          "attrs": {},
+          "content": [
+           {
+            "type": "paragraph",
+            "content": [
+             {
+              "type": "text",
+              "text": "유지"
+             }
+            ]
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "codeBlock",
+      "attrs": {
+       "language": "bash"
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "curl -H \"Authorization: Bearer abcdef0123456789abcdef\" https://kv-test.atlassian.net/rest/api/3/myself"
+       }
+      ]
+     },
+     {
+      "type": "panel",
+      "attrs": {
+       "panelType": "warning"
+      },
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "만료된 잠금은 해제할 수 없다."
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "expand",
+      "attrs": {
+       "title": "세부 규칙"
+      },
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "해제는 소유자만 한다."
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "taskList",
+      "attrs": {
+       "localId": "list-1"
+      },
+      "content": [
+       {
+        "type": "taskItem",
+        "attrs": {
+         "localId": "task-1",
+         "state": "TODO"
+        },
+        "content": [
+         {
+          "type": "text",
+          "text": "경계 테스트 추가"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "decisionList",
+      "attrs": {
+       "localId": "list-2"
+      },
+      "content": [
+       {
+        "type": "decisionItem",
+        "attrs": {
+         "localId": "dec-1",
+         "state": "DECIDED"
+        },
+        "content": [
+         {
+          "type": "text",
+          "text": "만료 경계는 초과로 본다."
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "mediaSingle",
+      "attrs": {
+       "layout": "center",
+       "width": 66.66
+      },
+      "content": [
+       {
+        "type": "media",
+        "attrs": {
+         "id": "a1b2c3d4",
+         "type": "file",
+         "collection": "fixture",
+         "alt": "state.png"
+        }
+       },
+       {
+        "type": "caption",
+        "content": [
+         {
+          "type": "text",
+          "text": "상태 전이 그림"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "blockCard",
+      "attrs": {
+       "url": "https://kv-test.atlassian.net/wiki/spaces/KV/pages/1"
+      }
+     },
+     {
+      "type": "syncBlock",
+      "attrs": {
+       "resourceId": "rid-1",
+       "localId": "sync-1"
+      }
+     },
+     {
+      "type": "futureNode",
+      "attrs": {
+       "answer": 42
+      }
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "문의는 fixture.alpha@example.com 또는 010-0000-0000 로 한다."
+       }
+      ]
+     },
+     {
+      "type": "rule"
+     },
+     {
+      "type": "heading",
+      "attrs": {
+       "level": 2
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "참고"
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "잠금은 획득 후 30초가 지나면 만료된다."
+       }
+      ]
+     }
+    ]
+   },
+   "customfield_10050": {
+    "version": 1,
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "30초 경계에서는 만료되지 않는다."
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "31초에는 만료된다."
+       }
+      ]
+     }
+    ]
+   },
+   "customfield_10060": "잠금 TTL 조정",
+   "customfield_10070": "0|i0001:",
+   "customfield_10080": "{pullrequest={dataType=pullrequest, state=OPEN}}",
+   "customfield_10090": 2.5,
+   "customfield_10100": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "worklog": {
+    "startAt": 0,
+    "total": 1,
+    "worklogs": [
+     {
+      "id": "30001",
+      "author": {
+       "accountId": "fixture-account-0001",
+       "displayName": "Fixture Person Alpha",
+       "emailAddress": "fixture.alpha@example.com"
+      },
+      "comment": {
+       "version": 1,
+       "type": "doc",
+       "content": [
+        {
+         "type": "paragraph",
+         "content": [
+          {
+           "type": "text",
+           "text": "경계를 조사했다."
+          }
+         ]
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "attachment": [
+    {
+     "id": "20001",
+     "filename": "state.png",
+     "mimeType": "image/png",
+     "author": {
+      "accountId": "fixture-account-0001",
+      "displayName": "Fixture Person Alpha",
+      "emailAddress": "fixture.alpha@example.com"
+     },
+     "size": 100
+    },
+    {
+     "id": "20002",
+     "filename": "spec.pdf",
+     "mimeType": "application/pdf",
+     "author": {
+      "accountId": "fixture-account-0001",
+      "displayName": "Fixture Person Alpha",
+      "emailAddress": "fixture.alpha@example.com"
+     },
+     "size": 200
+    }
+   ],
+   "parent": {
+    "id": "10001",
+    "key": "KV-1",
+    "fields": {
+     "summary": "상위 이슈 요약: 스냅숏에 나오면 안 된다"
+    }
+   },
+   "subtasks": [
+    {
+     "id": "10008",
+     "key": "KV-8",
+     "fields": {
+      "summary": "하위 이슈 요약: 스냅숏에 나오면 안 된다"
+     }
+    }
+   ],
+   "issuelinks": [
+    {
+     "id": "40001",
+     "type": {
+      "name": "Relates",
+      "inward": "relates to",
+      "outward": "relates to"
+     },
+     "outwardIssue": {
+      "id": "10009",
+      "key": "KV-9",
+      "fields": {
+       "summary": "연결 이슈 요약: 스냅숏에 나오면 안 된다"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "remoteLinks": [
+  {
+   "id": 50001,
+   "self": "https://kv-test.atlassian.net/rest/api/3/issue/10042/remotelink/50001",
+   "object": {
+    "url": "https://kv-test.atlassian.net/wiki/pages/viewpage.action?pageId=123",
+    "title": "잠금 설계"
+   }
+  }
+ ],
+ "comments": [
+  {
+   "id": "10071",
+   "author": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "body": {
+    "version": 1,
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "확인했습니다."
+       }
+      ]
+     }
+    ]
+   },
+   "updateAuthor": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "created": "2026-10-20T09:00:00.000+0900",
+   "updated": "2026-10-20T09:00:00.000+0900"
+  },
+  {
+   "id": "10072",
+   "author": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "body": {
+    "version": 1,
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "논의 결과 만료 시간은 30초가 아니라 60초로 바꾼다."
+       }
+      ]
+     }
+    ]
+   },
+   "updateAuthor": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "created": "2026-10-20T10:00:00.000+0900",
+   "updated": "2026-10-21T09:00:00.000+0900"
+  },
+  {
+   "id": "10073",
+   "author": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "body": {
+    "version": 1,
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "제 생각에는 로그도 남기면 좋겠습니다."
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "해제 실패는 예외를 던진다."
+       }
+      ]
+     }
+    ]
+   },
+   "updateAuthor": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "created": "2026-10-21T10:00:00.000+0900",
+   "updated": "2026-10-21T10:00:00.000+0900"
+  },
+  {
+   "id": "10074",
+   "author": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "body": {
+    "version": 1,
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "RESTRICTED-FIXTURE-TEXT 이 글은 스냅숏에 나오면 안 된다."
+       }
+      ]
+     }
+    ]
+   },
+   "updateAuthor": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "created": "2026-10-21T11:00:00.000+0900",
+   "updated": "2026-10-21T11:00:00.000+0900",
+   "visibility": {
+    "type": "role",
+    "value": "Developers",
+    "identifier": "Developers"
+   }
+  },
+  {
+   "id": "10075",
+   "author": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "body": {
+    "version": 1,
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "RESTRICTED-FIXTURE-TEXT 이 글은 스냅숏에 나오면 안 된다."
+       }
+      ]
+     }
+    ]
+   },
+   "updateAuthor": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "created": "2026-10-22T09:00:00.000+0900",
+   "updated": "2026-10-22T09:00:00.000+0900",
+   "jsdPublic": false
+  },
+  {
+   "id": "10076",
+   "author": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "body": {
+    "version": 1,
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "password: hunter22x"
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "배포 순서는 별도 문서에 둔다."
+       }
+      ]
+     }
+    ]
+   },
+   "updateAuthor": {
+    "accountId": "fixture-account-0001",
+    "displayName": "Fixture Person Alpha",
+    "emailAddress": "fixture.alpha@example.com"
+   },
+   "created": "2026-10-23T09:00:00.000+0900",
+   "updated": "2026-10-23T09:00:00.000+0900",
+   "jsdPublic": true
+  }
+ ]
+}

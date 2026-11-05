@@ -88,9 +88,11 @@ private const val USAGE = """usage:
       1 rejected (each reason with its AFTER.kv line and column).
   kv spec snapshot --out DIR NAME=FILE...
       Splits each FILE into blocks with anchors and fingerprints (DESIGN-C.md 5.2): a .kt file gives its KDoc, a
-      .xhtml file is a Confluence storage value (C6, 10.8; NAME conf:<page id>), any other file is Markdown. Writes
+      .xhtml file is a Confluence storage value (C6, 10.8; NAME conf:<page id>), a .jira.json file is a Jira issue
+      from scripts/jira_fetch.py (DESIGN-J.md; NAME jira:<issue id>), any other file is Markdown. Writes
       DIR/sources.json and DIR/SOURCES.md. NAME is the anchor's source name. A block that holds a secret shape (a
-      key, a token, a password) is replaced by a redaction note, and a warning names its anchor (DESIGN-C.md 6.3).
+      key, a token, a password) is replaced by a redaction note, an email or a mobile number becomes a constant, and a
+      warning names the block's anchor (DESIGN-C.md 6.3, DESIGN-J.md 6.1).
   kv spec stale --snapshot DIR SIDECAR.kv
       Checks every `source "<anchor>" quote "<quote>"` line of the sidecar (includes too) against the snapshot in DIR
       (DESIGN-C.md 5.3): warning source-context-changed (the block changed, the quote is still in it), warning

@@ -1,6 +1,7 @@
 package kv.spec
 
 import kv.cli.runCli
+import kv.sidecar.reviewFingerprint
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -140,6 +141,49 @@ class StorageSnapshotTest {
     fun `code that names a token without a digit in its value is no secret`() {
         val md = file("k.md", "token = nextToken()\n\npassword: required\n")
         assertEquals(listOf("token = nextToken()", "password: required"), snapshotBlocks(listOf(SnapshotInput("k", md.path))).map { it.text })
+    }
+
+    @Test
+    fun `the shapes of pasted logs and commands are redacted, and the sentences around them are not`() {
+        // DESIGN-J.md 8.2 and 9.2 prediction P13: the throwaway values of the design's table, kind by kind.
+        val pasted =
+            listOf(
+                "cli-credential" to "curl -u admin:s3cretpass99 https://example.com/x",
+                "auth-header" to "Authorization: Bearer abcdef0123456789abcdef",
+                "auth-header" to "Authorization: Basic YWRtaW46czNjcmV0cGFzczk5",
+                "bearer-token" to "the token is Bearer abcdef0123456789abcdef here",
+                "cookie" to "Cookie: JSESSIONID=9F8E7D6C5B4A39281706",
+                "assigned-credential" to "DB_PASSWORD=hunter22x",
+                "assigned-credential" to "API_TOKEN=abcd1234efgh",
+                "assigned-credential" to "client_secret=abcd1234efgh",
+                "assigned-credential" to "aws_secret_access_key=abcd1234efgh",
+                "assigned-credential" to "{\"password\": \"hunter22x\"}",
+                "assigned-credential" to "{\"apiKey\":\"abc123456789\"}",
+                "url-credential" to "mongodb://app:hunter22x@db.example.com:27017/app",
+                "url-credential" to "https://admin:s3cretpass99@internal.example.com/x",
+            )
+        val plain =
+            listOf(
+                "Authorization: required for every call",
+                "A bearer token expires after one hour",
+                "Set-Cookie: yes",
+                "ps -u root",
+                "See https://example.com:8080/path for details",
+                "API_TOKEN=required",
+            )
+        for ((kind, text) in pasted) assertEquals(kind, secretKind(text), text)
+        for (text in plain) assertEquals(null, secretKind(text), text)
+    }
+
+    @Test
+    fun `an email and a mobile number become constants in every input, after the secret check`() {
+        // DESIGN-J.md 6.1 rules 1, 3 and 4.
+        val warnings = mutableListOf<String>()
+        val md = file("p.md", "Ask a.b+c@example.co.kr or 010-1234-5678 or 01012345678.\n\nmongodb://app:hunter22x@db.example.com:27017/app\n\nCall 02-555-0100, not 0101234567890. v1.2@3 stays.\n")
+        val blocks = snapshotBlocks(listOf(SnapshotInput("p", md.path))) { warnings += it }
+        assertEquals(listOf("Ask [email] or [phone] or [phone].", "[redacted by kv spec snapshot: url-credential]", "Call 02-555-0100, not 0101234567890. v1.2@3 stays."), blocks.map { it.text })
+        assertEquals(listOf(reviewFingerprint(blocks[0].text)), listOf(blocks[0].sha256))
+        assertEquals(listOf("p#top/1: replaced 3 email or phone shape(s) (DESIGN-J.md 6.1)", "p#top/2: redacted, it holds a url-credential (DESIGN-C.md 6.3)"), warnings)
     }
 
     @Test

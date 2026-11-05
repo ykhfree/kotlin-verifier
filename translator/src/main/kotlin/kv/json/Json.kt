@@ -27,8 +27,7 @@ fun json(s: String): String {
 
 /**
  * [v] as JSON with one space of indent per level: a [Map] is an object (its keys in order), a [List] an array, a
- * [String] a string, a [Long] or an [Int] a number, a [Boolean] and null as they are. No fractions: [parseJson] reads
- * only whole numbers.
+ * [String] a string, a [Long] or an [Int] a number, a [Boolean] and null as they are. No fractions: the tool writes none.
  */
 fun jsonOf(
     v: Any?,
@@ -50,15 +49,47 @@ class JsonException(
 ) : Exception(message)
 
 /**
- * Parses one JSON value: an object is a [Map] (keys in file order), an array a [List], a number a [Long] (the tool
- * writes no fractions), and `null` null. Throws [JsonException] with the offset of the first error.
+ * An object of a parsed text: a [Map] with its keys in file order that also knows its 1-based lines. [first] and [last]
+ * are the lines of its braces. Two objects are equal if their maps are equal, so the lines do not matter there.
+ */
+class JsonObject(
+    val first: Int,
+) : LinkedHashMap<String, Any?>() {
+    var last = first
+        internal set
+    private val keyLines = HashMap<String, Int>()
+
+    /** The line of the key [key], or [first] if the object has no such key. */
+    fun lineOf(key: String): Int = keyLines[key] ?: first
+
+    internal fun put(
+        key: String,
+        line: Int,
+        value: Any?,
+    ) {
+        keyLines[key] = line
+        this[key] = value
+    }
+}
+
+/**
+ * Parses one JSON value: an object is a [JsonObject], an array a [List], a whole number that fits a [Long] a [Long],
+ * any other number a [Double], and `null` null. Throws [JsonException] with the offset of the first error.
  */
 fun parseJson(text: String): Any? = JsonReader(text).document()
+
+/** The grammar of a JSON number. */
+private val NUMBER = Regex("""-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?""")
 
 private class JsonReader(
     private val t: String,
 ) {
     private var i = 0
+
+    // The offset where each line starts: the line of an offset is a search here, not a scan of the text.
+    private val lineStarts = listOf(0) + t.indices.filter { t[it] == '\n' }.map { it + 1 }
+
+    private fun line(offset: Int): Int = lineStarts.binarySearch(offset).let { if (it >= 0) it + 1 else -it - 1 }
 
     private fun fail(what: String): Nothing = throw JsonException("JSON offset $i: expected $what")
 
@@ -84,26 +115,34 @@ private class JsonReader(
         }
     }
 
-    private fun obj(): Map<String, Any?> {
-        val out = LinkedHashMap<String, Any?>()
+    private fun obj(): JsonObject {
+        val out = JsonObject(line(i))
         i++
         ws()
-        if (t.startsWith("}", i)) return out.also { i++ }
+        if (t.startsWith("}", i)) return out.close()
         while (true) {
             ws()
             if (!t.startsWith("\"", i)) fail("a key")
+            val keyLine = line(i)
             val key = string()
             ws()
             if (!t.startsWith(":", i)) fail("':'")
             i++
-            out[key] = value()
+            out.put(key, keyLine, value())
             ws()
             when {
                 t.startsWith(",", i) -> i++
-                t.startsWith("}", i) -> return out.also { i++ }
+                t.startsWith("}", i) -> return out.close()
                 else -> fail("',' or '}'")
             }
         }
+    }
+
+    /** Takes the closing brace at the offset and records its line in this object. */
+    private fun JsonObject.close(): JsonObject {
+        last = line(i)
+        i++
+        return this
     }
 
     private fun array(): List<Any?> {
@@ -154,14 +193,17 @@ private class JsonReader(
 
     private fun word(): Any? {
         val start = i
-        while (i < t.length && (t[i].isLetterOrDigit() || t[i] == '-')) i++
+        while (i < t.length && (t[i].isLetterOrDigit() || t[i] in "-+.")) i++
         return when (val w = t.substring(start, i)) {
             "true" -> true
             "false" -> false
             "null" -> null
-            else -> w.toLongOrNull() ?: run {
-                i = start
-                fail("a value")
+            else -> {
+                if (!NUMBER.matches(w)) {
+                    i = start
+                    fail("a value")
+                }
+                w.toLongOrNull() ?: w.toDouble()
             }
         }
     }

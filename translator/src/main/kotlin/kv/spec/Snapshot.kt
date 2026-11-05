@@ -6,15 +6,16 @@ import kv.json.parseJson
 import kv.sidecar.reviewFingerprint
 import java.io.File
 
-// `kv spec snapshot` (DESIGN-C.md 2.2 step 1, 5.2 rule 1): Markdown files, Kotlin KDoc and Confluence storage format
-// (C6, 10.8) split into blocks with anchors and fingerprints. The Markdown and KDoc rules are those of the pilot's
+// `kv spec snapshot` (DESIGN-C.md 2.2 step 1, 5.2 rule 1): Markdown files, Kotlin KDoc, Confluence storage format
+// (C6, 10.8) and Jira issues (DESIGN-J.md) split into blocks with anchors and fingerprints. The Markdown and KDoc rules are those of the pilot's
 // pilot-c/tools/snapshot.py, and the two output files are the ones it writes: sources.json (what kv spec stale reads)
 // and SOURCES.md (what a person or an LLM reads). A block that holds a secret shape is redacted (10.8, Secrets.kt).
 
 /**
  * One block of a snapshot. [anchor] is `SOURCE#section-slug/N` for Markdown (N counts the blocks of the section) and
  * `SOURCE#declaration` for KDoc; [first] and [last] are its 1-based lines in [path]; [sha256] is the fingerprint of
- * [text] ([reviewFingerprint]).
+ * [text] ([reviewFingerprint]). A Jira anchor is `SOURCE#PART/HASH`: HASH is the start of [sha256], not a position
+ * (DESIGN-J.md 4.2).
  */
 data class Block(
     val anchor: String,
@@ -28,7 +29,8 @@ data class Block(
 
 /**
  * One `NAME=FILE` input: a `.kt` file contributes its KDoc, a `.xhtml` file is a Confluence storage value (NAME is
- * `conf:<page id>`, DESIGN-C.md 6.2), any other file is Markdown.
+ * `conf:<page id>`, DESIGN-C.md 6.2), a `.jira.json` file is a fetched Jira issue (NAME is `jira:<issue id>`,
+ * DESIGN-J.md 4.6), any other file is Markdown.
  */
 data class SnapshotInput(
     val name: String,
@@ -36,6 +38,7 @@ data class SnapshotInput(
 ) {
     val kotlin: Boolean get() = path.endsWith(".kt")
     val storage: Boolean get() = path.endsWith(".xhtml")
+    val jira: Boolean get() = path.endsWith(".jira.json")
 }
 
 /** A block and the heading SOURCES.md shows for it: the section heading (Markdown) or the declaration line (KDoc). */
@@ -60,19 +63,20 @@ private fun cuts(
             when {
                 input.kotlin -> kdocCuts(input, splitLines(text))
                 input.storage -> storageCuts(input, text, warn)
+                input.jira -> jiraCuts(input, text, warn)
                 else -> markdownCuts(input, splitLines(text))
             }
         input to cuts.map { redact(it, warn) }
     }
 
-/** [cut] with its text replaced if it holds a secret shape; [warn] names the block and the kind, never the value. */
+/** [cut] after the gate ([gated]); [warn] names the block and what the gate did, never the value. */
 private fun redact(
     cut: Cut,
     warn: (String) -> Unit,
 ): Cut {
-    val kind = secretKind(cut.block.text) ?: return cut
-    warn("${cut.block.anchor}: redacted, it holds a $kind (DESIGN-C.md 6.3)")
-    val text = redacted(kind)
+    val (text, note) = gated(cut.block.text)
+    if (note == null) return cut
+    warn("${cut.block.anchor}: $note")
     return cut.copy(block = cut.block.copy(text = text, sha256 = reviewFingerprint(text)))
 }
 
@@ -84,6 +88,16 @@ private fun storageCuts(
 ): List<Cut> =
     storageCuts(input.path, text, ::slug, warn).map { b ->
         Cut(Block("${input.name}#${b.section}/${b.number}", input.name, input.path, b.first, b.last, b.text, reviewFingerprint(b.text)), b.heading)
+    }
+
+/** The blocks of a fetched Jira issue (DESIGN-J.md, Jira.kt). */
+private fun jiraCuts(
+    input: SnapshotInput,
+    text: String,
+    warn: (String) -> Unit,
+): List<Cut> =
+    jiraBlocks(input.name, input.path, text, warn).map { b ->
+        Cut(Block(b.anchor, input.name, input.path, b.first, b.last, b.text, reviewFingerprint(b.text)), b.heading)
     }
 
 /** The lines of [text] without their line breaks (`\n`, `\r\n` or `\r`); a final line break ends the last line. */
@@ -258,7 +272,14 @@ private fun sourcesMd(cuts: List<Pair<SnapshotInput, List<Cut>>>): String {
             "here (a quote may be part of a block; it must not join text from two blocks).\n",
         )
     for ((input, list) in cuts) {
-        md += "\n## ${input.name}${if (input.storage) pageLabel(input) else ""}\n"
+        val label =
+            when {
+                input.storage -> pageLabel(input)
+                input.jira -> jiraLabel(input.path, File(input.path).readText())
+                else -> ""
+            }
+        md += "\n## ${input.name}$label\n"
+        if (input.jira) md += "$JIRA_GUIDANCE\n"
         var lastHeading: String? = null
         for ((b, heading) in list) {
             if (input.kotlin) {

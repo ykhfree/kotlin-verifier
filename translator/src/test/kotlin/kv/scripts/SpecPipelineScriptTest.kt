@@ -3,7 +3,9 @@ package kv.scripts
 import kv.ReqShield
 import kv.json.parseJson
 import kv.sidecar.pilotCells
+import kv.spec.SnapshotInput
 import kv.spec.pilotDir
+import kv.spec.writeSnapshot
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -109,12 +111,14 @@ class SpecPipelineScriptTest {
 
     /**
      * A new run from the replay's run config (kv-spec-run/1) without code: every Silicon run is mode b, with no
-     * isolation run. [fakeVerify] picks the kv install ([kvInstall]). Returns the output of `task`.
+     * isolation run. [fakeVerify] picks the kv install ([kvInstall]). [snapshot] replaces the run's snapshot. Returns the
+     * output of `task`.
      */
     private fun newRun(
         fakeVerify: Boolean = false,
         drafter: String = "opus",
         decisions: File? = null,
+        snapshot: File? = null,
     ): String {
         val env =
             File(dir, "env.json").apply {
@@ -130,6 +134,7 @@ class SpecPipelineScriptTest {
         val config = File(dir, "config.json")
         config.writeText(File(protocol, "config.json").readText().replace("\"../../specs/", "\"${repo.path}/specs/").replace("\"../../", "\"${fixtures.path}/").replace("\"SKELETON.kv\"", "\"${protocol.path}/SKELETON.kv\"").replace("\"LANGUAGE.md\"", "\"${protocol.path}/LANGUAGE.md\"").replace("\"code\": true", "\"code\": false"))
         decisions?.let { config.writeText(config.readText().replace("\"code\": false", "\"decisions\": [\"${it.path}\"],\n \"code\": false")) }
+        snapshot?.let { config.writeText(config.readText().replace("${fixtures.path}/pilot-c/packet", it.path)) }
         return ok(spec("task", "--run", run.path, "--drafter", drafter, "--config", config.path, "--env", env.path))
     }
 
@@ -197,6 +202,36 @@ class SpecPipelineScriptTest {
         val (again, msg) = spec("task", "--run", run.path, "--drafter", "opus")
         assertEquals(1, again, msg)
         assertTrue("--force builds it again" in msg, msg)
+    }
+
+    @Test
+    fun `task and the source conversion - a Jira snapshot goes through spec_py as it is`() {
+        // DESIGN-J.md 8.3 and 9.3: spec.py needs no change. The box holds the guidance, and a Jira anchor finds its block.
+        val fixture = File(javaClass.getResource("/jira/10042.jira.json")!!.toURI())
+        val snapshot = File(dir, "jira-snapshot")
+        val blocks = writeSnapshot(snapshot, listOf(SnapshotInput("jira:10042", fixture.path)))
+        newRun(snapshot = snapshot)
+        val sources = File(box(1), "SOURCES.md").readText()
+        assertEquals(File(snapshot, "SOURCES.md").readText(), sources)
+        assertTrue("This source is a Jira issue in free form" in sources, sources)
+        val cited = blocks.first { it.anchor.endsWith("#comment/10072/20b44600") }
+        val draft = File(dir, "draft.kv").apply { writeText("// source: [${cited.anchor}] \"60초로 바꾼다\"\ninvariant I: true\n") }
+        val convert =
+            """
+            import importlib.util, json, sys
+            sys.dont_write_bytecode = True
+            sys.stdout.reconfigure(encoding="utf-8")
+            spec = importlib.util.spec_from_file_location("spec", sys.argv[1])
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            blocks = {b["anchor"]: b for b in json.load(open(sys.argv[2], encoding="utf-8"))}
+            text, notes, _ = m.convert_sources(open(sys.argv[3], encoding="utf-8").read(), blocks)
+            print(text)
+            print("notes", notes)
+            """.trimIndent()
+        val out = ok(exec("python3", "-I", "-c", convert, script.path, File(snapshot, "sources.json").path, draft.path))
+        assertTrue("source \"${cited.anchor}\" quote \"60초로 바꾼다\" sha256 \"${cited.sha256}\"" in out, out)
+        assertTrue("notes []" in out, out)
     }
 
     @Test

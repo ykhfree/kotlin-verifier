@@ -3,6 +3,7 @@ package kv.spec
 import kv.ReqShield
 import kv.emit.python
 import kv.json.JsonException
+import kv.json.JsonObject
 import kv.json.json
 import kv.json.parseJson
 import kv.sidecar.reviewFingerprint
@@ -183,5 +184,32 @@ class SnapshotTest {
         assertEquals(listOf(mapOf("a" to 1L, "b" to listOf(true, false, null), "c" to "x")), parseJson(" [ {\"a\": 1, \"b\": [true, false, null], \"c\": \"\\u0078\"} ] "))
         assertEquals(-12L, parseJson("-12"))
         for (bad in listOf("[1,]", "{\"a\" 1}", "\"open", "[1] 2", "nul")) assertFailsWith<JsonException>(bad) { parseJson(bad) }
+    }
+
+    @Test
+    fun `the JSON reader reads a fraction and an exponent, and only JSON's form of a number`() {
+        // DESIGN-J.md 9.2 prediction P14.
+        assertEquals(66.66, parseJson("66.66"))
+        assertEquals(-0.015, parseJson("-1.5E-2"))
+        assertEquals(1000.0, parseJson("1e3"))
+        assertEquals(1000.0, parseJson("1E+3"))
+        assertEquals(0L, parseJson("0"))
+        assertEquals(9_007_199_254_740_993L, parseJson("9007199254740993"))
+        assertEquals(1e20, parseJson("100000000000000000000"))
+        for (bad in listOf("1.", ".5", "NaN", "Infinity", "0x10", "+1", "01", "1e", "--1", "1.2.3")) assertFailsWith<JsonException>(bad) { parseJson(bad) }
+    }
+
+    @Test
+    fun `a parsed object knows its lines and the line of each key`() {
+        val text = "{\n \"a\": {\n  \"b\": 1,\n  \"c\": [\n   {}\n  ]\n },\n \"s\": \"x\"\n}\n"
+        val root = parseJson(text) as JsonObject
+        val a = root["a"] as JsonObject
+        val empty = (a["c"] as List<*>).single() as JsonObject
+        assertEquals(listOf(1, 9), listOf(root.first, root.last))
+        assertEquals(listOf(2, 7), listOf(a.first, a.last))
+        assertEquals(listOf(5, 5), listOf(empty.first, empty.last))
+        assertEquals(listOf(3, 4), listOf(a.lineOf("b"), a.lineOf("c")))
+        assertEquals(8, root.lineOf("s"))
+        assertEquals(1, root.lineOf("absent"))
     }
 }

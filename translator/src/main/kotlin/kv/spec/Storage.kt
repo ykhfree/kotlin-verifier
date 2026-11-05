@@ -108,7 +108,7 @@ private fun parseStorage(
 }
 
 /** Lines of text: NBSP is a space, each run of white space one space, the ends trimmed, empty lines dropped. */
-private fun tidy(text: String): List<String> = text.split('\n').map { it.replace(' ', ' ').replace(Regex("""\s+"""), " ").trim() }.filter(String::isNotEmpty)
+internal fun tidy(text: String): List<String> = text.split('\n').map { it.replace(' ', ' ').replace(Regex("""\s+"""), " ").trim() }.filter(String::isNotEmpty)
 
 private val PANELS = setOf("info", "tip", "note", "warning")
 
